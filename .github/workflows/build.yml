@@ -10,7 +10,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Find the project folder (the repository root, or a subfolder such as v300_ble/ if the zip was uploaded as is)
       - name: Locate the project
         run: |
           f=$(find . -name v300_ble_probe.slcp -not -path './.git/*' | head -1)
@@ -18,24 +17,32 @@ jobs:
           echo "PROJ=$(dirname "$f")" >> "$GITHUB_ENV"
           echo "project folder: $(dirname "$f")"
 
-      # slc, the ARM compiler and the Gecko SDK all come from this public image
+      # The builder image brings slc and the ARM compiler but no SDK. Clone the Gecko SDK without LFS files, then fetch
+      # only the one LFS file we need (a full LFS download of the SDK fails with "failed to fetch some objects").
+      - name: Gecko SDK 4.4.1
+        run: |
+          GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 -b v4.4.1 https://github.com/SiliconLabs/gecko_sdk.git gecko_sdk
+          cd gecko_sdk
+          git lfs install --local
+          git lfs pull --include="platform/radio/rail_lib/autogen/librail_release/librail_efr32xg22_gcc_release.a"
+          ls -l platform/radio/rail_lib/autogen/librail_release/librail_efr32xg22_gcc_release.a
+
       - name: Pull the builder image
         run: docker pull ghcr.io/nabucasa/silabs-firmware-builder:latest
 
       - name: Write the build script
-        # the script is part of this file on purpose, so that an old copy of build.sh in the repository cannot get in the way
         run: |
           cat > "$PROJ/ci_build.sh" <<'EOS'
           #!/bin/bash
           # Build inside the ghcr.io/nabucasa/silabs-firmware-builder image (it brings slc and the ARM compiler).
-          # The Gecko SDK is taken from the image too (the Git LFS download of the SDK repository fails in CI).
+          # The Gecko SDK 4.4.1 is cloned by the workflow (only the one RAIL library is fetched through Git LFS) and mounted at /gecko_sdk.
           set -e
 
           echo "=== environment ==="
           uname -a
           echo "slc:     $(command -v slc || echo 'not in PATH')"
           echo "gcc:     $(command -v arm-none-eabi-gcc || echo 'not in PATH')"
-          ls /opt 2>/dev/null || true
+          ls /opt /opt/silabs 2>/dev/null || true
 
           # Look for the tools if they are not in PATH.
           if ! command -v slc >/dev/null; then
@@ -49,24 +56,12 @@ jobs:
           command -v slc || { echo "slc not found"; exit 1; }
           command -v arm-none-eabi-gcc || { echo "arm-none-eabi-gcc not found"; exit 1; }
           arm-none-eabi-gcc --version | head -1
-          echo "=== looking for a Gecko SDK in the image ==="
-          find / -xdev -maxdepth 4 \( -name gecko_sdk.slcs -o -name simplicity_sdk.slcs \) 2>/dev/null | while read -r f; do
-            echo "  $f: $(grep -m1 sdk_version "$f")"
-          done
-          GSDK_PATH=""
-          for f in $(find / -xdev -maxdepth 4 -name gecko_sdk.slcs 2>/dev/null); do
-            d=$(dirname "$f")
-            lib="$d/platform/radio/rail_lib/autogen/librail_release/librail_efr32xg22_gcc_release.a"
-            sz=$(stat -c %s "$lib" 2>/dev/null || echo 0)
-            echo "  candidate $d: $(grep -m1 sdk_version "$f"), RAIL library $sz bytes"
-            if [ "$sz" -gt 100000 ] && [ -z "$GSDK_PATH" ]; then GSDK_PATH="$d"; fi
-          done
-          test -n "$GSDK_PATH" || { echo "no usable Gecko SDK (with a real RAIL library) found in the image"; ls /; exit 1; }
-          SDKVER=$(grep -m1 sdk_version "$GSDK_PATH/gecko_sdk.slcs" | sed 's/[^0-9.]//g')
-          echo "using $GSDK_PATH, version $SDKVER"
-          # make the project ask for the version that is really there
-          sed -i "s/^sdk: {id: gecko_sdk, version: .*}/sdk: {id: gecko_sdk, version: $SDKVER}/" v300_ble_probe.slcp
-          grep '^sdk:' v300_ble_probe.slcp
+          GSDK_PATH=/gecko_sdk
+          test -f "$GSDK_PATH/gecko_sdk.slcs" || { echo "no Gecko SDK in $GSDK_PATH"; exit 1; }
+          grep sdk_version "$GSDK_PATH/gecko_sdk.slcs"
+          sz=$(stat -c %s "$GSDK_PATH/platform/radio/rail_lib/autogen/librail_release/librail_efr32xg22_gcc_release.a")
+          echo "RAIL library size: $sz bytes"
+          test "$sz" -gt 100000 || { echo "RAIL library is a Git LFS pointer, not the real file"; exit 1; }
 
           echo "=== slc ==="
           slc configuration --sdk="$GSDK_PATH" || true
@@ -98,7 +93,7 @@ jobs:
         run: |
           set -o pipefail
           docker run --rm --entrypoint bash \
-            -v "$PWD/$PROJ":/build -w /build \
+            -v "$PWD/$PROJ":/build -v "$PWD/gecko_sdk":/gecko_sdk -w /build \
             ghcr.io/nabucasa/silabs-firmware-builder:latest ./ci_build.sh 2>&1 | tee "$PROJ/build.log"
 
       - uses: actions/upload-artifact@v4
