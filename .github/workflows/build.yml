@@ -10,6 +10,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Find the project folder (the repository root, or a subfolder such as v300_ble/ if the zip was uploaded as is)
       - name: Locate the project
         run: |
           f=$(find . -name v300_ble_probe.slcp -not -path './.git/*' | head -1)
@@ -17,14 +18,7 @@ jobs:
           echo "PROJ=$(dirname "$f")" >> "$GITHUB_ENV"
           echo "project folder: $(dirname "$f")"
 
-      - name: Gecko SDK 4.4.1
-        uses: actions/checkout@v4
-        with:
-          repository: SiliconLabs/gecko_sdk
-          ref: v4.4.1
-          lfs: true
-          path: gecko_sdk
-
+      # slc, the ARM compiler and the Gecko SDK all come from this public image
       - name: Pull the builder image
         run: docker pull ghcr.io/nabucasa/silabs-firmware-builder:latest
 
@@ -33,7 +27,7 @@ jobs:
           chmod +x "$PROJ/build.sh"
           set -o pipefail
           docker run --rm --entrypoint bash \
-            -v "$PWD/$PROJ":/build -v "$PWD/gecko_sdk":/gecko_sdk -w /build \
+            -v "$PWD/$PROJ":/build -w /build \
             ghcr.io/nabucasa/silabs-firmware-builder:latest ./build.sh 2>&1 | tee "$PROJ/build.log"
 
       - uses: actions/upload-artifact@v4
