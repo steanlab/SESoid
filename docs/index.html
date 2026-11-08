@@ -3,124 +3,592 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SES V300: тест загрузки</title>
+<title>Gecko Slide · SES V300</title>
 <style>
-  :root { --bg:#fff; --fg:#1b1b1b; --mut:#666; --line:#d8d8d8; --acc:#0b57d0; --box:#f5f6f8; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#16181b; --fg:#e8e8e8; --mut:#9aa0a6; --line:#33373d; --acc:#8ab4f8; --box:#1f2226; } }
-  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:15px/1.45 system-ui,sans-serif; max-width:760px; margin-inline:auto; }
-  h1 { font-size:20px; margin:0 0 4px; } h2 { font-size:16px; margin:22px 0 8px; }
-  p.n { color:var(--mut); margin:4px 0 12px; }
-  button { font:inherit; padding:8px 12px; margin:3px 4px 3px 0; border:1px solid var(--line); background:var(--box); color:var(--fg); border-radius:8px; }
-  button.p { background:var(--acc); color:#fff; border-color:var(--acc); } button:disabled { opacity:.45; }
-  select, input { font:inherit; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
-  #log { background:var(--box); border:1px solid var(--line); border-radius:8px; padding:8px; height:300px; overflow:auto; font:12.5px/1.4 ui-monospace,monospace; white-space:pre-wrap; }
-  .bar { height:10px; background:var(--line); border-radius:5px; overflow:hidden; margin:8px 0; } .bar>div { height:100%; width:0; background:var(--acc); }
+  :root { --bg:#f6f7f9; --card:#fff; --fg:#1b1d21; --mut:#69707a; --line:#d9dce1; --acc:#0b57d0; --accfg:#fff; --box:#eef0f3; --ok:#1a7f37; --bad:#c62828; --warn:#a15c00; --shadow:0 1px 2px rgba(0,0,0,.06); }
+  @media (prefers-color-scheme: dark) { :root { --bg:#101215; --card:#181b1f; --fg:#e8eaed; --mut:#9aa0a6; --line:#2d3238; --acc:#8ab4f8; --accfg:#0b1a33; --box:#20242a; --ok:#6fcf8a; --bad:#ff8a80; --warn:#f2b45a; --shadow:none; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  header { padding:14px 16px 8px; max-width:1100px; margin:0 auto; display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
+  header h1 { font-size:20px; margin:0; letter-spacing:.2px; } header h1 small { font-weight:400; color:var(--mut); font-size:13px; margin-left:6px; }
+  .pill { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border:1px solid var(--line); border-radius:99px; background:var(--card); font-size:13px; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--mut); } .on .dot { background:var(--ok); }
+  nav { max-width:1100px; margin:0 auto; padding:0 12px; display:flex; flex-wrap:wrap; gap:4px; border-bottom:1px solid var(--line); }
+  nav button { border:0; background:none; color:var(--mut); padding:9px 12px; font:inherit; border-bottom:2px solid transparent; cursor:pointer; margin:0; border-radius:0; }
+  nav button.act { color:var(--fg); border-bottom-color:var(--acc); font-weight:600; }
+  main { max-width:1100px; margin:0 auto; padding:14px 16px 40px; }
+  section.tab { display:none; } section.tab.act { display:block; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; margin:0 0 14px; box-shadow:var(--shadow); }
+  .card h2 { font-size:15px; margin:0 0 10px; } .card h3 { font-size:13px; margin:14px 0 6px; color:var(--mut); text-transform:uppercase; letter-spacing:.5px; }
+  .grid { display:grid; grid-template-columns:minmax(0,1.25fr) minmax(0,1fr); gap:14px; align-items:start; }
+  @media (max-width:860px) { .grid { grid-template-columns:1fr; } }
+  button { font:inherit; padding:7px 12px; margin:3px 4px 3px 0; border:1px solid var(--line); background:var(--box); color:var(--fg); border-radius:8px; cursor:pointer; }
+  button:hover:not(:disabled) { border-color:var(--acc); } button:disabled { opacity:.45; cursor:default; }
+  button.p { background:var(--acc); color:var(--accfg); border-color:var(--acc); font-weight:600; }
+  button.d { color:var(--bad); }
+  select, input[type=number], input[type=text] { font:inherit; padding:5px 7px; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--fg); max-width:100%; }
+  input[type=range] { width:100%; accent-color:var(--acc); margin:0; }
+  input[type=color] { width:34px; height:28px; padding:0; border:1px solid var(--line); border-radius:6px; background:none; }
+  .row { display:flex; flex-wrap:wrap; gap:6px 12px; align-items:center; margin:4px 0; }
+  .ctl { display:grid; grid-template-columns:116px minmax(0,1fr) 54px; gap:8px; align-items:center; margin:3px 0; font-size:14px; }
+  .ctl output { text-align:right; color:var(--mut); font-variant-numeric:tabular-nums; }
+  .ctl.sel { grid-template-columns:116px minmax(0,1fr); }
+  .n { color:var(--mut); font-size:13px; margin:4px 0 8px; }
+  #pvwrap { position:relative; border:1px solid var(--line); border-radius:8px; overflow:hidden; background:#000; touch-action:none; }
+  #pvwrap.drop { outline:3px dashed var(--acc); outline-offset:-3px; }
+  #pv { display:block; width:100%; height:auto; image-rendering:pixelated; cursor:grab; aspect-ratio:720/256; }
+  #pvhint { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; text-align:center; color:#cfd3d8; font-size:14px; padding:20px; pointer-events:none; }
+  .bar { height:10px; background:var(--box); border:1px solid var(--line); border-radius:5px; overflow:hidden; margin:6px 0; } .bar>div { height:100%; width:0; background:var(--acc); transition:width .3s; }
+  .stat { display:flex; gap:10px; flex-wrap:wrap; font-size:13px; color:var(--mut); margin:6px 0; } .sw { display:inline-block; width:11px; height:11px; border-radius:3px; border:1px solid var(--line); vertical-align:-1px; margin-right:3px; }
+  .slots { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:12px; }
+  .slot { border:1px solid var(--line); border-radius:10px; padding:10px; background:var(--card); } .slot.cur { border-color:var(--acc); box-shadow:0 0 0 2px color-mix(in srgb, var(--acc) 30%, transparent); }
+  .slot canvas, .slot .empty { width:100%; aspect-ratio:720/256; border-radius:6px; background:#000; display:flex; align-items:center; justify-content:center; color:#8a8f96; font-size:13px; text-align:center; padding:6px; image-rendering:pixelated; }
+  .slot .hd { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; font-weight:600; }
+  .badge { font-size:12px; padding:1px 7px; border-radius:99px; border:1px solid var(--line); color:var(--mut); font-weight:400; } .badge.ok { color:var(--ok); border-color:var(--ok); } .badge.bad { color:var(--bad); border-color:var(--bad); } .badge.warn { color:var(--warn); border-color:var(--warn); }
+  .kv { display:grid; grid-template-columns:minmax(140px,220px) 1fr; gap:4px 12px; font-size:14px; } .kv div:nth-child(odd) { color:var(--mut); }
+  .blur { filter:blur(6px); cursor:pointer; user-select:none; } .blur.show { filter:none; user-select:text; }
+  #log { background:var(--box); border:1px solid var(--line); border-radius:8px; padding:8px; height:340px; overflow:auto; font:12.5px/1.4 ui-monospace,Menlo,Consolas,monospace; white-space:pre-wrap; }
+  #toast { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); background:var(--fg); color:var(--bg); padding:9px 16px; border-radius:99px; font-size:14px; opacity:0; pointer-events:none; transition:opacity .25s; max-width:90vw; z-index:9; }
+  #toast.show { opacity:.95; }
+  details { margin:8px 0; } summary { cursor:pointer; color:var(--mut); }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
+  .sub { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
 </style>
 </head>
 <body>
-<h1>SES V300: тест загрузки по Bluetooth</h1>
-<p class="n">Проект SES V300 (не badge154), репозиторий steanlab/SESoid, файл docs/index.html. Нужен Chrome (Android или компьютер); страница открывается по https.</p>
+<header>
+  <h1>Gecko Slide <small>SES V300 · e-ink 5.9″ BWRY · не badge154 · steanlab/SESoid, docs/index.html</small></h1>
+  <span class="pill" id="connPill"><span class="dot"></span><span id="connTxt">не подключено</span></span>
+  <button class="p" id="bConn">Подключиться</button><button id="bDisc" disabled>Отключиться</button>
+</header>
+<nav id="tabs">
+  <button data-t="edit" class="act">Изображение</button><button data-t="slots">Слоты и слайдшоу</button><button data-t="cfg">Настройки</button><button data-t="tag">Метка</button><button data-t="tools">Инструменты</button><button data-t="logt">Журнал</button>
+</nav>
+<main>
 
-<button class="p" id="bConn">Подключиться</button> <button id="bDisc" disabled>Отключиться</button> <span id="st">не подключено</span>
+<!-- ============================ ИЗОБРАЖЕНИЕ ============================ -->
+<section class="tab act" id="t-edit">
+  <div class="grid">
+    <div>
+      <div class="card">
+        <div class="row">
+          <button class="p" id="bOpen">Открыть картинку…</button><input type="file" id="file" accept="image/*" hidden>
+          <button id="bPaste">Вставить из буфера</button><button id="bDemo">Пример</button>
+          <span class="n" id="srcName" style="margin:0">нет картинки: перетащите файл на предпросмотр, вставьте Ctrl+V или откройте</span>
+        </div>
+        <div id="pvwrap"><canvas id="pv" width="720" height="256"></canvas><div id="pvhint">Предпросмотр 720 × 256 (как будет на экране).<br>Перетащите сюда картинку. После загрузки колёсиком мыши меняется масштаб, перетаскиванием — положение.</div></div>
+        <div class="stat" id="stat"></div>
+        <div class="row">
+          <button id="bPng" disabled>Скачать PNG</button><button id="bBin" disabled>Скачать кадр (.bin)</button>
+          <span class="n" id="cvInfo" style="margin:0"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Загрузка в метку</h2>
+        <div class="row">
+          <label>Слот <select id="upSlot"></select></label>
+          <label><input type="checkbox" id="upShow" checked> показать на экране после загрузки</label>
+          <label><input type="checkbox" id="upList" checked> включить в слайдшоу</label>
+        </div>
+        <div class="row"><button class="p" id="bUpload" disabled>Загрузить кадр в метку</button><button id="bUpStop" disabled>Остановить</button></div>
+        <div class="bar"><div id="upBar"></div></div>
+        <div id="upRes" class="n"></div>
+        <p class="n">Метка стирает слот (около 1 с), принимает 46 080 байт (≈ 22 с), сверяет контрольную сумму и читает слот обратно из своей flash. Подключение нужно только на это время.</p>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <h2>Режим</h2>
+        <div class="row" id="presets"></div>
+        <p class="n" id="presetNote"></p>
+        <h3>Кадрирование</h3><div id="c-frame"></div>
+        <div class="row"><button id="bRotL">⟲ 90°</button><button id="bRotR">⟳ 90°</button><button id="bFlipH">Зеркало ↔</button><button id="bFlipV">Зеркало ↕</button><button id="bView">Сбросить вид</button></div>
+        <h3>Тон и цвет</h3><div id="c-tone"></div>
+        <h3>Палитра панели</h3><div id="c-pal"></div>
+        <div class="row" id="palsw"></div>
+        <h3>Дизеринг</h3><div id="c-dith"></div>
+        <h3>Просмотр</h3><div id="c-view"></div>
+      </div>
+    </div>
+  </div>
+</section>
 
-<h2>1. Связь</h2>
-<button id="bPing" disabled>Ping</button> <button id="bStat" disabled>Счётчики метки</button> <button id="bReset" disabled>Сброс счётчиков</button>
+<!-- ============================ СЛОТЫ ============================ -->
+<section class="tab" id="t-slots">
+  <div class="card">
+    <div class="row"><button id="bSlots" disabled>Обновить список с метки</button><button id="bNext" disabled>Показать следующий сейчас</button>
+      <span id="slideInfo" class="n" style="margin:0"></span></div>
+    <p class="n">Семь слотов во внешней flash метки (слот n лежит по адресу n × 0x10000). Картинки на странице запоминаются в браузере (IndexedDB): по контрольной сумме видно, совпадает ли запомненная картинка с тем, что лежит в метке. Галочка «в слайдшоу» сохраняется в метке сама.</p>
+    <div class="slots" id="slotGrid"></div>
+  </div>
+</section>
 
-<h2>2. Загрузка образа</h2>
-<label>Куда: <select id="mode"><option value="0">в ОЗУ метки (данные только считаются)</option><option value="1">во флеш метки, слот ниже</option></select></label>
-<label>слот <select id="slot"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option selected>7</option></select></label>
-<p class="n">Слот n лежит по адресу n × 0x10000. Слоты 3–6 в дампе занимает старая прошивка, слоты 1, 2 и 7 пустые. Перед записью метка стирает слот целиком (около 1 с), контрольная запись в конце слота появляется последней.</p>
-<label>Размер: <select id="size">
-  <option value="2048">2 КБ</option><option value="10240">10 КБ</option><option value="46080" selected>46 080 Б (один кадр 720×256)</option><option value="92160">90 КБ</option>
-</select></label>
-<button class="p" id="bUp" disabled>Отправить</button> <button id="bVer" disabled>Проверить слот во флеш</button> <button id="bStop" disabled>Остановить</button>
-<div class="bar"><div id="prog"></div></div>
-<div id="res"></div>
+<!-- ============================ НАСТРОЙКИ ============================ -->
+<section class="tab" id="t-cfg">
+  <div class="card" style="max-width:640px">
+    <h2>Слайдшоу и радио</h2>
+    <div class="ctl sel"><span>Автосмена</span><label><input type="checkbox" id="cEn"> менять слайды сами</label></div>
+    <div class="ctl sel"><span>Порядок</span><select id="cMode"><option value="0">по кругу (1 → 2 → 3 …)</option><option value="1">случайно</option></select></div>
+    <div class="ctl sel"><span>Интервал</span><span class="sub"><select id="cInt"></select><span id="cIntCustomWrap" hidden><input type="number" id="cIntCustom" min="1" max="1440" style="width:80px"> мин</span></span></div>
+    <div class="ctl sel"><span>Температура панели</span><span class="sub"><input type="number" id="cTemp" min="-20" max="60" style="width:80px"> °C <span class="n" style="margin:0">от неё метка выбирает режим обновления панели</span></span></div>
+    <div class="ctl sel"><span>Мощность Bluetooth</span><span class="sub"><select id="cTx"></select><span id="cTxAct" class="n" style="margin:0"></span></span></div>
+    <div class="row"><button class="p" id="bCfg" disabled>Применить и сохранить в метке</button><button id="bCfgGet" disabled>Прочитать из метки</button></div>
+    <p class="n">Интервал отсчитывается от конца предыдущего обновления экрана, а само обновление длится около 30 с, поэтому разумный минимум — 1–2 минуты. Настройки хранятся во flash метки (журнал на 16 записей: стирание примерно раз в 16 сохранений) и переживают перезагрузку.
+    Слабая мощность (−10 дБм и ниже) экономит батарею, но связь обрывается при удалении; изменение вступает в силу сразу, поэтому если соединение пропало — подойдите ближе.</p>
+  </div>
+</section>
 
-<h2>3. Внешняя флеш (только тестовая область 0x00000–0x0FFFF)</h2>
-<p class="n">Каждая проверка записывает или стирает один сектор тестовой области, которая в дампе пустая. Результат приходит от метки по радио, провода не нужны: можно питать метку от батареи.</p>
-<button id="bFInfo" disabled>Идентификатор флеш</button>
-<label>сектор <select id="sec"></select></label>
-<button id="bFErase" disabled>Стереть сектор</button> <button id="bFProg" disabled>Записать страницу</button> <button id="bFScan" disabled>Прочитать (сколько не FF)</button>
+<!-- ============================ МЕТКА ============================ -->
+<section class="tab" id="t-tag">
+  <div class="grid">
+    <div class="card">
+      <h2>Экран</h2>
+      <div id="pnState" style="font-size:16px;font-weight:600">—</div>
+      <div class="bar"><div id="pnBar"></div></div>
+      <div class="kv" id="pnKv"></div>
+      <h3>Управление</h3>
+      <div class="row"><button id="bShowNext" disabled>Следующий слайд</button><button id="bSplash" disabled>Заставка</button></div>
+      <div class="row"><span class="n" style="margin:0">Заливка (чистит остаточные изображения):</span>
+        <button class="fill" data-c="0" disabled>Чёрный</button><button class="fill" data-c="1" disabled>Белый</button><button class="fill" data-c="2" disabled>Жёлтый</button><button class="fill" data-c="3" disabled>Красный</button></div>
+      <p class="n">Обновление экрана длится около 30 с и мигает; во время него метка остаётся на связи.</p>
+      <div class="row"><button class="d" id="bReboot" disabled>Перезагрузить метку</button></div>
+    </div>
+    <div class="card">
+      <h2>Железо метки</h2>
+      <div class="row"><button id="bHw" disabled>Прочитать</button><span class="n" style="margin:0">уникальный ID виден только здесь, на экране; не публикуйте его и не кладите в репозиторий</span></div>
+      <div class="kv" id="hwKv"><div>—</div><div>нажмите «Прочитать»</div></div>
+    </div>
+  </div>
+</section>
 
-<h2>Журнал</h2>
-<div id="log"></div>
+<!-- ============================ ИНСТРУМЕНТЫ ============================ -->
+<section class="tab" id="t-tools">
+  <div class="card">
+    <h2>Связь</h2>
+    <button id="bPing" disabled>Ping</button><button id="bStat" disabled>Счётчики метки</button><button id="bReset" disabled>Сброс счётчиков</button>
+  </div>
+  <div class="card">
+    <h2>Проверка загрузки в ОЗУ метки</h2>
+    <p class="n">Данные только считаются и сверяются по контрольной сумме, во flash ничего не пишется.</p>
+    <label>Размер <select id="tSize"><option value="2048">2 КБ</option><option value="10240">10 КБ</option><option value="46080" selected>46 080 Б (кадр)</option><option value="92160">90 КБ</option></select></label>
+    <button id="bRam" disabled>Отправить в ОЗУ</button>
+    <div id="ramRes" class="n"></div>
+  </div>
+  <div class="card">
+    <h2>Внешняя flash</h2>
+    <p class="n">Сектор 15 (0x0F000) занят настройками, поэтому тесты стирания и записи работают с секторами 0–14.</p>
+    <button id="bFInfo" disabled>Идентификатор</button>
+    <label>сектор <select id="sec"></select></label>
+    <button id="bFErase" disabled>Стереть</button><button id="bFProg" disabled>Записать страницу</button><button id="bFScan" disabled>Прочитать (сколько не FF)</button>
+    <div class="row"><label>Проверить слот <select id="vSlot"></select></label><button id="bVer" disabled>Проверить чтением</button></div>
+  </div>
+</section>
+
+<section class="tab" id="t-logt">
+  <div class="card"><div class="row"><button id="bClearLog">Очистить</button><button id="bCopyLog">Скопировать</button></div><div id="log"></div></div>
+</section>
+</main>
+<div id="toast"></div>
 
 <script>
 'use strict';
-const SVC = '53455300-0300-4f45-5000-534c49444500', RXC = '53455301-0300-4f45-5000-534c49444500', TXC = '53455302-0300-4f45-5000-534c49444500';
+/* ===================================================================================================================
+   Gecko Slide · SES V300 (не badge154). Репозиторий steanlab/SESoid, файл docs/index.html.
+   Разделы: утилиты · конвертер (4 цвета BWRY) · библиотека (IndexedDB) · Bluetooth · интерфейс · загрузка
+   =================================================================================================================== */
+const W = 720, H = 256, FRAME = 46080;
 const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const hex = a => Array.from(a, x => x.toString(16).padStart(2, '0')).join(' ');
+const u32 = (a, o = 0) => (a[o] | a[o + 1] << 8 | a[o + 2] << 16 | a[o + 3] << 24) >>> 0;
+const u16 = (a, o = 0) => a[o] | a[o + 1] << 8;
+const le32 = v => [v & 255, v >>> 8 & 255, v >>> 16 & 255, v >>> 24 & 255];
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const logEl = $('log');
 function log(s) { const t = new Date().toLocaleTimeString(); logEl.textContent += t + '  ' + s + '\n'; logEl.scrollTop = logEl.scrollHeight; }
-const hex = a => Array.from(a, x => x.toString(16).padStart(2, '0')).join(' ');
-for (let i = 0; i < 16; i++) { const o = document.createElement('option'); o.value = i; o.textContent = i + '  (0x' + (i * 4096).toString(16).padStart(5, '0') + ')'; $('sec').appendChild(o); }
-$('sec').value = 15;
-
-// CRC-32 (IEEE)
+let toastT = 0;
+function toast(s) { const e = $('toast'); e.textContent = s; e.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => e.classList.remove('show'), 3200); log(s); }
 const CT = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
 function crc32(buf) { let c = 0xFFFFFFFF; for (let i = 0; i < buf.length; i++) c = CT[(c ^ buf[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+const h8 = v => v.toString(16).padStart(8, '0');
+function lsGet(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }
+function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage may be unavailable */ } }
+function download(blob, name) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
 
-let dev = null, rx = null, tx = null, queue = [], waiter = null, stopFlag = false, busy = false;
-const u32 = a => (a[0] | a[1] << 8 | a[2] << 16 | a[3] << 24) >>> 0;
-const le32 = v => [v & 255, v >>> 8 & 255, v >>> 16 & 255, v >>> 24 & 255];
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+/* ===================================================================================================================
+   КОНВЕРТЕР: картинка → 720×256, тон, палитра BWRY, дизеринг → индексы 0 K, 1 W, 2 Y, 3 R (коды панели)
+   =================================================================================================================== */
+const PALETTES = {
+  ideal: { name: 'Идеальная (максимальная насыщенность)', c: [[0, 0, 0], [255, 255, 255], [255, 236, 0], [255, 0, 0]] },
+  panel: { name: 'Близкая к реальной панели', c: [[24, 24, 28], [201, 203, 194], [212, 178, 10], [172, 38, 32]] },
+  custom: { name: 'Своя', c: [[0, 0, 0], [255, 255, 255], [255, 236, 0], [255, 0, 0]] }
+};
+const ALGOS = {
+  none: 'Нет (ближайший цвет)', fs: 'Флойд — Стейнберг', jjn: 'Джарвис — Джудис — Нинке', stucki: 'Штуки', burkes: 'Беркс', atkinson: 'Аткинсон (мягкий, светлые тона)',
+  sierralite: 'Sierra Lite', bayer4: 'Упорядоченный Байер 4×4', bayer8: 'Упорядоченный Байер 8×8', noise: 'Шум (интерлейс-градиент)'
+};
+const KERNELS = {
+  fs: { d: 16, k: [[1, 0, 7], [-1, 1, 3], [0, 1, 5], [1, 1, 1]] },
+  jjn: { d: 48, k: [[1, 0, 7], [2, 0, 5], [-2, 1, 3], [-1, 1, 5], [0, 1, 7], [1, 1, 5], [2, 1, 3], [-2, 2, 1], [-1, 2, 3], [0, 2, 5], [1, 2, 3], [2, 2, 1]] },
+  stucki: { d: 42, k: [[1, 0, 8], [2, 0, 4], [-2, 1, 2], [-1, 1, 4], [0, 1, 8], [1, 1, 4], [2, 1, 2], [-2, 2, 1], [-1, 2, 2], [0, 2, 4], [1, 2, 2], [2, 2, 1]] },
+  burkes: { d: 32, k: [[1, 0, 8], [2, 0, 4], [-2, 1, 2], [-1, 1, 4], [0, 1, 8], [1, 1, 4], [2, 1, 2]] },
+  atkinson: { d: 8, k: [[1, 0, 1], [2, 0, 1], [-1, 1, 1], [0, 1, 1], [1, 1, 1], [0, 2, 1]] },
+  sierralite: { d: 4, k: [[1, 0, 2], [-1, 1, 1], [0, 1, 1]] }
+};
+const BAYER4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
+const BAYER8 = (() => { const m = new Array(64); for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) { let v = 0, xx = x, yy = y; for (let b = 0; b < 3; b++) { v = v << 2 | ((xx & 1) ^ (yy & 1)) << 1 | (yy & 1); xx >>= 1; yy >>= 1; } m[y * 8 + x] = v; } return m; })();
 
-function onNotify(e) {
-  const a = new Uint8Array(e.target.value.buffer.slice(e.target.value.byteOffset, e.target.value.byteOffset + e.target.value.byteLength));
-  queue.push(a);
-  if (waiter) { const w = waiter; waiter = null; w(); }
-  if (!busy) describe(a);   // outside an upload every message is shown
-}
-function describe(a) {
-  switch (a[0]) {
-    case 0x81: log('ping-ответ: ' + hex(a.slice(1))); break;
-    case 0x82: log('счётчики метки: принято ' + u32(a.slice(1)) + ' байт, записей ' + (a[5] | a[6] << 8)); break;
-    case 0x83: log('счётчики сброшены'); break;
-    case 0xA0: log('флеш: JEDEC ' + hex(a.slice(1, 4)) + ' (ожидается ef 40 13), SR1=' + a[4].toString(16) + ' SR2=' + a[5].toString(16) + ' SR3=' + a[6].toString(16)); break;
-    case 0xA1: case 0xA2: {
-      const names = ['успешно', 'BUSY не снялся за 3 с', 'сектор не пуст после стирания', 'бит записи (WEL) не установился', 'данные не совпали при чтении', 'неверные параметры'];
-      log((a[0] === 0xA1 ? 'стирание: ' : 'запись страницы: ') + (names[a[1]] || a[1]) + '; BUSY ' + (u32(a.slice(2, 6)) / 1000).toFixed(1) + ' мс; SR1: после команды ' + a[6].toString(16) + ', в конце ' + a[7].toString(16) + ', после WREN ' + a[8].toString(16) + '; не FF/расхождений: ' + (a[9] | a[10] << 8));
-      break; }
-    case 0xA4: {
-      const st = ['флеш совпадает с записью (CRC верный)', 'в слоте нет действительной записи', 'CRC флеш НЕ совпал с записью'][a[1 + 1]] || ('занято/ошибка ' + a[2]);
-      log('слот ' + a[1] + ': ' + st + '; ' + u32(a.slice(3, 7)) + ' байт, CRC при чтении ' + u32(a.slice(7, 11)).toString(16)); break; }
-    case 0xA3: log('чтение: результат ' + a[1] + ', байт не равных FF: ' + (a.length >= 6 ? u32(a.slice(2, 6)) : '-')); break;
-    default: log('уведомление ' + hex(a));
+const PRESETS = {
+  vivid: { label: 'Насыщенно', note: 'Максимально яркие цвета: идеальная палитра, сильная насыщенность и контраст, диффузия ошибки. Хорошо для рисунков, постеров, логотипов и фото с яркими цветами.',
+    v: { pal: 'ideal', sat: 230, contrast: 22, bright: 0, gamma: 1, sharp: 20, auto: true, algo: 'fs', strength: 85, serp: true, dist: 'lab', en: [true, true, true, true] } },
+  photo: { label: 'Фото', note: 'Нейтральная передача тонов: палитра, близкая к панели, мягкая насыщенность, диффузия Флойда — Стейнберга.',
+    v: { pal: 'panel', sat: 130, contrast: 8, bright: 0, gamma: 1, sharp: 10, auto: true, algo: 'fs', strength: 100, serp: true, dist: 'lab', en: [true, true, true, true] } },
+  graphic: { label: 'Графика / текст', note: 'Чёткие края и ровные заливки: без размытия цветов, ближайший цвет без дизеринга, высокая насыщенность.',
+    v: { pal: 'ideal', sat: 200, contrast: 30, bright: 0, gamma: 1, sharp: 0, auto: false, algo: 'none', strength: 100, serp: false, dist: 'lab', en: [true, true, true, true] } },
+  mono: { label: 'Чёрно-белое', note: 'Только чёрный и белый (жёлтый и красный выключены): самое чёткое изображение и самое быстрое обновление восприятием.',
+    v: { pal: 'panel', sat: 100, contrast: 10, bright: 0, gamma: 1, sharp: 15, auto: true, algo: 'atkinson', strength: 100, serp: true, dist: 'rgb', en: [true, true, false, false] } },
+  retro: { label: 'Ретро-растр', note: 'Упорядоченный дизеринг Байера: регулярный узор, как в старых играх; не «ползёт» при мелких изменениях картинки.',
+    v: { pal: 'ideal', sat: 180, contrast: 15, bright: 0, gamma: 1, sharp: 0, auto: true, algo: 'bayer8', strength: 100, serp: false, dist: 'lab', en: [true, true, true, true] } }
+};
+
+const DEF = { fit: 'cover', bg: 0, zoom: 1, panX: 0, panY: 0, rot: 0, flipH: false, flipV: false, orient: 'left', bright: 0, contrast: 22, gamma: 1, sat: 230, sharp: 20, auto: true,
+  pal: 'ideal', dist: 'lab', algo: 'fs', strength: 85, serp: true, en: [true, true, true, true], cust: PALETTES.custom.c.map(c => c.slice()), simPanel: false, scale: 'fit', preset: 'vivid' };
+const P = Object.assign({}, DEF, lsGet('gs.params', {}));
+P.en = (P.en || DEF.en).slice(0, 4); P.cust = (P.cust || DEF.cust).map(c => c.slice());
+
+// описание органов управления
+const CTRL = {
+  'c-frame': [
+    { k: 'fit', t: 'sel', l: 'Вписывание', o: { cover: 'Заполнить (обрезать лишнее)', contain: 'Вписать целиком (поля)', stretch: 'Растянуть' } },
+    { k: 'bg', t: 'sel', l: 'Цвет полей', o: { 0: 'Чёрный', 1: 'Белый', 2: 'Жёлтый', 3: 'Красный' } },
+    { k: 'zoom', t: 'rng', l: 'Масштаб', min: 0.3, max: 6, step: 0.01, f: v => v.toFixed(2) + '×' },
+    { k: 'orient', t: 'sel', l: 'Шлейф (FPC)', o: { left: 'слева (как у заставки)', right: 'справа' } }
+  ],
+  'c-tone': [
+    { k: 'sat', t: 'rng', l: 'Насыщенность', min: 0, max: 400, step: 1, f: v => v + '%' },
+    { k: 'contrast', t: 'rng', l: 'Контраст', min: -100, max: 100, step: 1, f: v => (v > 0 ? '+' : '') + v },
+    { k: 'bright', t: 'rng', l: 'Яркость', min: -100, max: 100, step: 1, f: v => (v > 0 ? '+' : '') + v },
+    { k: 'gamma', t: 'rng', l: 'Гамма', min: 0.4, max: 2.5, step: 0.01, f: v => v.toFixed(2) },
+    { k: 'sharp', t: 'rng', l: 'Резкость', min: 0, max: 100, step: 1, f: v => v + '%' },
+    { k: 'auto', t: 'chk', l: 'Авто-уровни', txt: 'растянуть тона по гистограмме' }
+  ],
+  'c-pal': [
+    { k: 'pal', t: 'sel', l: 'Палитра', o: Object.fromEntries(Object.entries(PALETTES).map(([k, v]) => [k, v.name])) },
+    { k: 'dist', t: 'sel', l: 'Выбор цвета', o: { lab: 'Лаб (как видит глаз)', rgb: 'RGB в линейном свете' } }
+  ],
+  'c-dith': [
+    { k: 'algo', t: 'sel', l: 'Алгоритм', o: ALGOS },
+    { k: 'strength', t: 'rng', l: 'Сила', min: 0, max: 100, step: 1, f: v => v + '%' },
+    { k: 'serp', t: 'chk', l: 'Змейкой', txt: 'менять направление строк (меньше полос)' }
+  ],
+  'c-view': [
+    { k: 'simPanel', t: 'chk', l: 'Цвета панели', txt: 'показывать цвета, как на реальной панели' },
+    { k: 'scale', t: 'sel', l: 'Масштаб экрана', o: { fit: 'По ширине окна', one: '1 : 1' } }
+  ]
+};
+const ctlEls = {};
+function buildControls() {
+  for (const [box, list] of Object.entries(CTRL)) {
+    const root = $(box); root.textContent = '';
+    for (const c of list) {
+      const d = document.createElement('div'); d.className = 'ctl' + (c.t === 'rng' ? '' : ' sel');
+      const lab = document.createElement('span'); lab.textContent = c.l; d.appendChild(lab);
+      let el, out = null;
+      if (c.t === 'rng') { el = document.createElement('input'); el.type = 'range'; el.min = c.min; el.max = c.max; el.step = c.step; out = document.createElement('output'); }
+      else if (c.t === 'sel') { el = document.createElement('select'); for (const [v, t] of Object.entries(c.o)) { const o = document.createElement('option'); o.value = v; o.textContent = t; el.appendChild(o); } }
+      else { const w = document.createElement('label'); el = document.createElement('input'); el.type = 'checkbox'; w.appendChild(el); w.appendChild(document.createTextNode(' ' + c.txt)); d.appendChild(w); }
+      if (c.t !== 'chk') d.appendChild(el);
+      if (out) d.appendChild(out);
+      el.addEventListener('input', () => { readCtl(c, el, out); P.preset = ''; markPreset(); schedule(); saveParams(); });
+      ctlEls[c.k] = { c, el, out }; root.appendChild(d);
+    }
   }
 }
-function wait(ms) { return new Promise(res => { const t = setTimeout(() => { waiter = null; res(false); }, ms); waiter = () => { clearTimeout(t); res(true); }; }); }
-async function send(arr, resp) { const v = new Uint8Array(arr); if (resp) await rx.writeValueWithResponse(v); else await rx.writeValueWithoutResponse(v); }
-async function sendRetry(arr, resp) {
-  for (let i = 0; i < 5; i++) { try { await send(arr, resp); return; } catch (e) { await sleep(20 * (i + 1)); } }
-  await send(arr, resp);
+function readCtl(c, el, out) {
+  let v = c.t === 'chk' ? el.checked : c.t === 'rng' ? +el.value : el.value;
+  if (c.k === 'bg') v = +v;
+  P[c.k] = v;
+  if (out) out.textContent = c.f(v);
+  if (c.k === 'pal') drawPalSw();
+}
+function writeCtls() {
+  for (const { c, el, out } of Object.values(ctlEls)) {
+    const v = P[c.k];
+    if (c.t === 'chk') el.checked = !!v; else el.value = String(v);
+    if (out) out.textContent = c.f(+v);
+  }
+  drawPalSw(); markPreset();
+}
+function markPreset() {
+  for (const b of $('presets').children) b.classList.toggle('p', b.dataset.k === P.preset);
+  $('presetNote').textContent = P.preset && PRESETS[P.preset] ? PRESETS[P.preset].note : 'Настройки изменены вручную.';
+}
+function buildPresets() {
+  const r = $('presets'); r.textContent = '';
+  for (const [k, p] of Object.entries(PRESETS)) { const b = document.createElement('button'); b.textContent = p.label; b.dataset.k = k; b.onclick = () => { Object.assign(P, JSON.parse(JSON.stringify(p.v)), { preset: k }); writeCtls(); schedule(); saveParams(); }; r.appendChild(b); }
+}
+function curPalette() {
+  if (P.pal === 'custom') return P.cust;
+  return PALETTES[P.pal].c;
+}
+function drawPalSw() {
+  const r = $('palsw'); r.textContent = '';
+  const names = ['Чёрный', 'Белый', 'Жёлтый', 'Красный'];
+  const pal = curPalette();
+  for (let i = 0; i < 4; i++) {
+    const w = document.createElement('label'); w.className = 'sub';
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = P.en[i]; cb.title = 'использовать цвет';
+    cb.onchange = () => { P.en[i] = cb.checked; if (P.en.filter(Boolean).length < 2) { P.en[i] = true; cb.checked = true; toast('Нужно оставить хотя бы два цвета'); } P.preset = ''; markPreset(); schedule(); saveParams(); };
+    const col = document.createElement('input'); col.type = 'color'; col.value = '#' + pal[i].map(x => x.toString(16).padStart(2, '0')).join('');
+    col.onchange = () => { P.cust = P.pal === 'custom' ? P.cust : pal.map(c => c.slice()); P.pal = 'custom'; P.cust[i] = [1, 3, 5].map(o => parseInt(col.value.substr(o, 2), 16)); ctlEls.pal.el.value = 'custom'; P.preset = ''; markPreset(); drawPalSw(); schedule(); saveParams(); };
+    w.appendChild(cb); w.appendChild(col); w.appendChild(document.createTextNode(names[i])); r.appendChild(w);
+  }
+}
+function saveParams() { const q = Object.assign({}, P); lsSet('gs.params', q); }
+
+// ---- исходная картинка и отрисовка
+const pv = $('pv'), pctx = pv.getContext('2d', { willReadFrequently: true });
+const base = document.createElement('canvas'); base.width = W; base.height = H; const bctx = base.getContext('2d', { willReadFrequently: true });
+let src = null, srcName = '', lastIdx = null, lastFrame = null, convBusy = false, convAgain = false, stats = null;
+
+function setSource(img, name) {
+  src = img; srcName = name || 'картинка';
+  P.zoom = 1; P.panX = 0; P.panY = 0; P.rot = 0; P.flipH = false; P.flipV = false; ctlEls.zoom.el.value = 1; ctlEls.zoom.out.textContent = '1.00×';
+  $('srcName').textContent = srcName + ' · ' + (img.width || img.naturalWidth) + '×' + (img.height || img.naturalHeight);
+  $('pvhint').style.display = 'none';
+  schedule();
+}
+async function loadFile(f) {
+  if (!f) return;
+  try { const bmp = await createImageBitmap(f); setSource(bmp, f.name); log('загружена картинка ' + f.name + ' (' + bmp.width + '×' + bmp.height + ')'); }
+  catch (e) { toast('Не удалось открыть картинку: ' + e.message); }
+}
+function renderBase() {
+  const bgc = PALETTES.ideal.c[P.bg];
+  bctx.setTransform(1, 0, 0, 1, 0, 0);
+  bctx.fillStyle = 'rgb(' + bgc.join(',') + ')'; bctx.fillRect(0, 0, W, H);
+  if (!src) return;
+  const iw = src.width || src.naturalWidth, ih = src.height || src.naturalHeight;
+  const sw = P.rot % 180 ? ih : iw, sh = P.rot % 180 ? iw : ih;
+  let sx, sy;
+  if (P.fit === 'stretch') { sx = W / sw * P.zoom; sy = H / sh * P.zoom; }
+  else { const s = (P.fit === 'cover' ? Math.max(W / sw, H / sh) : Math.min(W / sw, H / sh)) * P.zoom; sx = sy = s; }
+  bctx.imageSmoothingEnabled = true; bctx.imageSmoothingQuality = 'high';
+  bctx.translate(W / 2 + P.panX, H / 2 + P.panY); bctx.scale(sx, sy); bctx.rotate(P.rot * Math.PI / 180); bctx.scale(P.flipH ? -1 : 1, P.flipV ? -1 : 1);
+  bctx.drawImage(src, -iw / 2, -ih / 2);
+  bctx.setTransform(1, 0, 0, 1, 0, 0);
 }
 
-function setUi(on) { for (const id of ['bVer', 'bDisc', 'bPing', 'bStat', 'bReset', 'bUp', 'bFInfo', 'bFErase', 'bFProg', 'bFScan']) $(id).disabled = !on; $('bConn').disabled = on; }
-$('bConn').onclick = async () => {
-  try {
-    dev = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: 'V300' }], optionalServices: [SVC] });
-    dev.addEventListener('gattserverdisconnected', () => { log('соединение закрыто'); $('st').textContent = 'не подключено'; setUi(false); });
-    log('подключаюсь к ' + dev.name + ' ...');
-    const srv = await dev.gatt.connect();
-    const svc = await srv.getPrimaryService(SVC);
-    rx = await svc.getCharacteristic(RXC); tx = await svc.getCharacteristic(TXC);
-    tx.addEventListener('characteristicvaluechanged', onNotify);
-    await tx.startNotifications();
-    $('st').textContent = 'подключено: ' + dev.name; setUi(true); log('готово');
-  } catch (e) { log('ошибка подключения: ' + e); }
-};
-$('bDisc').onclick = () => { if (dev && dev.gatt.connected) dev.gatt.disconnect(); };
-$('bPing').onclick = () => send([1, 0x11, 0x22, 0x33], true).catch(e => log('' + e));
-$('bStat').onclick = () => send([2], true).catch(e => log('' + e));
-$('bReset').onclick = () => send([3], true).catch(e => log('' + e));
-$('bFInfo').onclick = () => send([0x20], true).catch(e => log('' + e));
-$('bFErase').onclick = () => { log('стираю сектор ' + $('sec').value + ' ...'); send([0x21, +$('sec').value], true).catch(e => log('' + e)); };
-$('bFProg').onclick = () => { log('записываю страницу в сектор ' + $('sec').value + ' ...'); send([0x22, +$('sec').value], true).catch(e => log('' + e)); };
-$('bFScan').onclick = () => send([0x23, +$('sec').value, 0], true).catch(e => log('' + e));
-$('bVer').onclick = () => { log('читаю слот ' + $('slot').value + ' из флеш ...'); send([0x24, +$('slot').value], true).catch(e => log('' + e)); };
-$('bStop').onclick = () => { stopFlag = true; };
+// ---- тон
+function tone(data) {
+  const N = W * H, out = new Float32Array(N * 3);
+  let lo = 0, hi = 255;
+  if (P.auto) {
+    const hist = new Uint32Array(256);
+    for (let i = 0; i < N; i++) hist[(0.2126 * data[i * 4] + 0.7152 * data[i * 4 + 1] + 0.0722 * data[i * 4 + 2]) | 0]++;
+    let acc = 0; const a = N * 0.005, b = N * 0.995; lo = 0; hi = 255;
+    for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= a) { lo = v; break; } }
+    acc = 0; for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= b) { hi = v; break; } }
+    if (hi - lo < 24) { lo = 0; hi = 255; }
+  }
+  const lscale = 255 / (hi - lo), cf = (259 * (P.contrast + 255)) / (255 * (259 - P.contrast)), bo = P.bright * 2.55, ig = 1 / P.gamma, sat = P.sat / 100;
+  const gl = new Float32Array(256); for (let i = 0; i < 256; i++) gl[i] = 255 * Math.pow(i / 255, ig);
+  for (let i = 0; i < N; i++) {
+    let r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+    if (P.auto) { r = (r - lo) * lscale; g = (g - lo) * lscale; b = (b - lo) * lscale; }
+    r = cf * (r + bo - 128) + 128; g = cf * (g + bo - 128) + 128; b = cf * (b + bo - 128) + 128;
+    r = gl[clamp(r | 0, 0, 255)]; g = gl[clamp(g | 0, 0, 255)]; b = gl[clamp(b | 0, 0, 255)];
+    const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    out[i * 3] = clamp(y + (r - y) * sat, 0, 255); out[i * 3 + 1] = clamp(y + (g - y) * sat, 0, 255); out[i * 3 + 2] = clamp(b < 0 ? 0 : y + (b - y) * sat, 0, 255);
+  }
+  if (P.sharp > 0) {                                   // нерезкая маска, размытие 3×3
+    const amt = P.sharp / 100 * 1.4, tmp = new Float32Array(N * 3), cp = new Float32Array(out);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let c = 0; c < 3; c++) {
+      const xm = x > 0 ? x - 1 : x, xp = x < W - 1 ? x + 1 : x; tmp[(y * W + x) * 3 + c] = (cp[(y * W + xm) * 3 + c] + cp[(y * W + x) * 3 + c] + cp[(y * W + xp) * 3 + c]) / 3;
+    }
+    for (let y = 0; y < H; y++) { const ym = y > 0 ? y - 1 : y, yp = y < H - 1 ? y + 1 : y; for (let x = 0; x < W; x++) for (let c = 0; c < 3; c++) {
+      const bl = (tmp[(ym * W + x) * 3 + c] + tmp[(y * W + x) * 3 + c] + tmp[(yp * W + x) * 3 + c]) / 3, o = (y * W + x) * 3 + c;
+      out[o] = clamp(cp[o] + amt * (cp[o] - bl), 0, 255);
+    } }
+  }
+  return out;
+}
 
-// ---- upload (RAM sink). Window of 4 pages in flight; the tag buffers 8.
+// ---- квантование
+const LIN = (() => { const t = new Float32Array(1024); for (let i = 0; i < 1024; i++) { const v = i / 1023; t[i] = v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); } return t; })();
+const lin8 = v => LIN[(v * (1023 / 255) + 0.5) | 0];
+const fcb = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+function lab(r, g, b, o) {                                    // линейный RGB 0..1 → Lab
+  const fx = fcb((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047), fy = fcb(0.2126 * r + 0.7152 * g + 0.0722 * b), fz = fcb((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
+  o[0] = 116 * fy - 16; o[1] = 500 * (fx - fy); o[2] = 200 * (fy - fz);
+}
+function quantize(adj) {
+  const N = W * H, idx = new Uint8Array(N), pal = curPalette(), en = P.en;
+  const pl = pal.map(c => [lin8(c[0]), lin8(c[1]), lin8(c[2])]), pLab = pl.map(c => { const o = [0, 0, 0]; lab(c[0], c[1], c[2], o); return o; });
+  const cand = [0, 1, 2, 3].filter(i => en[i]), useLab = P.dist === 'lab', tmp = [0, 0, 0];
+  function nearest(r, g, b) {
+    let best = cand[0], bd = 1e30;
+    if (useLab) { lab(r, g, b, tmp); for (const i of cand) { const d0 = tmp[0] - pLab[i][0], d1 = tmp[1] - pLab[i][1], d2 = tmp[2] - pLab[i][2], d = d0 * d0 + d1 * d1 + d2 * d2; if (d < bd) { bd = d; best = i; } } }
+    else for (const i of cand) { const d0 = r - pl[i][0], d1 = g - pl[i][1], d2 = b - pl[i][2], d = 0.3 * d0 * d0 + 0.59 * d1 * d1 + 0.11 * d2 * d2; if (d < bd) { bd = d; best = i; } }
+    return best;
+  }
+  const algo = P.algo, str = P.strength / 100;
+  if (algo === 'none') {
+    for (let i = 0; i < N; i++) idx[i] = nearest(lin8(adj[i * 3]), lin8(adj[i * 3 + 1]), lin8(adj[i * 3 + 2]));
+  } else if (algo === 'bayer4' || algo === 'bayer8' || algo === 'noise') {
+    const spread = 0.55 * str;                              // порог добавляется в гамма-пространстве
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = y * W + x; let t;
+      if (algo === 'bayer4') t = (BAYER4[(y & 3) * 4 + (x & 3)] + 0.5) / 16 - 0.5;
+      else if (algo === 'bayer8') t = (BAYER8[(y & 7) * 8 + (x & 7)] + 0.5) / 64 - 0.5;
+      else { const f = 0.06711056 * x + 0.00583715 * y; t = (52.9829189 * (f - Math.floor(f))) % 1 - 0.5; }
+      const o = t * spread * 255;
+      idx[i] = nearest(lin8(clamp(adj[i * 3] + o, 0, 255)), lin8(clamp(adj[i * 3 + 1] + o, 0, 255)), lin8(clamp(adj[i * 3 + 2] + o, 0, 255)));
+    }
+  } else {
+    const K = KERNELS[algo], lin = new Float32Array(N * 3);
+    for (let i = 0; i < N * 3; i++) lin[i] = lin8(adj[i]);
+    for (let y = 0; y < H; y++) {
+      const rev = P.serp && (y & 1);
+      for (let s = 0; s < W; s++) {
+        const x = rev ? W - 1 - s : s, i = y * W + x, o = i * 3;
+        const r = clamp(lin[o], 0, 1), g = clamp(lin[o + 1], 0, 1), b = clamp(lin[o + 2], 0, 1);
+        const k = nearest(r, g, b); idx[i] = k;
+        const er = (r - pl[k][0]) * str / K.d, eg = (g - pl[k][1]) * str / K.d, eb = (b - pl[k][2]) * str / K.d;
+        for (const [dx, dy, w] of K.k) {
+          const xx = x + (rev ? -dx : dx), yy = y + dy;
+          if (xx < 0 || xx >= W || yy >= H) continue;
+          const q = (yy * W + xx) * 3; lin[q] += er * w; lin[q + 1] += eg * w; lin[q + 2] += eb * w;
+        }
+      }
+    }
+  }
+  return idx;
+}
+function drawOut(idx) {
+  const pal = P.simPanel ? PALETTES.panel.c : curPalette(), img = pctx.createImageData(W, H), d = img.data;
+  for (let i = 0; i < W * H; i++) { const c = pal[idx[i]]; d[i * 4] = c[0]; d[i * 4 + 1] = c[1]; d[i * 4 + 2] = c[2]; d[i * 4 + 3] = 255; }
+  pctx.putImageData(img, 0, 0);
+  pv.style.width = P.scale === 'one' ? W + 'px' : '100%'; $('pvwrap').style.overflow = P.scale === 'one' ? 'auto' : 'hidden';
+}
+function buildFrame(idx, orient) {
+  const f = new Uint8Array(FRAME);
+  for (let line = 0; line < W; line++) for (let p = 0; p < H; p++) {
+    const u = orient === 'left' ? line : W - 1 - line, v = orient === 'left' ? H - 1 - p : p;
+    f[line * 64 + (p >> 2)] |= idx[v * W + u] << (6 - 2 * (p & 3));
+  }
+  return f;
+}
+function frameToIdx(frame, orient) {
+  const idx = new Uint8Array(W * H);
+  for (let line = 0; line < W; line++) for (let p = 0; p < H; p++) {
+    const u = orient === 'left' ? line : W - 1 - line, v = orient === 'left' ? H - 1 - p : p;
+    idx[v * W + u] = (frame[line * 64 + (p >> 2)] >> (6 - 2 * (p & 3))) & 3;
+  }
+  return idx;
+}
+function idxToCanvas(idx, palette, w = W, h = H) {
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const c = cv.getContext('2d'), img = c.createImageData(W, H), d = img.data;
+  for (let i = 0; i < W * H; i++) { const p = palette[idx[i]]; d[i * 4] = p[0]; d[i * 4 + 1] = p[1]; d[i * 4 + 2] = p[2]; d[i * 4 + 3] = 255; }
+  c.putImageData(img, 0, 0);
+  if (w === W) return cv;
+  const s = document.createElement('canvas'); s.width = w; s.height = h; const sc = s.getContext('2d'); sc.imageSmoothingQuality = 'high'; sc.drawImage(cv, 0, 0, w, h); return s;
+}
+
+let schT = 0;
+function schedule() { clearTimeout(schT); schT = setTimeout(convert, 90); }
+async function convert() {
+  if (convBusy) { convAgain = true; return; }
+  convBusy = true;
+  try {
+    const t0 = performance.now();
+    renderBase();
+    const adj = tone(bctx.getImageData(0, 0, W, H).data);
+    await sleep(0);
+    const idx = quantize(adj);
+    lastIdx = idx; lastFrame = buildFrame(idx, P.orient);
+    drawOut(idx);
+    const cnt = [0, 0, 0, 0]; for (let i = 0; i < idx.length; i++) cnt[idx[i]]++;
+    stats = { cnt, ms: performance.now() - t0 };
+    const pal = curPalette(), nm = ['чёрный', 'белый', 'жёлтый', 'красный'];
+    $('stat').innerHTML = cnt.map((c, i) => '<span><span class="sw" style="background:rgb(' + pal[i].join(',') + ')"></span>' + nm[i] + ' ' + (100 * c / idx.length).toFixed(1) + '%</span>').join('') + '<span>расчёт ' + stats.ms.toFixed(0) + ' мс</span>';
+    $('cvInfo').textContent = 'кадр ' + FRAME + ' Б, CRC ' + h8(crc32(lastFrame));
+    for (const id of ['bPng', 'bBin']) $(id).disabled = !src;
+    updateUpButtons();
+  } catch (e) { log('ошибка конвертера: ' + e.message); }
+  convBusy = false;
+  if (convAgain) { convAgain = false; schedule(); }
+}
+
+function demoImage() {                                    // пример для проверки без файла: цветной градиент, шары, текст
+  const c = document.createElement('canvas'); c.width = 1440; c.height = 512; const x = c.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 1440, 512); g.addColorStop(0, '#0a1f6b'); g.addColorStop(.45, '#c4308b'); g.addColorStop(.75, '#ff7a1a'); g.addColorStop(1, '#ffe14d'); x.fillStyle = g; x.fillRect(0, 0, 1440, 512);
+  const cols = ['#e53935', '#fdd835', '#43a047', '#1e88e5', '#ffffff', '#000000'];
+  for (let i = 0; i < 6; i++) { const rg = x.createRadialGradient(200 + i * 220, 250, 10, 220 + i * 220, 270, 110); rg.addColorStop(0, '#fff'); rg.addColorStop(.35, cols[i]); rg.addColorStop(1, 'rgba(0,0,0,.55)'); x.fillStyle = rg; x.beginPath(); x.arc(220 + i * 220, 270, 100, 0, 7); x.fill(); }
+  x.fillStyle = '#fff'; x.font = 'bold 120px sans-serif'; x.textAlign = 'center'; x.fillText('GECKO SLIDE', 720, 110); x.fillStyle = '#000'; x.font = 'bold 54px sans-serif'; x.fillText('4 цвета BWRY', 720, 480);
+  return c;
+}
+
+// ---- мышь: перетаскивание и колесо
+(() => {
+  let drag = null;
+  pv.addEventListener('pointerdown', e => { if (!src) return; drag = { x: e.clientX, y: e.clientY, px: P.panX, py: P.panY }; pv.setPointerCapture(e.pointerId); pv.style.cursor = 'grabbing'; });
+  pv.addEventListener('pointermove', e => { if (!drag) return; const k = W / pv.getBoundingClientRect().width; P.panX = drag.px + (e.clientX - drag.x) * k; P.panY = drag.py + (e.clientY - drag.y) * k; schedule(); });
+  const end = () => { if (drag) { drag = null; pv.style.cursor = 'grab'; saveParams(); } };
+  pv.addEventListener('pointerup', end); pv.addEventListener('pointercancel', end);
+  pv.addEventListener('wheel', e => { if (!src) return; e.preventDefault(); P.zoom = clamp(P.zoom * (e.deltaY < 0 ? 1.06 : 1 / 1.06), 0.3, 6); ctlEls.zoom.el.value = P.zoom; ctlEls.zoom.out.textContent = P.zoom.toFixed(2) + '×'; schedule(); }, { passive: false });
+  const wrap = $('pvwrap');
+  ['dragenter', 'dragover'].forEach(n => wrap.addEventListener(n, e => { e.preventDefault(); wrap.classList.add('drop'); }));
+  ['dragleave', 'drop'].forEach(n => wrap.addEventListener(n, e => { e.preventDefault(); wrap.classList.remove('drop'); }));
+  wrap.addEventListener('drop', e => loadFile(e.dataTransfer.files[0]));
+  document.addEventListener('paste', e => { const f = [...(e.clipboardData ? e.clipboardData.files : [])].find(x => x.type.startsWith('image/')); if (f) loadFile(f); });
+})();
+$('bOpen').onclick = () => $('file').click();
+$('file').onchange = e => { loadFile(e.target.files[0]); e.target.value = ''; };
+$('bPaste').onclick = async () => {
+  try { const items = await navigator.clipboard.read(); for (const it of items) { const t = it.types.find(x => x.startsWith('image/')); if (t) { loadFile(await it.getType(t)); return; } } toast('В буфере нет картинки'); }
+  catch (e) { toast('Браузер не дал прочитать буфер: нажмите Ctrl+V на странице'); }
+};
+$('bDemo').onclick = async () => setSource(await createImageBitmap(demoImage()), 'пример');
+$('bRotL').onclick = () => { P.rot = (P.rot + 270) % 360; schedule(); };
+$('bRotR').onclick = () => { P.rot = (P.rot + 90) % 360; schedule(); };
+$('bFlipH').onclick = () => { P.flipH = !P.flipH; schedule(); };
+$('bFlipV').onclick = () => { P.flipV = !P.flipV; schedule(); };
+$('bView').onclick = () => { P.zoom = 1; P.panX = 0; P.panY = 0; ctlEls.zoom.el.value = 1; ctlEls.zoom.out.textContent = '1.00×'; schedule(); };
+$('bPng').onclick = () => pv.toBlob(b => download(b, 'gecko-slide.png'));
+$('bBin').onclick = () => { if (lastFrame) download(new Blob([lastFrame]), 'slide-frame-' + h8(crc32(lastFrame)) + '.bin'); };
+
+/* ===================================================================================================================
+   БИБЛИОТЕКА слотов в браузере (IndexedDB)
+   =================================================================================================================== */
+const LIB = {
+  db: null, mem: new Map(),
+  async open() {
+    try { this.db = await new Promise((res, rej) => { const r = indexedDB.open('gecko-slide', 1); r.onupgradeneeded = () => r.result.createObjectStore('slots', { keyPath: 'slot' }); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
+    catch (e) { this.db = null; log('библиотека: IndexedDB недоступна, картинки помню только до закрытия страницы'); }
+    for (let s = 1; s <= 7; s++) { const r = await this.get(s); if (r) this.mem.set(s, r); }
+  },
+  tx(mode, fn) { return new Promise((res, rej) => { const t = this.db.transaction('slots', mode), r = fn(t.objectStore('slots')); t.oncomplete = () => res(r && r.result); t.onerror = () => rej(t.error); }); },
+  async get(s) { if (!this.db) return this.mem.get(s) || null; try { return (await this.tx('readonly', st => st.get(s))) || null; } catch (e) { return null; } },
+  async put(rec) { this.mem.set(rec.slot, rec); if (this.db) try { await this.tx('readwrite', st => st.put(rec)); } catch (e) { log('библиотека: не удалось записать: ' + e); } },
+  async del(s) { this.mem.delete(s); if (this.db) try { await this.tx('readwrite', st => st.delete(s)); } catch (e) { /* ignore */ } }
+};
+
+/* ===================================================================================================================
+   BLUETOOTH
+   =================================================================================================================== */
+const SVC = '53455300-0300-4f45-5000-534c49444500', RXC = '53455301-0300-4f45-5000-534c49444500', TXC = '53455302-0300-4f45-5000-534c49444500';
+let dev = null, rx = null, tx = null, queue = [], waiter = null, stopFlag = false, busy = false;
+const tag = { slots: new Array(8).fill(null), cfg: null, st: null, hw: {}, statusAt: 0 };
+const connected = () => !!(dev && dev.gatt && dev.gatt.connected);
+
+function onNotify(e) {
+  const v = e.target.value, a = new Uint8Array(v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength));
+  queue.push(a); if (queue.length > 300) queue.shift();
+  if (waiter) { const w = waiter; waiter = null; w(); }
+  try { handle(a); } catch (er) { log('ошибка разбора ' + hex(a) + ': ' + er.message); }
+}
+function wait(ms) { return new Promise(res => { const t = setTimeout(() => { waiter = null; res(false); }, ms); waiter = () => { clearTimeout(t); res(true); }; }); }
 async function expect(pred, ms) {
   const t0 = performance.now();
   for (;;) {
@@ -129,63 +597,304 @@ async function expect(pred, ms) {
     await wait(left);
   }
 }
-async function upload(total) {
-  const img = new Uint8Array(total); for (let i = 0; i < total; i++) img[i] = (i * 31 + (i >> 8) * 7 + 5) & 255;
-  const want = crc32(img), pages = Math.ceil(total / 256);
-  busy = true; stopFlag = false; queue = []; $('bUp').disabled = true; $('bStop').disabled = false; $('res').textContent = '';
-  const t0 = performance.now(); let retried = 0, sentChunks = 0;
-  const chunk = async (idx) => {
-    const m = new Uint8Array(19); m[0] = 0x11; m[1] = idx & 255; m[2] = idx >> 8;
-    const part = img.subarray(idx * 16, Math.min(total, idx * 16 + 16)); m.set(part, 3); await sendRetry(m, false); sentChunks++;
-  };
+async function send(arr, resp) { const v = new Uint8Array(arr); if (resp) await rx.writeValueWithResponse(v); else await rx.writeValueWithoutResponse(v); }
+async function sendRetry(arr, resp) {
+  for (let i = 0; i < 5; i++) { try { await send(arr, resp); return; } catch (e) { await sleep(20 * (i + 1)); } }
+  await send(arr, resp);
+}
+const cmd = (arr, what) => sendRetry(arr, true).catch(e => { log((what || 'команда') + ': ' + e.message); toast('Ошибка связи: ' + e.message); });
+
+const PN_STATE = ['не запускалось', 'идёт обновление', 'готово', 'ошибка'];
+const PN_ERR = { 0: 'нет', 1: 'BUSY панели не поднялся после сброса', 2: 'ID чипа панели не 0x0D04', 3: 'OTP: таймаут', 4: 'OTP: таймаут в конце', 5: 'нет метки в OTP', 6: 'BUSY после второго сброса', 7: 'инициализация: таймаут', 8: 'DC/DC: таймаут', 9: 'обновление: таймаут', 10: 'отключение DC/DC: таймаут', 11: 'flash не отвечает при выводе слайда' };
+const PN_SRC = ['—', 'заставка', 'слот', 'заливка'];
+const RES_TXT = ['запущено (около 30 с)', 'экран ещё обновляется', 'в слоте нет кадра 720×256', 'flash занята (загрузка или тест)'];
+const STEP_PCT = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 25, 28, 55, 78, 80, 82, 84, 86, 90, 95, 100, 100];
+const STEP_TXT = s => s === 0 ? 'ожидание' : s <= 8 ? 'включение и сброс панели' : s === 9 ? 'идентификатор панели' : s <= 13 ? 'чтение OTP' : s <= 15 ? 'инициализация' : s === 16 ? 'передача изображения' : s === 17 ? 'включение DC/DC' : s === 18 ? 'смена изображения (≈ 19 с)' : s <= 24 ? 'остановка DC/DC' : s <= 26 ? 'выключение' : 'готово';
+
+function handle(a) {
+  switch (a[0]) {
+    case 0xB0: {
+      tag.st = { pst: a[1], perr: a[2], src: a[3], shown: a[4], step: a[5], nextS: u32(a, 6), upS: u32(a, 10), count: u16(a, 14), crcBad: a[16], auto: !!(a[17] & 1), flashIdle: !!(a[17] & 2), scanning: !!(a[17] & 4) };
+      tag.statusAt = performance.now(); renderTag(); renderSlideInfo(); break; }
+    case 0xB1: {
+      const s = a[1]; if (s < 1 || s > 7) break;
+      tag.slots[s] = { valid: !!(a[2] & 1), show: !!(a[2] & 2), inList: !!(a[2] & 4), cur: !!(a[2] & 8), total: u32(a, 3), crc: u32(a, 7) };
+      renderSlots(); break; }
+    case 0xB3: toast(({ 0x32: 'Показ слота: ', 0x33: 'Следующий слайд: ', 0x38: 'Заливка: ', 0x39: 'Заставка: ' }[a[1]] || 'Команда: ') + (RES_TXT[a[2]] || a[2])); setTimeout(() => { if (!busy) cmd([0x30]); }, 400); break;
+    case 0xB4:
+      tag.cfg = { en: !!a[2], mode: a[3], interval: u16(a, 4), mask: a[6], temp: (a[7] << 24) >> 24, tx: (a[8] << 24) >> 24, txAct: ((a[9] | a[10] << 8) << 16) >> 16 };
+      fillCfg(); renderSlots(); renderSlideInfo(); break;
+    case 0xB5: toast('Метка перезагружается; подключитесь заново через несколько секунд'); break;
+    case 0xB6: tag.hw[a[1]] = a; renderHw(); break;
+    case 0xB7:
+      log('экран: обновление закончено — ' + (a[1] === 2 ? 'успешно' : 'ОШИБКА ' + (PN_ERR[a[2]] || a[2])) + ', источник: ' + PN_SRC[a[3]] + (a[3] === 2 ? ' ' + a[4] : ''));
+      if (a[1] === 3) toast('Ошибка обновления экрана: ' + (PN_ERR[a[2]] || a[2]));
+      else toast('Экран обновлён');
+      if (!busy) cmd([0x30]); break;
+    case 0x81: log('ping-ответ: ' + hex(a.slice(1))); break;
+    case 0x82: log('счётчики метки: принято ' + u32(a, 1) + ' байт, записей ' + u16(a, 5)); break;
+    case 0x83: log('счётчики сброшены'); break;
+    case 0xA0: log('flash: JEDEC ' + hex(a.slice(1, 4)) + ' (ожидается ef 40 13), SR1=' + a[4].toString(16) + ' SR2=' + a[5].toString(16) + ' SR3=' + a[6].toString(16)); break;
+    case 0xA1: case 0xA2: {
+      const names = ['успешно', 'BUSY не снялся за 3 с', 'сектор не пуст после стирания', 'бит записи (WEL) не установился', 'данные не совпали при чтении', 'неверные параметры или flash занята'];
+      if (!busy) log((a[0] === 0xA1 ? 'стирание: ' : 'запись страницы: ') + (names[a[1]] || a[1]) + '; BUSY ' + (u32(a, 2) / 1000).toFixed(1) + ' мс; не FF/расхождений: ' + u16(a, 9)); break; }
+    case 0xA3: if (!busy) log('чтение: результат ' + a[1] + ', байт не равных FF: ' + (a.length >= 6 ? u32(a, 2) : '-')); break;
+    case 0xA4: {
+      const st = ['flash совпадает с записью (CRC верный)', 'в слоте нет действительной записи', 'CRC flash НЕ совпал с записью'][a[2]] || ('занято/ошибка ' + a[2]);
+      log('слот ' + a[1] + ': ' + st + '; ' + u32(a, 3) + ' байт, CRC при чтении ' + h8(u32(a, 7)));
+      tag.verify = { slot: a[1], status: a[2] }; if (!busy) { renderSlots(); cmd([0x31]); } break; }
+    default: if (!busy) log('уведомление ' + hex(a));
+  }
+}
+
+async function connect() {
+  if (!navigator.bluetooth) { toast('Этот браузер не поддерживает Web Bluetooth: нужен Chrome (компьютер или Android) по https'); return; }
+  try {
+    dev = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: 'V300' }], optionalServices: [SVC] });
+    dev.addEventListener('gattserverdisconnected', onDisc);
+    log('подключаюсь к ' + dev.name + ' ...');
+    const srv = await dev.gatt.connect(), svc = await srv.getPrimaryService(SVC);
+    rx = await svc.getCharacteristic(RXC); tx = await svc.getCharacteristic(TXC);
+    tx.addEventListener('characteristicvaluechanged', onNotify);
+    await tx.startNotifications();
+    setConn(true); log('готово');
+    await sleep(150); await cmd([0x35]); await sleep(150); await cmd([0x31]); await sleep(150); await cmd([0x30]);
+  } catch (e) { log('ошибка подключения: ' + e); toast('Не удалось подключиться: ' + (e.message || e)); }
+}
+function onDisc() { log('соединение закрыто'); setConn(false); }
+function setConn(on) {
+  $('connPill').classList.toggle('on', on); $('connTxt').textContent = on ? 'подключено: ' + (dev ? dev.name : '') : 'не подключено';
+  $('bConn').disabled = on; $('bDisc').disabled = !on;
+  for (const id of ['bSlots', 'bNext', 'bCfg', 'bCfgGet', 'bShowNext', 'bSplash', 'bReboot', 'bHw', 'bPing', 'bStat', 'bReset', 'bRam', 'bFInfo', 'bFErase', 'bFProg', 'bFScan', 'bVer']) $(id).disabled = !on;
+  document.querySelectorAll('.fill').forEach(b => b.disabled = !on);
+  updateUpButtons(); renderSlots();
+}
+$('bConn').onclick = connect;
+$('bDisc').onclick = () => { if (connected()) dev.gatt.disconnect(); };
+setInterval(() => { if (connected() && !busy && document.visibilityState === 'visible') cmd([0x30]); }, 5000);
+setInterval(() => { if (tag.st) { renderSlideInfo(); renderTagCountdown(); } }, 1000);
+
+/* ---------- отображение состояния метки ---------- */
+const fmtT = s => s === 0xFFFFFFFF ? '—' : (s >= 3600 ? Math.floor(s / 3600) + ' ч ' : '') + String(Math.floor(s % 3600 / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+const fmtUp = s => (s >= 86400 ? Math.floor(s / 86400) + ' д ' : '') + (s >= 3600 ? Math.floor(s % 86400 / 3600) + ' ч ' : '') + Math.floor(s % 3600 / 60) + ' мин ' + s % 60 + ' с';
+function nextLeft() { if (!tag.st || tag.st.nextS === 0xFFFFFFFF || !tag.st.auto) return 0xFFFFFFFF; return Math.max(0, tag.st.nextS - Math.floor((performance.now() - tag.statusAt) / 1000)); }
+function renderTagCountdown() { const e = $('kvNext'); if (e) e.textContent = fmtT(nextLeft()); }
+function renderTag() {
+  const s = tag.st; if (!s) return;
+  $('pnState').innerHTML = (s.pst === 1 ? '⏳ ' : s.pst === 3 ? '⚠️ ' : s.pst === 2 ? '✔️ ' : '') + PN_STATE[s.pst] + (s.pst === 1 ? ': ' + STEP_TXT(s.step) : '');
+  $('pnBar').style.width = (s.pst === 1 ? STEP_PCT[Math.min(s.step, 27)] : s.pst === 0 ? 0 : 100) + '%';
+  $('pnKv').innerHTML = '';
+  const rows = [['Показано', s.src === 2 ? 'слот ' + s.shown : s.src === 3 ? 'заливка ' + ['чёрная', 'белая', 'жёлтая', 'красная'][s.shown & 3] : PN_SRC[s.src]], ['Ошибка панели', s.perr ? PN_ERR[s.perr] || s.perr : 'нет'],
+    ['Обновлений с запуска', s.count], ['Расхождений CRC слота', s.crcBad], ['До автосмены', '<span id="kvNext">' + fmtT(nextLeft()) + '</span>'], ['Работает', fmtUp(s.upS)]];
+  for (const [k, v] of rows) { const a = document.createElement('div'), b = document.createElement('div'); a.textContent = k; b.innerHTML = v; $('pnKv').append(a, b); }
+}
+function renderSlideInfo() {
+  const s = tag.st, c = tag.cfg; if (!s) { $('slideInfo').textContent = ''; return; }
+  $('slideInfo').textContent = (s.pst === 1 ? 'Экран обновляется (' + STEP_TXT(s.step) + '). ' : '') + (c && c.en ? 'Следующая смена через ' + fmtT(nextLeft()) + '. ' : 'Автосмена выключена. ') + 'Показано: ' + (s.src === 2 ? 'слот ' + s.shown : PN_SRC[s.src]) + '.';
+}
+const RST_BITS = [[0, 'включение питания'], [1, 'сброс по выводу RESET'], [2, 'выход из EM4'], [3, 'сторожевой таймер'], [4, 'просадка питания'], [5, 'зависание ядра'], [6, 'программный сброс'], [7, 'ошибка питания DECOUPLE']];
+function renderHw() {
+  const h = tag.hw, kv = $('hwKv'); kv.textContent = '';
+  const add = (k, v, cls) => { const a = document.createElement('div'), b = document.createElement('div'); a.textContent = k; if (v instanceof Node) b.appendChild(v); else b.textContent = v; if (cls) b.className = cls; kv.append(a, b); };
+  if (h[0]) { const rc = u32(h[0], 4), why = RST_BITS.filter(([b]) => rc >> b & 1).map(x => x[1]).join(', ') || (rc ? '0x' + rc.toString(16) : 'не определён');
+    add('Прошивка', 'v' + h[0][2] + '.' + h[0][3] + ' (Gecko Slide)'); add('Причина последнего сброса', why); add('Работает', fmtUp(u32(h[0], 8))); add('Слово PART', '0x' + h8(u32(h[0], 12))); }
+  if (h[1]) { const id = hex(h[1].slice(2, 10)).replace(/ /g, ''), sp = document.createElement('span'); sp.textContent = id; sp.className = 'blur'; sp.title = 'нажмите, чтобы показать'; sp.onclick = () => sp.classList.toggle('show');
+    add('Уникальный ID (EUI-64)', sp); add('Память чипа', u16(h[1], 10) + ' КБ flash, ' + u16(h[1], 12) + ' КБ ОЗУ'); }
+  if (h[2]) { const j = hex(h[2].slice(2, 5)); add('Внешняя flash (JEDEC)', j === '00 00 00' ? 'ещё не читалась (кнопка «Идентификатор» в Инструментах)' : j + (j === 'ef 40 13' ? ' — Winbond, 4 Мбит (512 КиБ)' : ''));
+    add('Панель', 'ID чипа 0x' + u16(h[2], 5).toString(16).padStart(4, '0') + (u16(h[2], 5) === 0x0D04 ? ' (PDi BWRY Medium)' : '') + ', обновлений ' + u16(h[2], 12) + ', расхождений CRC ' + h[2][14]); add('Последнее обновление панели', u32(h[2], 8) ? (u32(h[2], 8) / 1000).toFixed(1) + ' с на смену картинки' : '—'); }
+  if (h[3]) { add('Интервал соединения', (u32(h[3], 2) / 1000).toFixed(1) + ' мс'); add('Соединений с запуска', u16(h[3], 6)); add('Уровень сигнала (последний)', ((h[3][8] << 24) >> 24) + ' дБм'); add('Мощность передатчика', ((((h[3][9] | h[3][10] << 8) << 16) >> 16) / 10).toFixed(1) + ' дБм'); add('Сторожевой таймер', h[3][11] ? 'включён (8 с)' : 'выключен'); add('Журнал настроек (счётчик записей)', h[3][12]); }
+}
+
+/* ---------- слоты ---------- */
+function fillSelects() {
+  const up = $('upSlot'), v = $('vSlot'); up.textContent = ''; v.textContent = '';
+  for (let s = 1; s <= 7; s++) { up.add(new Option('слот ' + s, s)); v.add(new Option(s, s)); }
+  up.value = String(lsGet('gs.slot', 1));
+  up.onchange = () => lsSet('gs.slot', +up.value);
+  for (let i = 0; i < 15; i++) $('sec').add(new Option(i + '  (0x' + (i * 4096).toString(16).padStart(5, '0') + ')', i));
+  $('sec').value = 14;
+}
+const slotCv = {};
+function renderSlots() {
+  const g = $('slotGrid'); g.textContent = '';
+  for (let s = 1; s <= 7; s++) {
+    const t = tag.slots[s], rec = LIB.mem.get(s), card = document.createElement('div'); card.className = 'slot' + (t && t.cur ? ' cur' : '');
+    const match = t && t.show && rec && rec.crc === t.crc && rec.total === t.total;
+    const badges = [];
+    if (!t) badges.push(['нет данных с метки', '']); else if (!t.valid) badges.push(['пусто', '']); else if (!t.show) badges.push(['запись ' + t.total + ' Б, не кадр', 'warn']); else badges.push([match ? 'совпадает с запомненным' : (rec ? 'в метке другое' : 'в метке чужое'), match ? 'ok' : 'warn']);
+    if (t && t.cur) badges.push(['показан', 'ok']);
+    const hd = document.createElement('div'); hd.className = 'hd'; hd.innerHTML = '<span>Слот ' + s + '</span><span></span>';
+    for (const [x, c] of badges) { const b = document.createElement('span'); b.className = 'badge ' + c; b.textContent = x; hd.lastChild.appendChild(b); hd.lastChild.appendChild(document.createTextNode(' ')); }
+    card.appendChild(hd);
+    if (rec && rec.thumb && (match || !t || !t.show)) { const im = document.createElement('img'); im.src = rec.thumb; im.style.cssText = 'width:100%;aspect-ratio:720/256;border-radius:6px;background:#000;image-rendering:pixelated;display:block'; card.appendChild(im); }
+    else { const e = document.createElement('div'); e.className = 'empty'; e.textContent = t && t.show ? (rec ? 'в метке другая картинка, запомненная здесь не совпадает' : 'картинка загружена не с этой страницы') : 'пусто'; card.appendChild(e); }
+    const meta = document.createElement('div'); meta.className = 'n'; meta.textContent = (rec ? rec.name + ' · ' : '') + (t && t.valid ? t.total + ' Б, CRC ' + h8(t.crc) : ''); card.appendChild(meta);
+    const row = document.createElement('div'); row.className = 'row';
+    const lab = document.createElement('label'), cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!(t && t.inList); cb.disabled = !connected() || !t || !t.show;
+    cb.onchange = () => { const m = (tag.cfg ? tag.cfg.mask : 0xFE); setMask(s, cb.checked); }; lab.append(cb, ' в слайдшоу'); row.appendChild(lab); card.appendChild(row);
+    const r2 = document.createElement('div'); r2.className = 'row';
+    const mk = (txt, fn, dis, cls) => { const b = document.createElement('button'); b.textContent = txt; b.disabled = dis; if (cls) b.className = cls; b.onclick = fn; r2.appendChild(b); };
+    mk('Показать', () => cmd([0x32, s], 'показ'), !connected() || !t || !t.show);
+    mk('Загрузить сюда', () => { $('upSlot').value = s; lsSet('gs.slot', s); document.querySelector('[data-t=edit]').click(); toast('Слот ' + s + ' выбран для загрузки'); }, false);
+    mk('Проверить', () => cmd([0x24, s], 'проверка'), !connected() || !t || !t.valid);
+    mk('PNG', () => rec && downloadRec(rec), !rec);
+    mk('Забыть', async () => { if (rec && confirm('Забыть запомненную картинку слота ' + s + '? В метке она останется.')) { await LIB.del(s); renderSlots(); } }, !rec, 'd');
+    card.appendChild(r2); g.appendChild(card);
+  }
+}
+let maskT = 0;
+function setMask(s, on) {
+  if (!tag.cfg) return;
+  tag.cfg.mask = on ? (tag.cfg.mask | 1 << s) : (tag.cfg.mask & ~(1 << s));
+  clearTimeout(maskT); maskT = setTimeout(() => sendCfgObj(tag.cfg), 700);
+}
+function downloadRec(rec) {
+  const idx = frameToIdx(new Uint8Array(rec.frame), rec.orient || 'left'), cv = idxToCanvas(idx, rec.pal || curPalette());
+  cv.toBlob(b => download(b, 'slot-' + rec.slot + '.png'));
+}
+$('bSlots').onclick = () => cmd([0x31]);
+$('bNext').onclick = () => cmd([0x33], 'следующий');
+$('bShowNext').onclick = () => cmd([0x33], 'следующий');
+$('bSplash').onclick = () => cmd([0x39], 'заставка');
+document.querySelectorAll('.fill').forEach(b => b.onclick = () => cmd([0x38, +b.dataset.c], 'заливка'));
+$('bReboot').onclick = () => { if (confirm('Перезагрузить метку? Соединение прервётся, на экране снова появится заставка (около 30 с).')) cmd([0x36, 0xA5], 'перезагрузка'); };
+$('bHw').onclick = async () => { tag.hw = {}; renderHw(); await cmd([0x37], 'hw'); };
+
+/* ---------- настройки ---------- */
+const INTERVALS = [1, 2, 5, 10, 15, 30, 60, 120, 180, 360, 720, 1440];
+const TXS = [-20, -15, -10, -5, 0, 3, 6, 10];
+function buildCfgUi() {
+  const si = $('cInt'); for (const m of INTERVALS) si.add(new Option(m < 60 ? m + ' мин' : m % 60 ? m + ' мин' : (m / 60) + ' ч' + (m === 1440 ? ' (сутки)' : ''), m)); si.add(new Option('другой…', 'c'));
+  si.onchange = () => { $('cIntCustomWrap').hidden = si.value !== 'c'; };
+  const st = $('cTx'); for (const d of TXS) st.add(new Option((d > 0 ? '+' : '') + d + ' дБм', d));
+}
+function fillCfg() {
+  const c = tag.cfg; if (!c) return;
+  $('cEn').checked = c.en; $('cMode').value = c.mode; $('cTemp').value = c.temp;
+  const si = $('cInt'); if (INTERVALS.includes(c.interval)) { si.value = c.interval; $('cIntCustomWrap').hidden = true; } else { si.value = 'c'; $('cIntCustomWrap').hidden = false; $('cIntCustom').value = c.interval; }
+  const st = $('cTx'); if (!TXS.includes(c.tx)) st.add(new Option(c.tx + ' дБм', c.tx)); st.value = c.tx;
+  $('cTxAct').textContent = 'фактически ' + (c.txAct / 10).toFixed(1) + ' дБм';
+}
+function sendCfgObj(c) {
+  return cmd([0x34, c.en ? 1 : 0, c.mode, c.interval & 255, c.interval >> 8, c.mask & 0xFE, c.temp & 255, c.tx & 255], 'настройки');
+}
+function sendCfg() {                                      // значения из формы (кнопка «Применить»)
+  const c = tag.cfg || { mask: 0xFE };
+  const inter = $('cInt').value === 'c' ? clamp(+$('cIntCustom').value || 60, 1, 1440) : +$('cInt').value;
+  return sendCfgObj({ en: $('cEn').checked, mode: +$('cMode').value, interval: inter, mask: c.mask, temp: clamp(+$('cTemp').value || 0, -20, 60), tx: +$('cTx').value });
+}
+$('bCfg').onclick = async () => { await sendCfg(); toast('Настройки отправлены в метку'); };
+$('bCfgGet').onclick = () => cmd([0x35]);
+
+/* ---------- инструменты ---------- */
+$('bPing').onclick = () => cmd([1, 0x11, 0x22, 0x33]);
+$('bStat').onclick = () => cmd([2]);
+$('bReset').onclick = () => cmd([3]);
+$('bFInfo').onclick = () => cmd([0x20]);
+$('bFErase').onclick = () => { log('стираю сектор ' + $('sec').value + ' ...'); cmd([0x21, +$('sec').value]); };
+$('bFProg').onclick = () => { log('записываю страницу в сектор ' + $('sec').value + ' ...'); cmd([0x22, +$('sec').value]); };
+$('bFScan').onclick = () => cmd([0x23, +$('sec').value, 0]);
+$('bVer').onclick = () => { log('читаю слот ' + $('vSlot').value + ' из flash ...'); cmd([0x24, +$('vSlot').value]); };
+$('bClearLog').onclick = () => { logEl.textContent = ''; };
+$('bCopyLog').onclick = () => { navigator.clipboard.writeText(logEl.textContent).then(() => toast('Журнал скопирован'), () => toast('Не удалось скопировать')); };
+
+/* ===================================================================================================================
+   ЗАГРУЗКА ДАННЫХ В МЕТКУ (ОЗУ или flash)
+   =================================================================================================================== */
+async function uploadData(img, mode, slot, prog) {
+  const total = img.length, want = crc32(img), pages = Math.ceil(total / 256);
+  busy = true; stopFlag = false; queue = [];
+  const t0 = performance.now(); let retried = 0;
+  const chunk = async idx => { const m = new Uint8Array(19); m[0] = 0x11; m[1] = idx & 255; m[2] = idx >> 8; m.set(img.subarray(idx * 16, Math.min(total, idx * 16 + 16)), 3); await sendRetry(m, false); };
   const sendPage = async (p, onlyMask) => {
     const n = Math.min(256, total - p * 256), ch = Math.ceil(n / 16);
     for (let k = 0; k < ch; k++) if (!onlyMask || !(onlyMask >> k & 1)) await chunk(p * 16 + k);
     await sendRetry([0x12, p & 255, p >> 8], false);
   };
   try {
-    const mode = +$('mode').value, slot = +$('slot').value;
-    if (mode && total > 0xF000) throw new Error('во флеш помещается не больше 61 440 байт');
-    log(mode ? 'BEGIN: во флеш, слот ' + slot + ' (метка сначала стирает слот) ...' : 'BEGIN: в ОЗУ');
-    await sendRetry(mode ? [0x10, 1, ...le32(total), slot] : [0x10, 0, ...le32(total)], true);
-    const a0 = await expect(a => a[0] === 0x90, mode ? 20000 : 3000);
-    if (!a0 || a0[1] !== 0) throw new Error('метка не приняла BEGIN: ' + (a0 ? hex(a0) : 'нет ответа') + (a0 && a0[1] === 4 ? ' (стирание не удалось)' : ''));
+    if (mode && total > 0xF000) throw new Error('во flash помещается не больше 61 440 байт');
+    log(mode ? 'BEGIN: во flash, слот ' + slot + ' (метка сначала стирает слот) ...' : 'BEGIN: в ОЗУ');
+    for (let attempt = 0; ; attempt++) {
+      await sendRetry(mode ? [0x10, 1, ...le32(total), slot] : [0x10, 0, ...le32(total)], true);
+      const a0 = await expect(a => a[0] === 0x90, mode ? 20000 : 3000);
+      if (!a0) throw new Error('метка не ответила на BEGIN');
+      if (a0[1] === 0) break;
+      if (a0[1] === 1 && attempt < 8) { log('метка занята (идёт вывод слайда с flash или другая операция), повторю через 4 с'); await sleep(4000); if (stopFlag) throw new Error('остановлено'); continue; }
+      throw new Error('метка не приняла BEGIN: ' + hex(a0) + (a0[1] === 4 ? ' (стирание не удалось)' : ''));
+    }
     if (mode) log('слот стёрт, начинаю передачу');
     let base = 0, sent = 0, lastProgress = performance.now();
     while (base < pages) {
       if (stopFlag) { await sendRetry([0x14], true); throw new Error('остановлено'); }
       while (sent < pages && sent < base + 4) { await sendPage(sent); sent++; }
       const a = await expect(r => r[0] === 0x92 || r[0] === 0x93, 1500);
-      if (!a) {                                         // silence: ask about the oldest page again
-        retried++; if (performance.now() - lastProgress > 20000) throw new Error('нет ответа 20 с');
-        await sendRetry([0x12, base & 255, base >> 8], false); continue;
-      }
+      if (!a) { retried++; if (performance.now() - lastProgress > 20000) throw new Error('нет ответа 20 с'); await sendRetry([0x12, base & 255, base >> 8], false); continue; }
       const p = a[1] | a[2] << 8;
       if (a[0] === 0x92 && a[3] === 0) { if (p === base) { base++; lastProgress = performance.now(); } }
       else if (a[0] === 0x92 && a[3] === 1) { const e = a[4] | a[5] << 8; log('метка ждёт страницу ' + e); base = sent = e; }
       else if (a[0] === 0x92) throw new Error('ошибка хранения на странице ' + p);
       else { retried++; await sendPage(p, a[3] | a[4] << 8); }
-      $('prog').style.width = (100 * base / pages).toFixed(0) + '%';
+      if (prog) prog(base / pages);
     }
     let crc = null;
     for (let i = 0; i < 6 && !crc; i++) { await sendRetry([0x13], true); crc = await expect(r => r[0] === 0x94, 2500); }
     if (!crc) throw new Error('нет ответа на END');
-    const dt = (performance.now() - t0) / 1000, got = u32(crc.slice(2, 6));
-    const ok = crc[1] === 0 && got === want && u32(crc.slice(6, 10)) === total;
-    $('res').textContent = (ok ? 'ГОТОВО: контрольная сумма совпала' : 'ОШИБКА: контрольная сумма не совпала') + '. ' + total + ' байт за ' + dt.toFixed(1) + ' с = ' + (total / dt / 1024).toFixed(2) + ' КБ/с; повторов ' + retried;
-    if (ok && mode) {
-      log('запись во флеш завершена, проверяю чтением обратно ...');
-      await sendRetry([0x24, slot], true);
-      const v = await expect(r => r[0] === 0xA4, 15000);
-      if (!v) throw new Error('нет ответа на проверку слота');
-      describe(v);
-      $('res').textContent += ' Проверка чтением из флеш: ' + (v[2] === 0 ? 'CRC совпал' : 'ОШИБКА (код ' + v[2] + ')') + '.';
-    }
-    log($('res').textContent + ' (CRC метки ' + got.toString(16) + ', у страницы ' + want.toString(16) + ')');
-  } catch (e) { log('загрузка прервана: ' + e.message); $('res').textContent = 'Прервано: ' + e.message; }
-  busy = false; $('bUp').disabled = !(dev && dev.gatt.connected); $('bStop').disabled = true;
+    const dt = (performance.now() - t0) / 1000, got = u32(crc, 2);
+    const ok = crc[1] === 0 && got === want && u32(crc, 6) === total;
+    return { ok, crc: got, want, dt, retried, total };
+  } finally { busy = false; }
 }
-$('bUp').onclick = () => upload(+$('size').value);
+function updateUpButtons() { $('bUpload').disabled = !(connected() && lastFrame && !busy); }
+
+let upRunning = false;
+$('bUpStop').onclick = () => { stopFlag = true; };
+$('bUpload').onclick = async () => {
+  if (upRunning || !lastFrame) return;
+  const slot = +$('upSlot').value, frame = lastFrame.slice(), name = srcName || 'картинка', pal = curPalette().map(c => c.slice()), orient = P.orient;
+  const thumbCv = idxToCanvas(lastIdx, P.simPanel ? PALETTES.panel.c : curPalette(), 240, 85);
+  upRunning = true; $('bUpload').disabled = true; $('bUpStop').disabled = false; $('upRes').textContent = ''; $('upBar').style.width = '0';
+  try {
+    const r = await uploadData(frame, 1, slot, f => { $('upBar').style.width = (f * 100).toFixed(0) + '%'; });
+    let msg = (r.ok ? 'ГОТОВО: контрольная сумма совпала. ' : 'ОШИБКА: контрольная сумма не совпала. ') + r.total + ' байт за ' + r.dt.toFixed(1) + ' с = ' + (r.total / r.dt / 1024).toFixed(2) + ' КБ/с; повторов ' + r.retried + '.';
+    if (r.ok) {
+      log('запись завершена, проверяю чтением обратно ...'); queue = [];
+      await sendRetry([0x24, slot], true);
+      const v = await expect(a => a[0] === 0xA4, 15000);
+      if (!v) throw new Error('нет ответа на проверку слота');
+      if (v[2] !== 0) { msg += ' Проверка чтением из flash: ОШИБКА (код ' + v[2] + ').'; r.ok = false; }
+      else {
+        msg += ' Проверка чтением из flash: CRC совпал.';
+        await LIB.put({ slot, name, crc: r.crc, total: r.total, thumb: thumbCv.toDataURL('image/png'), frame: frame.buffer, pal, orient, ts: Date.now() });
+        if ($('upList').checked && tag.cfg) { tag.cfg.mask |= 1 << slot; await sendCfgObj(tag.cfg); await sleep(300); }
+        await cmd([0x31]);
+        if ($('upShow').checked) { await sleep(500); await cmd([0x32, slot], 'показ'); }
+      }
+    }
+    $('upRes').textContent = msg; $('upRes').className = 'n ' + (r.ok ? 'ok' : 'bad'); toast(r.ok ? 'Слот ' + slot + ' загружен' : 'Загрузка не удалась'); log(msg);
+  } catch (e) { log('загрузка прервана: ' + e.message); $('upRes').textContent = 'Прервано: ' + e.message; $('upRes').className = 'n bad'; }
+  upRunning = false; $('bUpStop').disabled = true; updateUpButtons(); renderSlots();
+};
+$('bRam').onclick = async () => {
+  const total = +$('tSize').value, img = new Uint8Array(total); for (let i = 0; i < total; i++) img[i] = (i * 31 + (i >> 8) * 7 + 5) & 255;
+  $('bRam').disabled = true;
+  try { const r = await uploadData(img, 0, 0, null); $('ramRes').textContent = (r.ok ? 'ГОТОВО: контрольная сумма совпала. ' : 'ОШИБКА: сумма не совпала. ') + total + ' байт за ' + r.dt.toFixed(1) + ' с = ' + (total / r.dt / 1024).toFixed(2) + ' КБ/с; повторов ' + r.retried; log($('ramRes').textContent); }
+  catch (e) { $('ramRes').textContent = 'Прервано: ' + e.message; }
+  $('bRam').disabled = !connected();
+};
+
+/* ===================================================================================================================
+   ЗАПУСК
+   =================================================================================================================== */
+$('tabs').addEventListener('click', e => {
+  const t = e.target.dataset && e.target.dataset.t; if (!t) return;
+  for (const b of $('tabs').children) b.classList.toggle('act', b === e.target);
+  document.querySelectorAll('section.tab').forEach(s => s.classList.toggle('act', s.id === 't-' + t));
+  if (t === 'slots') renderSlots();
+});
+buildControls(); buildPresets(); fillSelects(); buildCfgUi(); writeCtls(); renderSlots();
+LIB.open().then(renderSlots);
+window.__gs = { P, convert, buildFrame, frameToIdx, crc32, setSource, get lastIdx() { return lastIdx; }, get lastFrame() { return lastFrame; }, tag, LIB, handle, demoImage };
+if (!navigator.bluetooth) log('Web Bluetooth недоступен в этом браузере: конвертер работает, а загрузка в метку нужна Chrome по https.');
 </script>
 </body>
 </html>
