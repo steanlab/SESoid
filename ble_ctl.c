@@ -86,6 +86,7 @@ bool ctl_write(const uint8_t *v, uint8_t len)
       break;
     case 0x3F:
       if (len == 7 && v[1] == 2) queue_result(0x3F, hwtest_scan_start(v[2], (uint32_t)(v[3] | (v[4] << 8) | ((uint32_t)v[5] << 16) | ((uint32_t)v[6] << 24))) ? SLR_OK : SLR_BAD_SLOT);
+      else if (len == 11 && v[1] == 5) queue_result(0x3F, hwtest_scan_start_pwr(v[2], (uint32_t)(v[3] | (v[4] << 8) | ((uint32_t)v[5] << 16) | ((uint32_t)v[6] << 24)), (uint32_t)(v[7] | (v[8] << 8) | ((uint32_t)v[9] << 16) | ((uint32_t)v[10] << 24))) ? SLR_OK : SLR_BAD_SLOT);
       else if (len == 2 && v[1] == 3) want_scan = true;
       else if (len == 2 && v[1] == 4) { hwtest_scan_abort(); want_scan = true; }
       else { if (len == 2 && v[1] == 1) hwtest_pins_clear(); want_pins = true; }
@@ -158,7 +159,7 @@ static void send_scan(void)
   uint8_t r[20];
   memset(r, 0, sizeof(r));
   r[0] = 0xBB; r[1] = (uint8_t)(c->state | (c->opt << 4)); r[2] = c->pairs_total; r[3] = c->pairs_done; r[4] = c->stuck; r[5] = c->hits;
-  for (int i = 0; i < 2; i++) { r[6 + 3 * i] = c->hit[i].sda; r[7 + 3 * i] = c->hit[i].scl; r[8 + 3 * i] = c->hit[i].addr; }
+  r[6] = c->hit[0].sda; r[7] = c->hit[0].scl; r[8] = c->hit[0].addr; r[9] = c->hit[0].pwr; r[10] = c->pwr_now;
   wr32(r + 12, c->high);
   wr32(r + 16, c->held);
   att_notify(r, 20);

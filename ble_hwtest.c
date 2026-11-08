@@ -283,19 +283,22 @@ static void pm_poll(void)
 // I2C scanner
 // =====================================================================================================================
 #define SC_HALF_US    5u            // half a clock period: about 60 kHz
+#define SC_MAX_PINS_PWR 4u          // with power pins: at most 4 scanned pins (12 pairs per power pin)
 #define SC_ACK_US     150u          // the acknowledge is read at the end of this wait: a line that only rises slowly is not mistaken for an answer
 #define SC_STRETCH_US 200u          // how long a clock that does not rise is waited for
 #define SC_SETTLE_MAX_US 60000u     // a released line that is still low after this is called stuck
+#define SC_PWRUP_US   30000u        // wait after a power pin is driven high before the chip is asked
 #define SC_PACE_US    1000u         // one address per call, one call per millisecond at most
 #define SC_ADDR_FIRST 0x08u
 #define SC_ADDR_LAST  0x77u
 
-typedef enum { SS_IDLE = 0, SS_SETUP, SS_SETTLE, SS_ADDR } ss_t;
+typedef enum { SS_IDLE = 0, SS_SETUP, SS_SETTLE, SS_ADDR, SS_PWR } ss_t;
 
 static hwtest_scan_t sc;
 static ss_t ss;
 static uint8_t sc_pin[SC_MAX_PINS], sc_n, sc_i, sc_j, sc_addr, sc_sda, sc_scl, sc_acks, sc_ackaddr[3];
-static uint32_t sc_mask, sc_t0, sc_next;
+static uint32_t sc_mask, sc_pwall, sc_t0, sc_next;
+static uint8_t sc_pw[PM_PINS], sc_pwn, sc_pwi;
 static bool sc_changed;
 
 const hwtest_scan_t *hwtest_scan(void) { return &sc; }
@@ -354,27 +357,35 @@ static bool i2c_probe(uint8_t addr, bool *ack)
 
 static void sc_finish(uint8_t state)
 {
-  pins_restore(sc_mask);
-  ss = SS_IDLE; sc.state = state; sc_changed = true;
+  pins_restore(sc_mask | sc_pwall);
+  ss = SS_IDLE; sc.state = state; sc.pwr_now = 0xFF; sc_changed = true;
 }
 
 void hwtest_scan_abort(void) { if (ss != SS_IDLE) sc_finish(3); }
 
-bool hwtest_scan_start(uint8_t opt, uint32_t mask)
+bool hwtest_scan_start(uint8_t opt, uint32_t mask) { return hwtest_scan_start_pwr(opt, mask, 0); }
+
+bool hwtest_scan_start_pwr(uint8_t opt, uint32_t mask, uint32_t pwr)
 {
   if (opt > SC_OPT_PULLDN) return false;
   mask &= ALL_MASK & ~OWNED_MASK & ~SWD_MASK;
+  uint32_t pw = pwr & ALL_MASK & ~OWNED_MASK & ~SWD_MASK & ~mask;      // only pins nothing else uses, and never one of the scanned pins
+  if (pwr && !pw) return false;
   int n = 0;
   for (int i = 0; i < PM_PINS; i++) if (mask & (1u << i)) { if (n < SC_MAX_PINS) sc_pin[n] = (uint8_t)i; n++; }
   if (n < 2 || n > SC_MAX_PINS) return false;
+  int pn = 0;
+  for (int i = 0; i < PM_PINS; i++) if (pw & (1u << i)) sc_pw[pn++] = (uint8_t)i;
+  if (pn && n > (int)SC_MAX_PINS_PWR) return false;
+  if (n * (n - 1) * (pn ? pn : 1) > 255) return false;
   hwtest_scan_abort();
   if (pm_run) { pm_restore(); pm_run = false; pm.mode = PM_MODE_OFF; pm_changed = true; }
   memset(&sc, 0, sizeof(sc));
-  sc.state = 1; sc.opt = opt; sc.pairs_total = (uint8_t)(n * (n - 1));
-  sc_n = (uint8_t)n; sc_mask = mask; sc_i = 0; sc_j = 1;
+  sc.state = 1; sc.opt = opt; sc.pairs_total = (uint8_t)(n * (n - 1) * (pn ? pn : 1)); sc.pwr_now = 0xFF;
+  sc_n = (uint8_t)n; sc_mask = mask; sc_i = 0; sc_j = 1; sc_pwall = pw; sc_pwn = (uint8_t)pn; sc_pwi = 0;
   CMU->CLKEN0 |= CMU_CLKEN0_GPIO;
   for (int p = 0; p < 4; p++) { sv_model[p] = GPIO->P[p].MODEL; sv_modeh[p] = GPIO->P[p].MODEH; sv_dout[p] = GPIO->P[p].DOUT; }
-  ss = SS_SETUP;
+  ss = pn ? SS_PWR : SS_SETUP;
   sc_next = RAIL_GetTime();
   sc_changed = true;
   return true;
@@ -383,7 +394,7 @@ bool hwtest_scan_start(uint8_t opt, uint32_t mask)
 static void sc_commit_pair(void)                              // a pair that answered at up to three addresses: those are devices
 {
   for (int k = 0; k < sc_acks; k++) {
-    if (sc.hits < 2) { sc.hit[sc.hits].sda = sc_sda; sc.hit[sc.hits].scl = sc_scl; sc.hit[sc.hits].addr = sc_ackaddr[k]; }
+    if (sc.hits < 1) { sc.hit[0].sda = sc_sda; sc.hit[0].scl = sc_scl; sc.hit[0].addr = sc_ackaddr[k]; sc.hit[0].pwr = sc_pwn ? sc_pw[sc_pwi] : 0xFF; }
     if (sc.hits < 255) sc.hits++;
     sc_changed = true;
   }
@@ -397,7 +408,12 @@ static void sc_next_pair(void)
     if (sc_j >= sc_n) { sc_i++; sc_j = 0; }
   } while (sc_i < sc_n && sc_i == sc_j);
   ss = sc_i >= sc_n ? SS_IDLE : SS_SETUP;
-  if (ss == SS_IDLE) sc_finish(2);
+  if (ss == SS_IDLE) {
+    if (sc_pwn && (uint8_t)(sc_pwi + 1) < sc_pwn) {                // the next power pin: this one is put back first
+      pins_restore(1u << sc_pw[sc_pwi]);
+      sc_pwi++; sc_i = 0; sc_j = 1; ss = SS_PWR; sc.pwr_now = 0xFF; sc_changed = true;
+    } else sc_finish(2);
+  }
 }
 
 static void sc_poll(void)
@@ -408,6 +424,12 @@ static void sc_poll(void)
   sc_next = now + SC_PACE_US;
   switch (ss) {
     case SS_IDLE: break;
+    case SS_PWR:
+      pin_cfg(sc_pw[sc_pwi], 4, 1);                                  // push-pull high: the chip's supply, if this is the pin
+      sc.pwr_now = sc_pw[sc_pwi]; sc_changed = true;
+      sc_next = now + SC_PWRUP_US;
+      ss = SS_SETUP;
+      break;
     case SS_SETUP:
       sc_sda = sc_pin[sc_i]; sc_scl = sc_pin[sc_j];
       for (int k = 0; k < sc_n; k++) {
@@ -433,7 +455,11 @@ static void sc_poll(void)
         if (sc_acks >= 3) { sc.held |= 1u << sc_sda; sc_changed = true; sc_next_pair(); break; }   // "answers" at 4 addresses: the data line is held low, not a device
         sc_ackaddr[sc_acks++] = sc_addr;
       }
-      if (sc_addr >= SC_ADDR_LAST) { sc_commit_pair(); sc_next_pair(); } else sc_addr++;
+      if (sc_addr >= SC_ADDR_LAST) {
+        sc_commit_pair();
+        if (sc_pwn && sc.hits) sc_finish(2);                         // found with a power pin: stop here, that pin is the answer
+        else sc_next_pair();
+      } else sc_addr++;
       break; }
   }
 }

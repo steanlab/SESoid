@@ -24,6 +24,7 @@ static const int psize[4] = { 9, 5, 8, 4 };
 // model of an I2C device on PD2 (SDA) / PD3 (SCL), address DEVADDR; lines read low when the "chip" has no power (bus_powered = 0)
 #define DEVADDR 0x55
 static int i2c_model, bus_powered, slave_present, slave_low, sda_master = 1, scl_line = 1;
+static int gate_p = -1, gate_n;               // the model chip is supplied from this pin: powered only while it is a push-pull output driven high
 static uint32_t sda_slow_us;                 // the data line needs this long to rise after being released (a heavily loaded line); 0 = at once
 static uint32_t sda_rel_t; static int sda_pm = 1;
 static void i2c_slave(void)
@@ -45,6 +46,10 @@ static void i2c_slave(void)
 
 static void sim(void)
 {
+  if (gate_p >= 0) {
+    uint32_t m = (gate_n < 8 ? g_gpio.P[gate_p].MODEL >> (gate_n * 4) : g_gpio.P[gate_p].MODEH >> ((gate_n - 8) * 4)) & 0xFu;
+    bus_powered = (m == 4 && ((g_gpio.P[gate_p].DOUT >> gate_n) & 1u)) ? 1 : 0;
+  }
   // LFXO
   if ((g_cmu.CLKEN0 & CMU_CLKEN0_LFXO) && (g_lfxo.CTRL & LFXO_CTRL_FORCEEN)) {
     if (!lfxo_en) { lfxo_en = 1; lfxo_en_t = now_us; g_lfxo.STATUS |= LFXO_STATUS_ENS; }
@@ -306,6 +311,44 @@ static void test_pins(void)
 
 static void scan_wait(void) { uint32_t t0 = now_us; while (hwtest_scan()->state == 1 && now_us - t0 < 20000000u) { RAIL_GetTime(); hwtest_poll(); } }
 
+
+static void test_scan_pwr(void)
+{
+  printf("i2c scan with power pins\n");
+  world_reset();
+  i2c_model = 1; bus_powered = 0; slave_present = 1; slave_low = 0; sda_slow_us = 0;
+  g_gpio.P[3].MODEL = 0x00003333u; g_gpio.P[2].MODEL = 0x74444444u; g_gpio.P[2].DOUT = 0x1Fu; g_gpio.P[1].MODEL = 0x00033333u;
+  GpioT saved = g_gpio;
+  uint32_t scan = PC(5) | PD(2) | PD(3);
+  uint32_t cand = PA(6) | PB(1) | PB(2) | PB(3) | PC(7) | PD(0);
+  gate_p = 1; gate_n = 2;                      // PB2 supplies the chip
+  const hwtest_scan_t *c = hwtest_scan();
+  CHECK(!hwtest_scan_start_pwr(0, scan, PC(5)), "a power pin that is one of the scanned pins is refused (nothing left)");
+  CHECK(!hwtest_scan_start_pwr(0, scan | PA(6) | PB(1), PB(2)), "more than four scanned pins refused with power pins");
+  CHECK(!hwtest_scan_start_pwr(0, scan, PA(0) | PA(1)), "owned and SWD pins are never power pins");
+  CHECK(hwtest_scan_start_pwr(0, scan, cand), "scan with six power pins starts");
+  scan_wait();
+  CHECK(c->state == 2 && c->hits == 1 && c->hit[0].sda == 24 && c->hit[0].scl == 25 && c->hit[0].addr == DEVADDR, "device found: state %u hits %u", c->state, c->hits);
+  CHECK(c->hit[0].pwr == 11, "the power pin is PB2 (index 11): %u", c->hit[0].pwr);
+  CHECK(c->pairs_total == 36 && c->pairs_done < 36, "stopped early: %u of %u", c->pairs_done, c->pairs_total);
+  CHECK(g_gpio.P[1].MODEL == saved.P[1].MODEL && g_gpio.P[1].DOUT == saved.P[1].DOUT && g_gpio.P[3].MODEL == saved.P[3].MODEL && g_gpio.P[2].MODEL == saved.P[2].MODEL, "all pins put back, also the power pin");
+
+  printf("i2c scan with power pins: not among the candidates\n");
+  gate_p = 0; gate_n = 7;                      // the supply is PA7, owned: never offered
+  CHECK(hwtest_scan_start_pwr(0, scan, cand), "scan starts");
+  scan_wait();
+  CHECK(c->state == 2 && c->hits == 0 && c->pairs_done == c->pairs_total && c->pwr_now == 0xFF, "all power pins tried, nothing found, pairs %u/%u", c->pairs_done, c->pairs_total);
+  CHECK(g_gpio.P[1].MODEL == saved.P[1].MODEL && g_gpio.P[1].DOUT == saved.P[1].DOUT, "power pins restored");
+
+  printf("i2c scan with power pins: abort in the middle puts the power pin back\n");
+  gate_p = 1; gate_n = 3;
+  CHECK(hwtest_scan_start_pwr(0, scan, PB(1) | PB(2)), "scan starts");
+  for (int k = 0; k < 40; k++) { RAIL_GetTime(); hwtest_poll(); }
+  hwtest_scan_abort();
+  CHECK(c->state == 3 && g_gpio.P[1].MODEL == saved.P[1].MODEL && g_gpio.P[1].DOUT == saved.P[1].DOUT, "aborted, pins back");
+  gate_p = -1; i2c_model = 0;
+}
+static void test_scan_pwr(void);
 static void test_scan(void)
 {
   printf("i2c scan\n");
@@ -373,6 +416,7 @@ static void test_scan(void)
   hwtest_reset();
   CHECK(c->state == 3 && g_gpio.P[3].MODEL == saved.P[3].MODEL, "a reset (connection ended) stops the scan");
   i2c_model = 0;
+  test_scan_pwr();
 }
 
 int main(void)
@@ -389,3 +433,4 @@ int main(void)
   printf("ALL OK\n");
   return 0;
 }
+

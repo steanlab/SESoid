@@ -212,7 +212,9 @@
     <p class="n">Ищет на выбранных свободных выводах устройство I²C (так подключаются многие NFC-микросхемы). Метка перебирает все пары выводов в роли SDA и SCL и опрашивает адреса 0x08–0x77. Ничего не подаётся в «1» жёстко: отпущенная линия просто подтягивается вверх, «0» ставится только чтобы сигналить. Если линия после отпускания не поднялась (чип без питания держит её внизу), пара пропускается как «залипшая». Монитор выводов при запуске сканера останавливается. Сначала запустите с «плавающие», затем «подтяжка вверх» и «подтяжка вниз» для третьего вывода: так мы проверим, не питается ли чип через него.</p>
     <div id="scPins" class="sub" style="margin:6px 0"></div>
     <label>Остальные выбранные выводы (не SDA и не SCL) <select id="scOpt"><option value="0">плавающие</option><option value="1">подтяжка вверх</option><option value="2">подтяжка вниз</option></select></label>
-    <div class="row"><button id="bScan" disabled>Сканировать</button><button id="bScanStop" disabled>Прервать</button><button id="bScanGet" disabled>Показать отчёт</button></div>
+    <p class="n" style="margin:10px 0 4px"><b>Подача питания на чип.</b> Если чип питается через вывод процессора (VCC), он молчит, пока на этот вывод не подана «1». Кнопка ниже по очереди подаёт «1» на каждый отмеченный вывод питания и после каждого ищет чип на выбранных выше выводах (для этого выберите там 2–4 вывода, обычно PC5, PD2, PD3). Подача «1» безопасна только на тех выводах, которые вы проверяли монитором: они читались «1» с подтяжкой вверх и «0» с подтяжкой вниз. На выбранные выше выводы сканирования питание не подаётся.</p>
+    <div id="scPwr" class="sub" style="margin:6px 0"></div>
+    <div class="row"><button id="bScan" disabled>Сканировать</button><button id="bScanPwr" disabled>Сканировать с подачей «1»</button><button id="bScanStop" disabled>Прервать</button><button id="bScanGet" disabled>Показать отчёт</button></div>
     <pre id="scOut" class="n" style="white-space:pre-wrap;margin:8px 0 0"></pre>
   </div>
   <div class="card">
@@ -796,7 +798,7 @@ function handle(a) {
       const s = a[1]; if (s < 1 || s > 7) break;
       tag.slots[s] = { valid: !!(a[2] & 1), show: !!(a[2] & 2), inList: !!(a[2] & 4), cur: !!(a[2] & 8), total: u32(a, 3), crc: u32(a, 7) };
       renderSlots(); break; }
-    case 0xB3: if (a[1] === 0x3F && a[2] !== 0) { $('scOut').textContent = 'метка не приняла команду сканера: нужно от 2 до 6 свободных выводов и прошивка 1.3 или новее.'; toast('Сканер I²C: метка отклонила команду'); break; }
+    case 0xB3: if (a[1] === 0x3F && a[2] !== 0) { $('scOut').textContent = 'метка не приняла команду сканера: нужно от 2 до 6 свободных выводов (при подаче питания 2–4 вывода сканирования и хотя бы один отдельный вывод питания) и прошивка 1.5 или новее.'; toast('Сканер I²C: метка отклонила команду'); break; }
       if (a[1] === 0x3E && a[2] !== 0) { tag.pmAck = true; $('pmStat').textContent = 'метка отклонила команду монитора (код ' + a[2] + '). Для выбора выводов нужна прошивка 1.2.'; toast('Монитор выводов: метка отклонила команду'); break; }
       toast(({ 0x32: 'Показ слота: ', 0x33: 'Следующий слайд: ', 0x38: 'Заливка: ', 0x39: 'Заставка: ', 0x3A: 'Диагностика панели: ', 0x3C: 'Тест кварцев: ', 0x3E: 'Монитор выводов: ', 0x3F: 'Сканер I²C: ' }[a[1]] || 'Команда: ') + (RES_TXT[a[2]] || a[2])); setTimeout(() => { if (!busy) cmd([0x30]); }, 400); break;
     case 0xB4:
@@ -847,7 +849,7 @@ function onDisc() { log('соединение закрыто'); setConn(false); 
 function setConn(on) {
   $('connPill').classList.toggle('on', on); $('connTxt').textContent = on ? 'подключено: ' + (dev ? dev.name : '') : 'не подключено';
   $('bConn').disabled = on; $('bDisc').disabled = !on;
-  for (const id of ['bSlots', 'bNext', 'bCfg', 'bCfgGet', 'bShowNext', 'bSplash', 'bReboot', 'bHw', 'bPing', 'bStat', 'bReset', 'bRam', 'bPdiag', 'bPdiagGet', 'bClk', 'bClkGet', 'bPm1', 'bPm2', 'bPm3', 'bPmStop', 'bPmClr', 'bScan', 'bScanStop', 'bScanGet', 'bFInfo', 'bFErase', 'bFProg', 'bFScan', 'bVer']) $(id).disabled = !on;
+  for (const id of ['bSlots', 'bNext', 'bCfg', 'bCfgGet', 'bShowNext', 'bSplash', 'bReboot', 'bHw', 'bPing', 'bStat', 'bReset', 'bRam', 'bPdiag', 'bPdiagGet', 'bClk', 'bClkGet', 'bPm1', 'bPm2', 'bPm3', 'bPmStop', 'bPmClr', 'bScan', 'bScanPwr', 'bScanStop', 'bScanGet', 'bFInfo', 'bFErase', 'bFProg', 'bFScan', 'bVer']) $(id).disabled = !on;
   document.querySelectorAll('.fill').forEach(b => b.disabled = !on);
   updateUpButtons(); renderSlots();
 }
@@ -1118,26 +1120,41 @@ $('bScan').onclick = () => {
   $('scOut').textContent = 'идёт сканирование: ' + idx.length * (idx.length - 1) + ' пар, около ' + Math.ceil(idx.length * (idx.length - 1) * 0.15 + 1) + ' с и больше, если линии залипают …';
   cmd([0x3F, 2, +$('scOpt').value, m & 255, m >>> 8 & 255, m >>> 16 & 255, m >>> 24 & 255], 'сканер I²C');
 };
+$('scPwr').innerHTML = PM_FREE.map(i => '<label style="margin-right:10px"><input type="checkbox" data-i="' + i + '"' + (['PC5', 'PD2', 'PD3'].includes(PM_N[i]) ? '' : ' checked') + '> ' + PM_N[i] + '</label>').join('');
+let scLastPwr = false;
+$('bScanPwr').onclick = () => {
+  const idx = [...document.querySelectorAll('#scPins input:checked')].map(c => +c.dataset.i);
+  const pw = [...document.querySelectorAll('#scPwr input:checked')].map(c => +c.dataset.i).filter(i => !idx.includes(i));
+  if (idx.length < 2 || idx.length > 4) { toast('Для подачи питания выберите 2–4 вывода сканирования'); return; }
+  if (!pw.length) { toast('Отметьте хотя бы один вывод питания (не из сканируемых)'); return; }
+  let m = 0, pm = 0; for (const i of idx) m = (m | (1 << i)) >>> 0; for (const i of pw) pm = (pm | (1 << i)) >>> 0;
+  scLastPwr = true;
+  $('scOut').textContent = 'идёт сканирование с подачей «1»: ' + pw.length + ' выводов питания, примерно ' + Math.ceil(pw.length * 2 + 2) + ' с …';
+  cmd([0x3F, 5, +$('scOpt').value, m & 255, m >>> 8 & 255, m >>> 16 & 255, m >>> 24 & 255, pm & 255, pm >>> 8 & 255, pm >>> 16 & 255, pm >>> 24 & 255], 'сканер I²C');
+};
+$('bScan').addEventListener('click', () => { scLastPwr = false; });
 $('bScanStop').onclick = () => cmd([0x3F, 4], 'сканер I²C');
 $('bScanGet').onclick = () => cmd([0x3F, 3], 'сканер I²C');
 const I2C_HINT = a => a === 0x55 ? 'похоже на NXP NTAG I²C (NT3H…)' : (a === 0x53 || a === 0x57) ? 'похоже на ST25DV (0x53 память пользователя, 0x57 системная)' : (a >= 0x50 && a <= 0x57) ? 'адрес EEPROM / NFC-памяти' : 'неизвестное устройство';
 function renderScan(a) {
-  const out = $('scOut'), st = a[1] & 15, opt = a[1] >> 4, total = a[2], done = a[3], stuck = a[4], hits = a[5], high = u32(a, 12), held = u32(a, 16);
+  const out = $('scOut'), st = a[1] & 15, opt = a[1] >> 4, total = a[2], done = a[3], stuck = a[4], hits = a[5], pwrHit = a[9], pwrNow = a[10], high = u32(a, 12), held = u32(a, 16);
   const names = mask => PM_N.filter((n, i) => (mask >>> i) & 1).join(', ') || 'никакие';
   const optT = ['плавающие', 'подтяжка вверх', 'подтяжка вниз'][opt] || opt;
   if (st === 0) { out.textContent = 'Сканер ещё не запускался.'; return; }
   const L = [];
-  if (st === 1) L.push('идёт: проверено пар ' + done + ' из ' + total + ', залипших ' + stuck + ', найдено устройств ' + hits + ' …');
+  if (st === 1) L.push('идёт: проверено пар ' + done + ' из ' + total + ', залипших ' + stuck + ', найдено устройств ' + hits + (pwrNow !== 255 ? '; сейчас «1» подана на ' + PM_N[pwrNow] : '') + ' …');
   else L.push((st === 3 ? 'прервано' : 'готово') + ' (остальные выводы: ' + optT + '): пар ' + done + ' из ' + total + ', залипших ' + stuck + ', найдено устройств ' + hits + '.');
-  for (let i = 0; i < Math.min(hits, 2); i++) {
-    const sda = a[6 + 3 * i], scl = a[7 + 3 * i], ad = a[8 + 3 * i];
+  if (hits > 0) {
+    const sda = a[6], scl = a[7], ad = a[8];
     L.push('✔ найдено: SDA=' + PM_N[sda] + ', SCL=' + PM_N[scl] + ', адрес 0x' + ad.toString(16).toUpperCase().padStart(2, '0') + ' (7 бит); ' + I2C_HINT(ad) + '.');
+    if (pwrHit !== 255) L.push('★ Чип ответил, когда на ' + PM_N[pwrHit] + ' была подана «1»: это, скорее всего, его питание (VCC). Запишите этот результат.');
+    if (hits > 1) L.push('Всего устройств: ' + hits + ' (показано первое).');
   }
-  if (hits > 2) L.push('Показаны первые 2 из ' + hits + '.');
   L.push('При отпускании поднимались в «1»: ' + names(high) + '.');
   if (held) L.push('Линия данных «отвечала» на все адреса подряд (это не устройство, а вывод, который держится внизу или поднимается очень медленно): ' + names(held) + '. Запишите эти выводы.');
   if (st === 2 && hits === 0) {
-    if (stuck >= total) L.push('✖ Ни одна пара не поднялась в «1»: линии удерживаются внизу, то есть чип не запитан достаточно. Запустите с другой настройкой остальных выводов (подтяжка вверх, подтяжка вниз). Если и тогда пусто, чип питается только от поля, и процессору с ним говорить нечем.');
+    if (scLastPwr) L.push('✖ Чип не отозвался ни при подаче «1» на один из отмеченных выводов питания. Значит, питание чипа идёт не с этих выводов (или I²C там не подключён).');
+    else if (stuck >= total) L.push('✖ Ни одна пара не поднялась в «1»: линии удерживаются внизу, то есть чип не запитан достаточно. Запустите с другой настройкой остальных выводов (подтяжка вверх, подтяжка вниз) или кнопкой «Сканировать с подачей «1»».');
     else L.push('Устройства на адресах 0x08–0x77 не найдено. Попробуйте другую настройку остальных выводов или другую комбинацию выводов.');
   }
   out.textContent = L.join('\n');

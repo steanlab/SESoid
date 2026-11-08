@@ -6,7 +6,7 @@
 #include <stdbool.h>
 
 #define FW_VERSION_MAJOR 1
-#define FW_VERSION_MINOR 4
+#define FW_VERSION_MINOR 5
 #define WDOG_ENABLE 1            // 0 = no watchdog (e.g. for debugging with breakpoints)
 
 // reset cause bits as in EMU->RSTCAUSE of the chip, captured before anything else runs

@@ -68,7 +68,7 @@ const MOCK = `
     else if (op === 0x3D) N(clkPkt(true));
     else if (op === 0x3E && tag.old11 && v.length !== 2) N([0xB3, 0x3E, 2]);
     else if (op === 0x3E) { tag.pmMask = v.length >= 6 ? (v[2] | v[3] << 8 | v[4] << 16 | v[5] << 24) >>> 0 : 0xFFFFFFFF; tag.pmLen = v.length; tag.pm = { mode: v[1] & 3, swd: v[1] & 0x80, level: 0, hi: 0, lo: 0, edges: 0, last: 255, el: 0 }; tag.pmBase(); N(pmPkt()); }
-    else if (op === 0x3F && v[1] === 2) { tag.scanArgs = Array.from(v); N([0xB3, 0x3F, tag.scanOk === false ? 2 : 0]); if (tag.scanOk !== false) setTimeout(() => N(scanPkt(2)), 100); }
+    else if (op === 0x3F && (v[1] === 2 || v[1] === 5)) { tag.scanArgs = Array.from(v); N([0xB3, 0x3F, tag.scanOk === false ? 2 : 0]); if (tag.scanOk !== false) setTimeout(() => N(scanPkt(2)), 100); }
     else if (op === 0x3F && v[1] === 3) N(scanPkt(2));
     else if (op === 0x3F && v[1] === 4) N(scanPkt(3));
     else if (op === 0x3F) { if (v[1] === 1) { tag.pm.hi = tag.pm.lo = 0; tag.pm.edges = 0; tag.pm.last = 255; tag.pmBase(); } N(pmPkt()); }
@@ -82,8 +82,8 @@ const MOCK = `
   function pmPkt() { const m = tag.pm; return [0xBA, m.mode | m.swd, m.el & 255, m.el >> 8, ...le32(m.level >>> 0), ...le32(m.hi >>> 0), ...le32(m.lo >>> 0), m.edges & 255, m.edges >> 8, m.last, 0]; }
   tag.pmPush = () => N(pmPkt());
   function scanPkt(st) {
-    const hit = tag.scanHit !== false, opt = tag.scanArgs ? tag.scanArgs[2] : 0;
-    return [0xBB, st | opt << 4, 6, 6, 4, hit ? 1 : 0, hit ? 24 : 0, hit ? 25 : 0, hit ? 0x55 : 0, 0, 0, 0, ...le32(((1 << 24) | (1 << 25)) >>> 0), ...le32(tag.scanHeld ? (1 << 24) >>> 0 : 0)];
+    const hit = tag.scanHit !== false, opt = tag.scanArgs ? tag.scanArgs[2] : 0, pw = tag.scanArgs && tag.scanArgs[1] === 5 && hit ? 11 : 255;
+    return [0xBB, st | opt << 4, 6, 6, 4, hit ? 1 : 0, hit ? 24 : 0, hit ? 25 : 0, hit ? 0x55 : 0, pw, 255, 0, ...le32(((1 << 24) | (1 << 25)) >>> 0), ...le32(tag.scanHeld ? (1 << 24) >>> 0 : 0)];
   }
   function clkPkt(never) {
     if (never) return [0xB9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -276,6 +276,19 @@ const MOCK = `
   await pg.evaluate(() => { window.__tag.scanOk = true; });
   await pg.click('#bScanStop'); await pg.waitForTimeout(300);
   ok((await pg.textContent('#scOut')).includes('прервано'), 'scanner: abort shown');
+
+  // --- I2C scanner with power pins
+  await pg.evaluate(() => { window.__tag.scanHit = true; window.__tag.scanHeld = false; window.__tag.scanOk = true; });
+  ok((await pg.$$eval('#scPwr input:checked', e => e.map(x => x.parentElement.textContent.trim()))).join() === 'PA6,PA8,PB1,PB2,PB3,PB4,PC7,PD0,PD1', 'power pins: nine candidates chosen by default');
+  await pg.click('#bScanPwr'); await pg.waitForTimeout(500);
+  const pa = await pg.evaluate(() => window.__tag.scanArgs);
+  ok(pa && pa.length === 11 && pa[1] === 5 && ((pa[3] | pa[4] << 8 | pa[5] << 16 | pa[6] << 24) >>> 0) === (((1 << 19) | (1 << 24) | (1 << 25)) >>> 0) && ((pa[7] | pa[8] << 8 | pa[9] << 16 | pa[10] << 24) >>> 0) === 0xE03D40, 'power scan: command carries scan mask and power mask ' + JSON.stringify(pa));
+  so = await pg.textContent('#scOut');
+  ok(so.includes('PB2') && so.includes('питание') && so.includes('SDA=PD2'), 'power scan: power pin shown');
+  await pg.evaluate(() => { window.__tag.scanHit = false; });
+  await pg.click('#bScanPwr'); await pg.waitForTimeout(500);
+  ok((await pg.textContent('#scOut')).includes('ни при подаче'), 'power scan: nothing found explained');
+  await pg.evaluate(() => { window.__tag.scanHit = true; });
 
   // --- tools: flash sector select has 0..14
   const secs = await pg.evaluate(() => document.querySelector('#sec').options.length);
