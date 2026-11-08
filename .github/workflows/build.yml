@@ -81,9 +81,8 @@ jobs:
           sed -n 1,40p /opt/silabs/slc-cli/readme.md 2>/dev/null
           echo "--- slc configuration --help"; slc configuration --help 2>&1 | head -40 || true
 
-          # Candidates: the SDK shipped in the image (slc 6 and that SDK belong together), then the cloned Gecko SDK 4.4.1.
-          CANDS=$(find /opt -maxdepth 5 -name simplicity_sdk.slcs 2>/dev/null)
-          CANDS="$CANDS $CLONED_SDK/gecko_sdk.slcs"
+          # Candidates: the cloned Gecko SDK 4.4.1 first (its RAIL library is known to be real), then the SDK of the image.
+          CANDS="$CLONED_SDK/gecko_sdk.slcs $(find /opt -maxdepth 5 -name simplicity_sdk.slcs 2>/dev/null)"
           mkdir -p /tmp/h
           gen_ok=0
           for SLCS in $CANDS; do
@@ -126,6 +125,12 @@ jobs:
             echo "NOTE: the RAIL library of this SDK is only $sz bytes (a Git LFS pointer?), the link step will fail"
           fi
           echo "generated with $GSDK_PATH"
+          find "$GSDK_PATH/platform/radio/rail_lib/autogen" -name '*efr32xg22*gcc_release*' -size +1k 2>/dev/null | head -5
+          if ! command -v make >/dev/null; then
+            echo "make is missing in the image, installing it"
+            (apt-get update -qq && apt-get install -y -qq make) 2>&1 | tail -3 || true
+          fi
+          command -v make || { echo "no make available"; exit 1; }
           cd out
 
           # The generated makefile does not allow C define overrides; harmless, but keep the same patch as upstream.
