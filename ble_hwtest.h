@@ -48,7 +48,7 @@ void hwtest_reset(void);                                  // new connection / di
 void hwtest_poll(void);                                   // main loop
 bool hwtest_clock_start(void);                            // false if a test is already running
 const hwtest_clock_t *hwtest_clock(void);
-bool hwtest_pins_start(uint8_t mode);                     // PM_MODE_* (0 stops); a new start clears the history
+bool hwtest_pins_start(uint8_t mode, uint32_t only);      // PM_MODE_* (0 stops); only = pins to watch (bit n = pin n, 0xFFFFFFFF all); a new start clears the history
 void hwtest_pins_clear(void);
 const hwtest_pins_t *hwtest_pins(void);
 bool hwtest_pins_changed(void);                           // true once after a new pin got both levels (or the state changed): the answer should be sent

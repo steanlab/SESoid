@@ -17,7 +17,8 @@
 //   3B                      PANEL DIAGNOSTICS REPORT  (the last one)                                     -> B8
 //   3C                      CLOCK TEST  (about 1 s with a crystal, 2.3 s without: starts the 32.768 kHz oscillator, measures LFXO / LFRCO / ULFRCO against the 38.4 MHz crystal)  -> B3, later B9 by itself
 //   3D                      CLOCK TEST REPORT  (the last one)                                            -> B9
-//   3E mode                 PIN MONITOR  mode 0 off, 1 floating inputs, 2 pull-up, 3 pull-down (+0x80: also watch PA1..PA3); clears the history; stops by itself
+//   3E mode [mask(4)]       PIN MONITOR  mode 0 off, 1 floating inputs, 2 pull-up, 3 pull-down (+0x80: also watch PA1..PA3); the optional mask (bit n = pin n)
+//                           limits the watched pins, so a single pin can be pulled up while the others stay untouched; clears the history; stops by itself
 //                           after 5 minutes and when the connection ends                                  -> BA (then once a second and whenever a pin got both levels)
 //   3F [1]                  PIN MONITOR REPORT; with 1 the history is cleared first                      -> BA
 // Tag -> phone:

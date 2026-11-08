@@ -81,7 +81,7 @@ bool ctl_write(const uint8_t *v, uint8_t len)
     case 0x3C: clock_sent = false; queue_result(0x3C, hwtest_clock_start() ? SLR_OK : SLR_PANEL_BUSY); break;
     case 0x3D: want_clock = true; break;
     case 0x3E:
-      if (len == 2 && hwtest_pins_start(v[1])) want_pins = true;
+      if ((len == 2 || len == 6) && hwtest_pins_start(v[1], len == 6 ? (uint32_t)(v[2] | (v[3] << 8) | ((uint32_t)v[4] << 16) | ((uint32_t)v[5] << 24)) : 0xFFFFFFFFu)) want_pins = true;
       else queue_result(0x3E, SLR_BAD_SLOT);
       break;
     case 0x3F:

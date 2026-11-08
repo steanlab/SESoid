@@ -227,7 +227,7 @@ void hwtest_pins_clear(void)
   pm_changed = true;
 }
 
-bool hwtest_pins_start(uint8_t mode)
+bool hwtest_pins_start(uint8_t mode, uint32_t only)
 {
   uint8_t m = mode & 0x7Fu;
   if (m > PM_MODE_PULLDN) return false;
@@ -237,7 +237,8 @@ bool hwtest_pins_start(uint8_t mode)
   pm_changed = true;
   if (m == PM_MODE_OFF) { pm_mask = 0; return true; }
 
-  pm_mask = ALL_MASK & ~OWNED_MASK & ~((mode & PM_FLAG_SWD) ? 0u : SWD_MASK);
+  pm_mask = ALL_MASK & ~OWNED_MASK & ~((mode & PM_FLAG_SWD) ? 0u : SWD_MASK) & only;
+  if (pm_mask == 0) return false;
   CMU->CLKEN0 |= CMU_CLKEN0_GPIO;
   for (int p = 0; p < 4; p++) { sv_model[p] = GPIO->P[p].MODEL; sv_modeh[p] = GPIO->P[p].MODEH; sv_dout[p] = GPIO->P[p].DOUT; }
   for (int p = 0; p < 4; p++) {

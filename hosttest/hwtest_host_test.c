@@ -193,7 +193,7 @@ static void test_pins(void)
   g_gpio.P[3].MODEL = 0x00003333u; g_gpio.P[3].DOUT = 0x5u;
   GpioT saved = g_gpio;
 
-  CHECK(hwtest_pins_start(PM_MODE_FLOAT), "start float");
+  CHECK(hwtest_pins_start(PM_MODE_FLOAT, 0xFFFFFFFFu), "start float");
   uint32_t mask = hwtest_pins_mask();
   uint32_t want = PA(6) | PA(8) | PB(1) | PB(2) | PB(3) | PB(4) | PC(5) | PC(7) | PD(0) | PD(1) | PD(2) | PD(3);
   CHECK(mask == want, "watched mask %08x want %08x", mask, want);
@@ -223,41 +223,52 @@ static void test_pins(void)
 
   // pull-up: undriven pins read high, a pin driven low shows
   ext[3][2] = -1;
-  CHECK(hwtest_pins_start(PM_MODE_PULLUP), "start pull-up");
+  CHECK(hwtest_pins_start(PM_MODE_PULLUP, 0xFFFFFFFFu), "start pull-up");
   settle(8000);
   CHECK(hwtest_pins()->level == mask, "all high with pull-ups: %08x", hwtest_pins()->level);
   ext[1][3] = 0; settle(3000);
   CHECK(!(hwtest_pins()->level & PB(3)) && hwtest_pins()->last == 12, "PB3 pulled low, last %u", hwtest_pins()->last);
   ext[1][3] = -1;
-  CHECK(hwtest_pins_start(PM_MODE_PULLDN), "start pull-down");
+  CHECK(hwtest_pins_start(PM_MODE_PULLDN, 0xFFFFFFFFu), "start pull-down");
   settle(8000);
   CHECK(hwtest_pins()->level == 0, "all low with pull-downs");
 
   // SWD pads only when asked
-  CHECK(hwtest_pins_start(PM_MODE_FLOAT | PM_FLAG_SWD), "start with SWD");
+  CHECK(hwtest_pins_start(PM_MODE_FLOAT | PM_FLAG_SWD, 0xFFFFFFFFu), "start with SWD");
   CHECK(hwtest_pins_mask() == (want | PA(1) | PA(2) | PA(3)), "SWD pins added: %08x", hwtest_pins_mask());
 
   // stop puts everything back
-  CHECK(hwtest_pins_start(PM_MODE_OFF), "stop");
+  CHECK(hwtest_pins_start(PM_MODE_OFF, 0xFFFFFFFFu), "stop");
   CHECK(g_gpio.P[0].MODEL == saved.P[0].MODEL && g_gpio.P[1].MODEL == saved.P[1].MODEL && g_gpio.P[2].MODEL == saved.P[2].MODEL && g_gpio.P[3].MODEL == saved.P[3].MODEL, "modes restored");
   CHECK(g_gpio.P[0].DOUT == saved.P[0].DOUT && g_gpio.P[1].DOUT == saved.P[1].DOUT && g_gpio.P[2].DOUT == saved.P[2].DOUT && g_gpio.P[3].DOUT == saved.P[3].DOUT, "outputs restored");
   CHECK(hwtest_pins()->mode == PM_MODE_OFF, "mode off");
 
   // connection ends -> restored as well
-  CHECK(hwtest_pins_start(PM_MODE_PULLUP), "restart");
+  CHECK(hwtest_pins_start(PM_MODE_PULLUP, 0xFFFFFFFFu), "restart");
   settle(5000);
   hwtest_reset();
   CHECK(g_gpio.P[3].MODEL == saved.P[3].MODEL && g_gpio.P[3].DOUT == saved.P[3].DOUT && g_gpio.P[0].MODEL == saved.P[0].MODEL, "restored by reset");
   CHECK(hwtest_pins()->mode == PM_MODE_OFF, "off after reset");
 
   // five minutes limit
-  CHECK(hwtest_pins_start(PM_MODE_FLOAT), "restart for the time limit");
+  CHECK(hwtest_pins_start(PM_MODE_FLOAT, 0xFFFFFFFFu), "restart for the time limit");
   hwtest_pins_changed();
   step_us = 5000; settle((PM_MAX_S + 2) * 1000000u); step_us = 50;
   CHECK(hwtest_pins()->mode == PM_MODE_OFF && hwtest_pins_changed(), "stopped by itself and reported");
   CHECK(g_gpio.P[3].MODEL == saved.P[3].MODEL, "restored after the limit");
 
-  CHECK(!hwtest_pins_start(9), "bad mode refused");
+  CHECK(!hwtest_pins_start(9, 0xFFFFFFFFu), "bad mode refused");
+
+  // only some pins: the others keep their setting
+  g_gpio = saved;
+  CHECK(hwtest_pins_start(PM_MODE_PULLUP, PD(2) | PD(3) | PA(1)), "start with a pin selection");
+  CHECK(hwtest_pins_mask() == (PD(2) | PD(3)), "selection limited to watched pins, SWD pin dropped: %08x", hwtest_pins_mask());
+  CHECK((g_gpio.P[3].MODEL & 0xFFu) == saved.P[3].MODEL % 256 && ((g_gpio.P[3].MODEL >> 8) & 0xFu) == 2u && ((g_gpio.P[3].MODEL >> 12) & 0xFu) == 2u, "only PD2 and PD3 became pull-up inputs: %08x", g_gpio.P[3].MODEL);
+  CHECK((g_gpio.P[1].MODEL & 0xFFFFFFF0u) == (saved.P[1].MODEL & 0xFFFFFFF0u) && g_gpio.P[0].MODEL == saved.P[0].MODEL, "other ports untouched");
+  CHECK(hwtest_pins_start(PM_MODE_OFF, 0), "stop again");
+  CHECK(g_gpio.P[3].MODEL == saved.P[3].MODEL && g_gpio.P[3].DOUT == saved.P[3].DOUT, "selection restored");
+  CHECK(!hwtest_pins_start(PM_MODE_FLOAT, PA(1)), "a selection with nothing watchable is refused");
+
 }
 
 int main(void)

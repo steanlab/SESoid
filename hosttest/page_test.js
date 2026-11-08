@@ -66,14 +66,15 @@ const MOCK = `
     else if (op === 0x3A) { N([0xB3, 0x3A, 0]); setTimeout(() => N(tag.dead ? [0xB8, 2, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 10, 0, 0, 0, 0, 0, 0, 0] : [0xB8, 2, 0, 0, 1, 0, 0, 1, 0, 1, 1, 1, 10, 0, 0x04, 0x0D, 0x04, 0x0D, 0x04, 0x0D]), 100); }
     else if (op === 0x3C) { N([0xB3, 0x3C, 0]); setTimeout(() => N(clkPkt()), 100); }
     else if (op === 0x3D) N(clkPkt(true));
-    else if (op === 0x3E) { tag.pm = { mode: v[1] & 3, swd: v[1] & 0x80, level: 0, hi: 0, lo: 0, edges: 0, last: 255, el: 0 }; tag.pmBase(); N(pmPkt()); }
+    else if (op === 0x3E) { tag.pmMask = v.length >= 6 ? (v[2] | v[3] << 8 | v[4] << 16 | v[5] << 24) >>> 0 : 0xFFFFFFFF; tag.pmLen = v.length; tag.pm = { mode: v[1] & 3, swd: v[1] & 0x80, level: 0, hi: 0, lo: 0, edges: 0, last: 255, el: 0 }; tag.pmBase(); N(pmPkt()); }
     else if (op === 0x3F) { if (v[1] === 1) { tag.pm.hi = tag.pm.lo = 0; tag.pm.edges = 0; tag.pm.last = 255; tag.pmBase(); } N(pmPkt()); }
     else if (op === 0x3B) N([0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   }
   const PMASK = (1 << 6) | (1 << 8) | (0xF << 10) | (1 << 19) | (1 << 21) | (0xF << 22);
   tag.pm = { mode: 0, swd: 0, level: 0, hi: 0, lo: 0, edges: 0, last: 255, el: 0 };
   tag.xtal = true;
-  tag.pmBase = () => { const m = tag.pm; m.level = m.mode === 2 ? PMASK : 0; m.hi = m.level; m.lo = PMASK & ~m.level; };
+  tag.pmMask = 0xFFFFFFFF;
+  tag.pmBase = () => { const m = tag.pm, W = (PMASK & tag.pmMask) >>> 0; m.level = m.mode === 2 ? W : 0; m.hi = m.level; m.lo = W & ~m.level; };
   function pmPkt() { const m = tag.pm; return [0xBA, m.mode | m.swd, m.el & 255, m.el >> 8, ...le32(m.level >>> 0), ...le32(m.hi >>> 0), ...le32(m.lo >>> 0), m.edges & 255, m.edges >> 8, m.last, 0]; }
   tag.pmPush = () => N(pmPkt());
   function clkPkt(never) {
@@ -232,6 +233,17 @@ const MOCK = `
   ok((await pg.textContent('#pmStat')).includes('выключен'), 'pin monitor: stopped');
   await pg.click('#bPmClr'); await pg.waitForTimeout(300);
   ok(!(await pg.textContent('#pmNote')).includes('менялись PD2'), 'pin monitor: history cleared');
+  // pin selection: click a cell to leave that pin out
+  await pg.click('#bPmStop'); await pg.waitForTimeout(200);
+  ok((await pg.$$eval('.pmc[data-i]', e => e.length)) === 12, 'pin monitor: 12 pins can be picked');
+  await pg.click('.pmc[data-i="25"]'); await pg.waitForTimeout(200);
+  ok((await pg.textContent('.pmc[data-i="25"]')).includes('исключён'), 'pin monitor: PD3 left out');
+  await pg.click('#bPm2'); await pg.waitForTimeout(300);
+  ok((await pg.evaluate(() => window.__tag.pmLen)) === 6 && (await pg.evaluate(() => window.__tag.pmMask)) === (0x3FFFFFF & ~(1 << 25)), 'pin monitor: mask sent with the mode');
+  ok((await pg.$$eval('.pmc.hi', e => e.length)) === 11, 'pin monitor: 11 pins watched');
+  await pg.click('.pmc[data-i="25"]'); await pg.waitForTimeout(300);
+  ok((await pg.$$eval('.pmc.hi', e => e.length)) === 12, 'pin monitor: PD3 back in, monitor restarted');
+  await pg.click('#bPmStop'); await pg.waitForTimeout(200);
 
   // --- tools: flash sector select has 0..14
   const secs = await pg.evaluate(() => document.querySelector('#sec').options.length);
