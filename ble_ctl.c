@@ -157,9 +157,10 @@ static void send_scan(void)
   const hwtest_scan_t *c = hwtest_scan();
   uint8_t r[20];
   memset(r, 0, sizeof(r));
-  r[0] = 0xBB; r[1] = c->state; r[2] = c->opt; r[3] = c->pairs_total; r[4] = c->pairs_done; r[5] = c->stuck; r[6] = c->hits;
-  for (int i = 0; i < 3; i++) { r[7 + 3 * i] = c->hit[i].sda; r[8 + 3 * i] = c->hit[i].scl; r[9 + 3 * i] = c->hit[i].addr; }
-  wr32(r + 16, c->high);
+  r[0] = 0xBB; r[1] = (uint8_t)(c->state | (c->opt << 4)); r[2] = c->pairs_total; r[3] = c->pairs_done; r[4] = c->stuck; r[5] = c->hits;
+  for (int i = 0; i < 2; i++) { r[6 + 3 * i] = c->hit[i].sda; r[7 + 3 * i] = c->hit[i].scl; r[8 + 3 * i] = c->hit[i].addr; }
+  wr32(r + 12, c->high);
+  wr32(r + 16, c->held);
   att_notify(r, 20);
 }
 

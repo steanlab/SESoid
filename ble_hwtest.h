@@ -55,9 +55,10 @@ typedef struct {
   uint8_t  state;                 // 0 never run, 1 running, 2 finished, 3 aborted
   uint8_t  opt;
   uint8_t  pairs_total, pairs_done, stuck;
-  uint8_t  hits;                  // devices found (all of them counted, the first three kept)
-  struct { uint8_t sda, scl, addr; } hit[3];   // pin indices and 7-bit address
+  uint8_t  hits;                  // devices found (all of them counted, the first two kept)
+  struct { uint8_t sda, scl, addr; } hit[2];   // pin indices and 7-bit address
   uint32_t high;                  // pins that were seen high when released (bit n = pin n)
+  uint32_t held;                  // pins that, as the data line, read low at the acknowledge of four addresses: held low or very slow, not a device
 } hwtest_scan_t;
 
 bool hwtest_scan_start(uint8_t opt, uint32_t mask);       // 2..SC_MAX_PINS free pins; false if the mask is not usable

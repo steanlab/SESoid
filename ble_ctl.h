@@ -38,7 +38,7 @@
 //                           panel diagnostics report (state 0 never run, 1 running, 2 finished), fields as in panel_diag_t
 //   B9 state flags sel ctune_xi ctune_xo fact_xi fact_xo lfxo_ms(2) cnt_lfxo(3) cnt_lfrco(3) cnt_ulfrco(3) captune
 //                           clock test report, fields as in hwtest_clock_t (ble_hwtest.h); a count is HFXO cycles per CT_DOWN_x / 2 cycles of the clock
-//   BB state opt pairs_total pairs_done stuck hits (sda scl addr)x3 high(4)
+//   BB state|opt<<4 pairs_total pairs_done stuck hits (sda scl addr)x2 high(4) held(4)
 //                           I2C scan report, fields as in hwtest_scan_t (state 0 never, 1 running, 2 finished, 3 aborted; pin indices as in BA; addr = 7 bit)
 //   BA mode elapsed_s(2) level(4) seen_hi(4) seen_lo(4) edges(2) last_pin 0
 //                           pin monitor report, fields as in hwtest_pins_t (pin index: PA0..PA8 = 0..8, PB0..PB4 = 9..13, PC0..PC7 = 14..21, PD0..PD3 = 22..25)

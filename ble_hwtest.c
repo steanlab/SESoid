@@ -283,6 +283,7 @@ static void pm_poll(void)
 // I2C scanner
 // =====================================================================================================================
 #define SC_HALF_US    5u            // half a clock period: about 60 kHz
+#define SC_ACK_US     150u          // the acknowledge is read at the end of this wait: a line that only rises slowly is not mistaken for an answer
 #define SC_STRETCH_US 200u          // how long a clock that does not rise is waited for
 #define SC_SETTLE_MAX_US 60000u     // a released line that is still low after this is called stuck
 #define SC_PACE_US    1000u         // one address per call, one call per millisecond at most
@@ -293,7 +294,7 @@ typedef enum { SS_IDLE = 0, SS_SETUP, SS_SETTLE, SS_ADDR } ss_t;
 
 static hwtest_scan_t sc;
 static ss_t ss;
-static uint8_t sc_pin[SC_MAX_PINS], sc_n, sc_i, sc_j, sc_addr, sc_sda, sc_scl;
+static uint8_t sc_pin[SC_MAX_PINS], sc_n, sc_i, sc_j, sc_addr, sc_sda, sc_scl, sc_acks, sc_ackaddr[3];
 static uint32_t sc_mask, sc_t0, sc_next;
 static bool sc_changed;
 
@@ -343,7 +344,9 @@ static bool i2c_probe(uint8_t addr, bool *ack)
   }
   sda_rel(); wait_us(SC_HALF_US);
   ok &= scl_rel(); wait_us(SC_HALF_US);
-  *ack = pin_read(sc_sda) == 0;
+  bool early = pin_read(sc_sda) == 0;
+  wait_us(SC_ACK_US);
+  *ack = early && pin_read(sc_sda) == 0;                                                // a device holds the line low the whole clock high time
   scl_low(); wait_us(SC_HALF_US);
   sda_low(); wait_us(SC_HALF_US); ok &= scl_rel(); wait_us(SC_HALF_US); sda_rel(); wait_us(SC_HALF_US);   // stop
   return ok;
@@ -377,6 +380,15 @@ bool hwtest_scan_start(uint8_t opt, uint32_t mask)
   return true;
 }
 
+static void sc_commit_pair(void)                              // a pair that answered at up to three addresses: those are devices
+{
+  for (int k = 0; k < sc_acks; k++) {
+    if (sc.hits < 2) { sc.hit[sc.hits].sda = sc_sda; sc.hit[sc.hits].scl = sc_scl; sc.hit[sc.hits].addr = sc_ackaddr[k]; }
+    if (sc.hits < 255) sc.hits++;
+    sc_changed = true;
+  }
+}
+
 static void sc_next_pair(void)
 {
   sc.pairs_done++;
@@ -404,7 +416,7 @@ static void sc_poll(void)
         else if (sc.opt == SC_OPT_PULLDN) pin_cfg(sc_pin[k], 2, 0);
         else pin_cfg(sc_pin[k], 1, 0);
       }
-      sc_t0 = now; sc_next = now;
+      sc_t0 = now; sc_next = now; sc_acks = 0;
       ss = SS_SETTLE;
       break;
     case SS_SETTLE: {
@@ -418,11 +430,10 @@ static void sc_poll(void)
       bool ack, ok = i2c_probe(sc_addr, &ack);
       if (!ok) { sc.stuck++; sc_changed = true; sc_next_pair(); break; }                  // the clock did not behave: give up on this pair
       if (ack) {
-        if (sc.hits < 3) { sc.hit[sc.hits].sda = sc_sda; sc.hit[sc.hits].scl = sc_scl; sc.hit[sc.hits].addr = sc_addr; }
-        if (sc.hits < 255) sc.hits++;
-        sc_changed = true;
+        if (sc_acks >= 3) { sc.held |= 1u << sc_sda; sc_changed = true; sc_next_pair(); break; }   // "answers" at 4 addresses: the data line is held low, not a device
+        sc_ackaddr[sc_acks++] = sc_addr;
       }
-      if (sc_addr >= SC_ADDR_LAST) sc_next_pair(); else sc_addr++;
+      if (sc_addr >= SC_ADDR_LAST) { sc_commit_pair(); sc_next_pair(); } else sc_addr++;
       break; }
   }
 }

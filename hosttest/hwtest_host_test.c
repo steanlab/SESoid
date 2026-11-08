@@ -24,6 +24,8 @@ static const int psize[4] = { 9, 5, 8, 4 };
 // model of an I2C device on PD2 (SDA) / PD3 (SCL), address DEVADDR; lines read low when the "chip" has no power (bus_powered = 0)
 #define DEVADDR 0x55
 static int i2c_model, bus_powered, slave_present, slave_low, sda_master = 1, scl_line = 1;
+static uint32_t sda_slow_us;                 // the data line needs this long to rise after being released (a heavily loaded line); 0 = at once
+static uint32_t sda_rel_t; static int sda_pm = 1;
 static void i2c_slave(void)
 {
   static int psda = 1, pscl = 1, st, bitn, shift, pend;
@@ -88,7 +90,11 @@ static void sim(void)
       if (i2c_model && p == 2 && n == 5) v = 0;                 // PC5 is loaded by the unpowered chip: low even when pulled up
       if (i2c_model && p == 3 && (n == 2 || n == 3)) {         // PD2 = SDA, PD3 = SCL of the model device
         int m = (mode == 4) ? (int)((g_gpio.P[p].DOUT >> n) & 1u) : (mode == 2 && ((g_gpio.P[p].DOUT >> n) & 1u) ? bus_powered : 0);
-        if (n == 2) { sda_master = m; v = m && !slave_low; } else { scl_line = m; v = m; }
+        if (n == 2) {
+          if (m && !sda_pm) sda_rel_t = now_us;
+          sda_pm = m; sda_master = m;
+          v = m && !slave_low && (sda_slow_us == 0 || (uint32_t)(now_us - sda_rel_t) >= sda_slow_us);
+        } else { scl_line = m; v = m; }
       }
       if (v) din |= 1u << n;
     }
@@ -322,6 +328,21 @@ static void test_scan(void)
   CHECK((c->high & (PD(2) | PD(3))) == (PD(2) | PD(3)), "PD2 and PD3 seen high");
   CHECK(g_gpio.P[3].MODEL == saved.P[3].MODEL && g_gpio.P[3].DOUT == saved.P[3].DOUT && g_gpio.P[2].MODEL == saved.P[2].MODEL && g_gpio.P[2].DOUT == saved.P[2].DOUT, "pins restored");
   CHECK(hwtest_scan_changed() && !hwtest_scan_changed(), "changes reported once");
+
+  printf("i2c scan: slow data line (a false answer at every address)\n");
+  slave_present = 0; sda_slow_us = 1000;
+  CHECK(hwtest_scan_start(0, PD(2) | PD(3)), "scan starts");
+  scan_wait();
+  CHECK(c->state == 2 && c->hits == 0 && (c->held & PD(2)), "slow SDA: no device, PD2 reported as held: hits %u held %08x", c->hits, c->held);
+  sda_slow_us = 20;
+  CHECK(hwtest_scan_start(0, PD(2) | PD(3)), "scan starts");
+  scan_wait();
+  CHECK(c->state == 2 && c->hits == 0 && c->held == 0, "line rising in 20 us: no false answer: hits %u held %08x", c->hits, c->held);
+  sda_slow_us = 20; slave_present = 1;
+  CHECK(hwtest_scan_start(0, PD(2) | PD(3)), "scan starts");
+  scan_wait();
+  CHECK(c->state == 2 && c->hits == 1 && c->hit[0].addr == DEVADDR && c->held == 0, "device still found with a slowly rising line: hits %u", c->hits);
+  sda_slow_us = 0; slave_present = 1;
 
   printf("i2c scan: no power\n");
   bus_powered = 0;
