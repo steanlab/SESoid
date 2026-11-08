@@ -5,25 +5,26 @@
 
 #define CODE_BLACK 0u
 #define CODE_WHITE 1u
+// pixel codes 2 = yellow and 3 = red come from the per-column colour table of the title
 
 static inline uint32_t bm_get(const uint8_t *d, int hb, int du, int dv)
 {
   return (d[du * hb + (dv >> 3)] >> (dv & 7)) & 1u;
 }
 
-// is the picture pixel (u, v) white?
-static uint32_t white(int u, int v)
+// panel pixel code of the picture pixel (u, v): 0 black, 1 white, 2 yellow, 3 red
+static uint32_t pixel_code(int u, int v)
 {
   int du = u - SPL_TITLE_X, dv = v - SPL_TITLE_Y;
   if (du >= 0 && du < SPL_TITLE_W && dv >= 0 && dv < SPL_TITLE_H) {
-    return bm_get(spl_title, SPL_TITLE_HB, du, dv);
+    return bm_get(spl_title, SPL_TITLE_HB, du, dv) ? spl_title_col[du] : CODE_BLACK;
   }
   du = u - SPL_SUB_X;
   dv = v - SPL_SUB_Y;
   if (du >= 0 && du < SPL_SUB_W && dv >= 0 && dv < SPL_SUB_H) {
-    return bm_get(spl_sub, SPL_SUB_HB, du, dv);
+    return bm_get(spl_sub, SPL_SUB_HB, du, dv) ? CODE_WHITE : CODE_BLACK;
   }
-  return 0;
+  return CODE_BLACK;
 }
 
 void splash_gen_line(int line, uint8_t *out)
@@ -48,7 +49,7 @@ void splash_gen_line(int line, uint8_t *out)
 #else
       int v = PANEL_PIX - 1 - p;
 #endif
-      b = (b << 2) | (white(u, v) ? CODE_WHITE : CODE_BLACK);
+      b = (b << 2) | pixel_code(u, v);
     }
     out[i] = (uint8_t)b;
   }

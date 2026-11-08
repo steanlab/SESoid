@@ -6,6 +6,7 @@
 #   python tools/make_splash.py [--preview splash_preview.png]
 #
 # Text is rendered with DejaVu Sans (Bitstream Vera licence: free to embed rendered glyph bitmaps).
+# Title letters have their own colour (per column code 1 white / 2 yellow / 3 red in spl_title_col).
 # Storage: column-major, 1 bit per pixel, for every picture column u (0..W-1) ceil(H/8) bytes, bit k = row k of the block (1 = white).
 import argparse, os, sys
 from PIL import Image, ImageDraw, ImageFont
@@ -29,11 +30,15 @@ def render(text, path, size, spacing=0):
     big = Image.new("L", (total * S, (asc + desc) + 8 * S), 0)
     d = ImageDraw.Draw(big)
     x = 4.0 * S
+    starts = []
     for c, a in zip(text, adv):
+        starts.append(x / S)
         d.text((x, 4 * S), c, font=fb, fill=255)
         x += a + spacing * S
+    starts.append(x / S - spacing)
     small = big.resize((big.width // S, big.height // S), Image.LANCZOS).point(lambda v: 255 if v >= 128 else 0)
     bbox = small.getbbox()
+    render.spans = [(starts[i] - bbox[0], starts[i + 1] - bbox[0]) for i in range(len(text))]   # advance span of every glyph in cropped coordinates
     return small.crop(bbox)
 
 
@@ -42,6 +47,7 @@ def fit(text, path, max_w, size0, spacing=0):
     while size > 6:
         im = render(text, path, size, spacing)
         if im.width <= max_w:
+            fit.spans = render.spans
             return im, size
         size -= 1
     raise SystemExit("cannot fit " + text)
@@ -77,6 +83,13 @@ a = ap.parse_args()
 
 MARGIN = 20
 title, tsize = fit(TITLE, TITLE_FONT, W_PANEL - 2 * MARGIN, 140, spacing=4)
+# colour of every letter of the title (panel pixel codes: 1 white, 2 yellow, 3 red), by position in "GECKO SLIDE":
+# GECKO: E red, K yellow; SLIDE: L red, D yellow; everything else white
+LETTER_CODE = {1: 3, 3: 2, 7: 3, 9: 2}
+tcol = [1] * title.width
+for i, (x0, x1) in enumerate(fit.spans):
+    for x in range(max(0, int(round(x0))), min(title.width, int(round(x1)))):
+        tcol[x] = LETTER_CODE.get(i, 1)
 sub, ssize = fit(SUB, SUB_FONT, W_PANEL - 2 * MARGIN, 40)
 GAP = 26
 block = title.height + GAP + sub.height
@@ -90,7 +103,18 @@ img = Image.new("L", (W_PANEL, H_PANEL), 0)
 img.paste(title, (tx, ty))
 img.paste(sub, (sx, sy))
 if a.preview:
-    img.convert("RGB").save(a.preview)
+    rgb = Image.new("RGB", (W_PANEL, H_PANEL), (0, 0, 0))
+    COL = {1: (255, 255, 255), 2: (240, 200, 0), 3: (220, 20, 20)}
+    tp = title.load(); rp = rgb.load(); sp = sub.load()
+    for u in range(title.width):
+        for v in range(title.height):
+            if tp[u, v]:
+                rp[tx + u, ty + v] = COL[tcol[u]]
+    for u in range(sub.width):
+        for v in range(sub.height):
+            if sp[u, v]:
+                rp[sx + u, sy + v] = COL[1]
+    rgb.save(a.preview)
 
 tw, th, thb, tdata = pack(title)
 sw, sh, shb, sdata = pack(sub)
@@ -102,5 +126,6 @@ with open(a.out, "w") as f:
     f.write("\n")
     emit_array(f, "spl_title", tdata)
     emit_array(f, "spl_sub", sdata)
+    emit_array(f, "spl_title_col", tcol)
     f.write("\n#endif\n")
 print("wrote", os.path.normpath(a.out), "(%d + %d bytes)" % (len(tdata), len(sdata)))
