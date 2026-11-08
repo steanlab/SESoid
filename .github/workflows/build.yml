@@ -80,34 +80,35 @@ jobs:
           sed -n 1,40p /opt/silabs/slc-cli/readme.md 2>/dev/null
           echo "--- slc configuration --help"; slc configuration --help 2>&1 | head -40 || true
 
-          # Candidates: SDKs shipped in the image (slc and SDK were put together there on purpose), then the cloned one.
-          CANDS=$(find /opt -maxdepth 6 -name gecko_sdk.slcs 2>/dev/null | xargs -r -n1 dirname)
-          CANDS="$CANDS $CLONED_SDK"
-          mkdir -p /tmp/h /tmp/jy
+          # Candidates: the SDK shipped in the image (slc 6 and that SDK belong together), then the cloned Gecko SDK 4.4.1.
+          CANDS=$(find /opt -maxdepth 5 -name simplicity_sdk.slcs 2>/dev/null)
+          CANDS="$CANDS $CLONED_SDK/gecko_sdk.slcs"
+          mkdir -p /tmp/h
           gen_ok=0
-          for GSDK_PATH in $CANDS; do
-            echo "=== candidate SDK: $GSDK_PATH ($(grep -m1 sdk_version "$GSDK_PATH/gecko_sdk.slcs")) ==="
+          for SLCS in $CANDS; do
+            GSDK_PATH=$(dirname "$SLCS")
+            SDKID=$(basename "$SLCS" .slcs)
+            SDKVER=$(grep -m1 sdk_version "$SLCS" | sed 's/[^0-9.]//g')
+            echo "=== candidate SDK: $GSDK_PATH (id $SDKID, version $SDKVER) ==="
             sz=$(stat -c %s "$GSDK_PATH/$RAILREL" 2>/dev/null || echo 0)
-            if [ "$sz" -lt 100000 ] && [ "$GSDK_PATH" != "$CLONED_SDK" ]; then
-              echo "RAIL library there is $sz bytes, copying the real one from the cloned SDK"
-              mkdir -p "$(dirname "$GSDK_PATH/$RAILREL")" && cp "$CLONED_SDK/$RAILREL" "$GSDK_PATH/$RAILREL" || echo "copy failed"
-            fi
-            SDKVER=$(grep -m1 sdk_version "$GSDK_PATH/gecko_sdk.slcs" | sed 's/[^0-9.]//g')
-            sed -i "s/^sdk: {id: gecko_sdk, version: .*}/sdk: {id: gecko_sdk, version: $SDKVER}/" v300_ble_probe.slcp
+            echo "RAIL xG22 library in this SDK: $sz bytes"
+            sed -i "s/^sdk: .*/sdk: {id: $SDKID, version: $SDKVER}/" v300_ble_probe.slcp
+            grep '^sdk:' v300_ble_probe.slcp
             slc configuration --sdk="$GSDK_PATH" 2>&1 | tail -1 || true
             slc signature trust --sdk "$GSDK_PATH" 2>&1 | tail -1 || true
             slc configuration --gcc-toolchain="$(dirname "$(dirname "$(command -v arm-none-eabi-gcc)")")/" 2>&1 | tail -1 || true
             rm -rf ./out
             tag=$(echo "$GSDK_PATH" | tr '/' '_')
-            if HOME=/tmp/h slc generate -v=DEBUG -s "$GSDK_PATH" -p v300_ble_probe.slcp -o makefile -d ./out -cp > "gen$tag.log" 2>&1; then
+            if HOME=/tmp/h slc generate -s "$GSDK_PATH" -p v300_ble_probe.slcp -o makefile -d ./out -cp > "gen$tag.log" 2>&1; then
               tail -5 "gen$tag.log"; gen_ok=1; break
             else
-              grep -v "^  " "gen$tag.log" | head -12
-              echo "--- verbose log, lines about python / jep / traceback / error:"
-              grep -n -i "jep\|traceback\|python\|exception\|error" "gen$tag.log" | grep -v "Potential jar issue" | cut -c1-300 | head -40
+              grep -v "^  " "gen$tag.log" | head -25 | cut -c1-300
             fi
           done
           [ $gen_ok = 1 ] || { echo "slc generate failed with every SDK"; exit 1; }
+          if [ "$sz" -lt 100000 ]; then
+            echo "NOTE: the RAIL library of this SDK is only $sz bytes (a Git LFS pointer?), the link step will fail"
+          fi
           echo "generated with $GSDK_PATH"
           cd out
 
