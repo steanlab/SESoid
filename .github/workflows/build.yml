@@ -1,0 +1,42 @@
+name: build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  firmware:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # Find the project folder (the repository root, or a subfolder such as v300_ble/ if the zip was uploaded as is)
+      - name: Locate the project
+        run: |
+          f=$(find . -name v300_ble_probe.slcp -not -path './.git/*' | head -1)
+          test -n "$f" || { echo "v300_ble_probe.slcp not found in the repository"; exit 1; }
+          echo "PROJ=$(dirname "$f")" >> "$GITHUB_ENV"
+          echo "project folder: $(dirname "$f")"
+
+      # The image downloads the Gecko SDK 4.4.1 (with its Git LFS libraries), the SLC tool and the ARM compiler.
+      # It takes about 10 minutes the first time.
+      - name: Build the builder image
+        run: docker build -t silabs-builder -f "$PROJ/Dockerfile" "$PROJ"
+
+      - name: Build the firmware
+        run: |
+          chmod +x "$PROJ/build.sh"
+          docker run --rm --user root -v "$PWD/$PROJ":/build -w /build silabs-builder \
+            bash -c "chown -R builder /build && su builder -c 'cd /build && ./build.sh'" 2>&1 | tee "$PROJ/build.log"
+          test "${PIPESTATUS[0]}" -eq 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v300_ble_probe
+          path: |
+            ${{ env.PROJ }}/v300_ble_probe.bin
+            ${{ env.PROJ }}/v300_ble_probe.elf
+            ${{ env.PROJ }}/build.log
+            ${{ env.PROJ }}/out/autogen/sl_rail_util_init*.h
+            ${{ env.PROJ }}/out/autogen/sl_rail_util_init*.c
