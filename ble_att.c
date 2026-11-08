@@ -3,6 +3,7 @@
 #include "ble_att.h"
 #include "ble_ll.h"
 #include "ble_diag.h"
+#include "ble_up.h"
 
 #define ATT_MTU 23u            // default MTU: we never ask for more and answer the master's MTU request with 23
 
@@ -38,6 +39,7 @@ void att_reset(void)
 {
   s_cccd = 0;
   g_diag.cccd = 0;
+  up_reset();
 }
 
 // --------------------------------------------------------------------------------------------------------------
@@ -114,6 +116,7 @@ static void on_app_write(const uint8_t *v, uint8_t len)
   s_total += len;
   s_writes++;
   if (len == 0) return;
+  if (up_write(v, len)) return;                      // stage 3: upload protocol and flash tests
   uint8_t r[20];
   switch (v[0]) {
     case 0x01: {

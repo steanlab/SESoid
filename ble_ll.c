@@ -14,6 +14,7 @@
 #include <string.h>
 #include "ble_ll.h"
 #include "ble_att.h"
+#include "ble_up.h"
 #include "ble_diag.h"
 #include "rail.h"
 #include "rail_ble.h"
@@ -719,6 +720,20 @@ static void data_pdu(const ll_pdu_t *p)
   else l2cap_other(cid, p->data + 4, (uint8_t)l2len);
 }
 
+uint32_t ll_free_us(void)
+{
+  if (!c.active) return 0xFFFFFFFFu;
+  uint32_t now = RAIL_GetTime();
+  if (c.rx_pending) {                                   // polled mode: the receiver is started at rx_start
+    int32_t d = (int32_t)(c.rx_start - 600u - now);
+    return d > 0 ? (uint32_t)d : 0u;
+  }
+  int32_t since = (int32_t)(now - c.est);
+  if (since < 6000) return 0;                           // an event is running or about to start (up to ~5 packets per event)
+  int32_t d = (int32_t)(c.est + c.interval_us - 900u - now);   // the next event is armed at est + interval - 3 ms
+  return d > 0 ? (uint32_t)d : 0u;
+}
+
 void ll_poll(void)
 {
   if (!c.active) return;
@@ -751,5 +766,6 @@ void ll_poll(void)
   uint32_t lim = c.heard_any ? c.timeout_us : 6u * c.interval_us + 10000u;
   int32_t silent = (int32_t)(now - c.last_rx_time);
   if (silent > 0 && (uint32_t)silent > lim) { ll_end(0x200u); return; }
-  if ((int32_t)(now - c.arm_at) >= 0) arm_event(false);
+  if ((int32_t)(now - c.arm_at) >= 0) { arm_event(false); return; }
+  up_poll();
 }

@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SES V300: тест загрузки</title>
+<style>
+  :root { --bg:#fff; --fg:#1b1b1b; --mut:#666; --line:#d8d8d8; --acc:#0b57d0; --box:#f5f6f8; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#16181b; --fg:#e8e8e8; --mut:#9aa0a6; --line:#33373d; --acc:#8ab4f8; --box:#1f2226; } }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:15px/1.45 system-ui,sans-serif; max-width:760px; margin-inline:auto; }
+  h1 { font-size:20px; margin:0 0 4px; } h2 { font-size:16px; margin:22px 0 8px; }
+  p.n { color:var(--mut); margin:4px 0 12px; }
+  button { font:inherit; padding:8px 12px; margin:3px 4px 3px 0; border:1px solid var(--line); background:var(--box); color:var(--fg); border-radius:8px; }
+  button.p { background:var(--acc); color:#fff; border-color:var(--acc); } button:disabled { opacity:.45; }
+  select, input { font:inherit; padding:6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg); }
+  #log { background:var(--box); border:1px solid var(--line); border-radius:8px; padding:8px; height:300px; overflow:auto; font:12.5px/1.4 ui-monospace,monospace; white-space:pre-wrap; }
+  .bar { height:10px; background:var(--line); border-radius:5px; overflow:hidden; margin:8px 0; } .bar>div { height:100%; width:0; background:var(--acc); }
+</style>
+</head>
+<body>
+<h1>SES V300: тест загрузки по Bluetooth</h1>
+<p class="n">Проект SES V300 (не badge154), репозиторий steanlab/SESoid, файл docs/index.html. Нужен Chrome (Android или компьютер); страница открывается по https.</p>
+
+<button class="p" id="bConn">Подключиться</button> <button id="bDisc" disabled>Отключиться</button> <span id="st">не подключено</span>
+
+<h2>1. Связь</h2>
+<button id="bPing" disabled>Ping</button> <button id="bStat" disabled>Счётчики метки</button> <button id="bReset" disabled>Сброс счётчиков</button>
+
+<h2>2. Загрузка в ОЗУ метки (данные только считаются, во флеш не пишутся)</h2>
+<label>Размер: <select id="size">
+  <option value="2048">2 КБ</option><option value="10240">10 КБ</option><option value="46080" selected>46 080 Б (один кадр 720×256)</option><option value="92160">90 КБ</option>
+</select></label>
+<button class="p" id="bUp" disabled>Отправить</button> <button id="bStop" disabled>Остановить</button>
+<div class="bar"><div id="prog"></div></div>
+<div id="res"></div>
+
+<h2>3. Внешняя флеш (только тестовая область 0x00000–0x0FFFF)</h2>
+<p class="n">Каждая проверка записывает или стирает один сектор тестовой области, которая в дампе пустая. Результат приходит от метки по радио, провода не нужны: можно питать метку от батареи.</p>
+<button id="bFInfo" disabled>Идентификатор флеш</button>
+<label>сектор <select id="sec"></select></label>
+<button id="bFErase" disabled>Стереть сектор</button> <button id="bFProg" disabled>Записать страницу</button> <button id="bFScan" disabled>Прочитать (сколько не FF)</button>
+
+<h2>Журнал</h2>
+<div id="log"></div>
+
+<script>
+'use strict';
+const SVC = '53455300-0300-4f45-5000-534c49444500', RXC = '53455301-0300-4f45-5000-534c49444500', TXC = '53455302-0300-4f45-5000-534c49444500';
+const $ = id => document.getElementById(id);
+const logEl = $('log');
+function log(s) { const t = new Date().toLocaleTimeString(); logEl.textContent += t + '  ' + s + '\n'; logEl.scrollTop = logEl.scrollHeight; }
+const hex = a => Array.from(a, x => x.toString(16).padStart(2, '0')).join(' ');
+for (let i = 0; i < 16; i++) { const o = document.createElement('option'); o.value = i; o.textContent = i + '  (0x' + (i * 4096).toString(16).padStart(5, '0') + ')'; $('sec').appendChild(o); }
+$('sec').value = 15;
+
+// CRC-32 (IEEE)
+const CT = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(buf) { let c = 0xFFFFFFFF; for (let i = 0; i < buf.length; i++) c = CT[(c ^ buf[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+
+let dev = null, rx = null, tx = null, queue = [], waiter = null, stopFlag = false, busy = false;
+const u32 = a => (a[0] | a[1] << 8 | a[2] << 16 | a[3] << 24) >>> 0;
+const le32 = v => [v & 255, v >>> 8 & 255, v >>> 16 & 255, v >>> 24 & 255];
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+function onNotify(e) {
+  const a = new Uint8Array(e.target.value.buffer.slice(e.target.value.byteOffset, e.target.value.byteOffset + e.target.value.byteLength));
+  queue.push(a);
+  if (waiter) { const w = waiter; waiter = null; w(); }
+  if (!busy) describe(a);   // outside an upload every message is shown
+}
+function describe(a) {
+  switch (a[0]) {
+    case 0x81: log('ping-ответ: ' + hex(a.slice(1))); break;
+    case 0x82: log('счётчики метки: принято ' + u32(a.slice(1)) + ' байт, записей ' + (a[5] | a[6] << 8)); break;
+    case 0x83: log('счётчики сброшены'); break;
+    case 0xA0: log('флеш: JEDEC ' + hex(a.slice(1, 4)) + ' (ожидается ef 40 13), SR1=' + a[4].toString(16) + ' SR2=' + a[5].toString(16) + ' SR3=' + a[6].toString(16)); break;
+    case 0xA1: case 0xA2: {
+      const names = ['успешно', 'BUSY не снялся за 3 с', 'сектор не пуст после стирания', 'бит записи (WEL) не установился', 'данные не совпали при чтении', 'неверные параметры'];
+      log((a[0] === 0xA1 ? 'стирание: ' : 'запись страницы: ') + (names[a[1]] || a[1]) + '; BUSY ' + (u32(a.slice(2, 6)) / 1000).toFixed(1) + ' мс; SR1: после команды ' + a[6].toString(16) + ', в конце ' + a[7].toString(16) + ', после WREN ' + a[8].toString(16) + '; не FF/расхождений: ' + (a[9] | a[10] << 8));
+      break; }
+    case 0xA3: log('чтение: результат ' + a[1] + ', байт не равных FF: ' + (a.length >= 6 ? u32(a.slice(2, 6)) : '-')); break;
+    default: log('уведомление ' + hex(a));
+  }
+}
+function wait(ms) { return new Promise(res => { const t = setTimeout(() => { waiter = null; res(false); }, ms); waiter = () => { clearTimeout(t); res(true); }; }); }
+async function send(arr, resp) { const v = new Uint8Array(arr); if (resp) await rx.writeValueWithResponse(v); else await rx.writeValueWithoutResponse(v); }
+async function sendRetry(arr, resp) {
+  for (let i = 0; i < 5; i++) { try { await send(arr, resp); return; } catch (e) { await sleep(20 * (i + 1)); } }
+  await send(arr, resp);
+}
+
+function setUi(on) { for (const id of ['bDisc', 'bPing', 'bStat', 'bReset', 'bUp', 'bFInfo', 'bFErase', 'bFProg', 'bFScan']) $(id).disabled = !on; $('bConn').disabled = on; }
+$('bConn').onclick = async () => {
+  try {
+    dev = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: 'V300' }], optionalServices: [SVC] });
+    dev.addEventListener('gattserverdisconnected', () => { log('соединение закрыто'); $('st').textContent = 'не подключено'; setUi(false); });
+    log('подключаюсь к ' + dev.name + ' ...');
+    const srv = await dev.gatt.connect();
+    const svc = await srv.getPrimaryService(SVC);
+    rx = await svc.getCharacteristic(RXC); tx = await svc.getCharacteristic(TXC);
+    tx.addEventListener('characteristicvaluechanged', onNotify);
+    await tx.startNotifications();
+    $('st').textContent = 'подключено: ' + dev.name; setUi(true); log('готово');
+  } catch (e) { log('ошибка подключения: ' + e); }
+};
+$('bDisc').onclick = () => { if (dev && dev.gatt.connected) dev.gatt.disconnect(); };
+$('bPing').onclick = () => send([1, 0x11, 0x22, 0x33], true).catch(e => log('' + e));
+$('bStat').onclick = () => send([2], true).catch(e => log('' + e));
+$('bReset').onclick = () => send([3], true).catch(e => log('' + e));
+$('bFInfo').onclick = () => send([0x20], true).catch(e => log('' + e));
+$('bFErase').onclick = () => { log('стираю сектор ' + $('sec').value + ' ...'); send([0x21, +$('sec').value], true).catch(e => log('' + e)); };
+$('bFProg').onclick = () => { log('записываю страницу в сектор ' + $('sec').value + ' ...'); send([0x22, +$('sec').value], true).catch(e => log('' + e)); };
+$('bFScan').onclick = () => send([0x23, +$('sec').value, 0], true).catch(e => log('' + e));
+$('bStop').onclick = () => { stopFlag = true; };
+
+// ---- upload (RAM sink). Window of 4 pages in flight; the tag buffers 8.
+async function expect(pred, ms) {
+  const t0 = performance.now();
+  for (;;) {
+    while (queue.length) { const a = queue.shift(); if (pred(a)) return a; }
+    const left = ms - (performance.now() - t0); if (left <= 0) return null;
+    await wait(left);
+  }
+}
+async function upload(total) {
+  const img = new Uint8Array(total); for (let i = 0; i < total; i++) img[i] = (i * 31 + (i >> 8) * 7 + 5) & 255;
+  const want = crc32(img), pages = Math.ceil(total / 256);
+  busy = true; stopFlag = false; queue = []; $('bUp').disabled = true; $('bStop').disabled = false; $('res').textContent = '';
+  const t0 = performance.now(); let retried = 0, sentChunks = 0;
+  const chunk = async (idx) => {
+    const m = new Uint8Array(19); m[0] = 0x11; m[1] = idx & 255; m[2] = idx >> 8;
+    const part = img.subarray(idx * 16, Math.min(total, idx * 16 + 16)); m.set(part, 3); await sendRetry(m, false); sentChunks++;
+  };
+  const sendPage = async (p, onlyMask) => {
+    const n = Math.min(256, total - p * 256), ch = Math.ceil(n / 16);
+    for (let k = 0; k < ch; k++) if (!onlyMask || !(onlyMask >> k & 1)) await chunk(p * 16 + k);
+    await sendRetry([0x12, p & 255, p >> 8], false);
+  };
+  try {
+    await sendRetry([0x10, 0, ...le32(total)], true);
+    const a0 = await expect(a => a[0] === 0x90, 3000);
+    if (!a0 || a0[1] !== 0) throw new Error('метка не приняла BEGIN: ' + (a0 ? hex(a0) : 'нет ответа'));
+    let base = 0, sent = 0, lastProgress = performance.now();
+    while (base < pages) {
+      if (stopFlag) { await sendRetry([0x14], true); throw new Error('остановлено'); }
+      while (sent < pages && sent < base + 4) { await sendPage(sent); sent++; }
+      const a = await expect(r => r[0] === 0x92 || r[0] === 0x93, 1500);
+      if (!a) {                                         // silence: ask about the oldest page again
+        retried++; if (performance.now() - lastProgress > 20000) throw new Error('нет ответа 20 с');
+        await sendRetry([0x12, base & 255, base >> 8], false); continue;
+      }
+      const p = a[1] | a[2] << 8;
+      if (a[0] === 0x92 && a[3] === 0) { if (p === base) { base++; lastProgress = performance.now(); } }
+      else if (a[0] === 0x92 && a[3] === 1) { const e = a[4] | a[5] << 8; log('метка ждёт страницу ' + e); base = sent = e; }
+      else if (a[0] === 0x92) throw new Error('ошибка хранения на странице ' + p);
+      else { retried++; await sendPage(p, a[3] | a[4] << 8); }
+      $('prog').style.width = (100 * base / pages).toFixed(0) + '%';
+    }
+    let crc = null;
+    for (let i = 0; i < 5 && !crc; i++) { await sendRetry([0x13], true); crc = await expect(r => r[0] === 0x94, 2000); }
+    if (!crc) throw new Error('нет ответа на END');
+    const dt = (performance.now() - t0) / 1000, got = u32(crc.slice(2, 6));
+    const ok = crc[1] === 0 && got === want && u32(crc.slice(6, 10)) === total;
+    $('res').textContent = (ok ? 'ГОТОВО: контрольная сумма совпала' : 'ОШИБКА: контрольная сумма не совпала') + '. ' + total + ' байт за ' + dt.toFixed(1) + ' с = ' + (total / dt / 1024).toFixed(2) + ' КБ/с; повторов ' + retried;
+    log($('res').textContent + ' (CRC метки ' + got.toString(16) + ', у страницы ' + want.toString(16) + ')');
+  } catch (e) { log('загрузка прервана: ' + e.message); $('res').textContent = 'Прервано: ' + e.message; }
+  busy = false; $('bUp').disabled = !(dev && dev.gatt.connected); $('bStop').disabled = true;
+}
+$('bUp').onclick = () => upload(+$('size').value);
+</script>
+</body>
+</html>

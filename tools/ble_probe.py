@@ -23,7 +23,10 @@ FIELDS = [
     'notify_sent', 'notify_dropped', 'cccd', 'sig_rx', 'smp_rx', 'inbox_ovf', 'outbox_full', 'cal_runs', 'last_rssi',
     'arm_fail', 'upd_applied', 'chm_applied', 'last_ev_lo', 'last_ev_hi', 'knob_sched', 'conn_ms', 'end_age_ms',
     'arm_dt_min', 'arm_dt_max', 'poll_gap_max', 'anchor_err_min', 'anchor_err_max', 'anchor_bad', 'rx_no_tx',
-    'sync1', 'sched_start', 'sched_end', 'radio_state', 'evlog_pos', 'poll_calls', 'rxpend_late', 'catchup'
+    'sync1', 'sched_start', 'sched_end', 'radio_state', 'evlog_pos', 'poll_calls', 'rxpend_late', 'catchup',
+    'up_state', 'up_mode', 'up_total', 'up_pages', 'up_bytes', 'up_chunks', 'up_dup', 'up_ahead', 'up_incomplete',
+    'up_ooo', 'up_crc', 'fl_jedec', 'fl_sr', 'fl_op', 'fl_result', 'fl_busy_us', 'fl_blocked', 'fl_pages_ok',
+    'fl_pages_bad'
 ]
 STAGE = {1: 'main reached', 2: 'RAIL ready', 3: 'advertising', 4: 'CONNECTED'}
 EV_BITS = {3: 'RX_PKT', 6: 'SYNC1', 8: 'FRAME_ERR', 9: 'RX_FIFO_FULL', 10: 'RX_OVERFLOW', 12: 'RX_TIMEOUT', 13: 'SCHED_RX_START',
@@ -130,6 +133,12 @@ def show(d, prev_hb=[None]):
             d['conn_ms'], d['end_age_ms'], sgn(d['anchor_err_min']), sgn(d['anchor_err_max']), sgn(d['arm_dt_min']), sgn(d['arm_dt_max'])))
         print('main loop: %d polls, longest gap between polls %d us | late polled starts %d | sync words seen %d | scheduled RX started %d ended %d | radio state now 0x%x' % (
             d['poll_calls'], d['poll_gap_max'], d['rxpend_late'], d['sync1'], d['sched_start'], d['sched_end'], d['radio_state']))
+        print('upload: %s mode %d, image %d bytes, %d pages committed (%d bytes) | chunks %d, repeated %d, too far ahead %d | incomplete pages %d, out of order %d | CRC so far %08x' % (
+            'ACTIVE' if d['up_state'] else 'idle', d['up_mode'], d['up_total'], d['up_pages'], d['up_bytes'], d['up_chunks'], d['up_dup'], d['up_ahead'],
+            d['up_incomplete'], d['up_ooo'], d['up_crc']))
+        print('flash test: op %d result %s | JEDEC %06x SR %06x | BUSY %d us | waited for radio-free time %d times | tests ok %d, failed %d' % (
+            d['fl_op'], {0: 'ok', 1: 'BUSY timeout', 2: 'not blank', 3: 'no WEL', 4: 'verify differs', 5: 'bad parameter', 255: 'running'}.get(d['fl_result'], d['fl_result']),
+            d['fl_jedec'], d['fl_sr'], d['fl_busy_us'], d['fl_blocked'], d['fl_pages_ok'], d['fl_pages_bad']))
         print('last RAIL events (oldest first; time in us relative to the first one, "+delta" to the previous):')
         n = min(d['evlog_pos'], EVLOG_N)
         first = d['evlog_pos'] - n

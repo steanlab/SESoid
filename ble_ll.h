@@ -33,4 +33,8 @@ bool ll_send(uint8_t llid, const uint8_t *data, uint8_t len);
 // Interrupt context: RAIL event handler while connected.
 void ll_on_event(RAIL_Handle_t h, RAIL_Events_t events);
 
+// Main context: how many microseconds of radio-free time are left before the radio needs the CPU again (arming of the next
+// connection event). 0 = the radio is busy now; a large value when not connected. Slow work (bit-banged flash access) uses it.
+uint32_t ll_free_us(void);
+
 #endif
