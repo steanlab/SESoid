@@ -140,7 +140,15 @@ jobs:
           sed -i 's/, LFXO/, LFRCO/' autogen/sl_device_init_clocks.c
           sed -i 's/ sl_device_init_lfxo/\/\/ sl_device_init_lfxo/' autogen/sl_event_handler.c
 
-          make -f v300_ble_probe.Makefile -j8
+          # The generated makefile takes the compiler from ARM_GCC_DIR; with this image it came out empty ("/bin/arm-none-eabi-gcc: not found").
+          # Give it the real directory in every way at once: variables on the make command line and links in /bin.
+          GCCBIN=$(dirname "$(command -v arm-none-eabi-gcc)")
+          GCCDIR=$(dirname "$GCCBIN")
+          echo "compiler directory: $GCCDIR"
+          grep -n "ARM_GCC" v300_ble_probe.Makefile v300_ble_probe.project.mak 2>/dev/null | head -12 || true
+          for t in "$GCCBIN"/arm-none-eabi-*; do ln -sf "$t" "/bin/$(basename "$t")" 2>/dev/null || true; done
+          export ARM_GCC_DIR="$GCCDIR"
+          make -f v300_ble_probe.Makefile -j8 ARM_GCC_DIR="$GCCDIR" ARM_GCC_DIR_LINUX="$GCCDIR"
 
           cd ..
           arm-none-eabi-objcopy -O binary out/build/debug/v300_ble_probe.out v300_ble_probe.bin
