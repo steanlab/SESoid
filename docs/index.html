@@ -81,7 +81,7 @@
       <div class="card">
         <div class="row">
           <button class="p" id="bOpen">Открыть картинку…</button><input type="file" id="file" accept="image/*" hidden>
-          <button id="bPaste">Вставить из буфера</button><button id="bDemo">Пример</button><button id="bCalib" title="Таблица из четырёх цветов панели для калибровки: загрузите в слот и сфотографируйте">Калибровочная таблица</button>
+          <button id="bPaste">Вставить из буфера</button><button id="bDemo">Пример</button><button id="bCalib" title="Таблица из четырёх цветов панели для калибровки: загрузите в слот и сфотографируйте">Калибровочная таблица</button><button id="bCalib2" title="Градиенты без коррекции растискивания (слева, A) и с ней (справа, B): загрузите в слот и сфотографируйте">Таблица проверки</button>
           <span class="n" id="srcName" style="margin:0">нет картинки: перетащите файл на предпросмотр, вставьте Ctrl+V или откройте</span>
         </div>
         <div id="pvwrap"><canvas id="pv" width="720" height="256"></canvas><div id="pvhint">Предпросмотр 720 × 256 (как будет на экране).<br>Перетащите сюда картинку. После загрузки колёсиком мыши меняется масштаб, перетаскиванием — положение.</div></div>
@@ -228,7 +228,7 @@ function download(blob, name) { const a = document.createElement('a'); a.href = 
    =================================================================================================================== */
 const PALETTES = {
   ideal: { name: 'Идеальная (максимальная насыщенность)', c: [[0, 0, 0], [255, 255, 255], [255, 236, 0], [255, 0, 0]] },
-  panel: { name: 'Близкая к реальной панели', c: [[24, 24, 28], [201, 203, 194], [212, 178, 10], [172, 38, 32]] },
+  panel: { name: 'Реальная панель (по калибровочному снимку)', c: [[24, 20, 19], [231, 231, 231], [231, 164, 30], [180, 111, 123]] },
   custom: { name: 'Своя', c: [[0, 0, 0], [255, 255, 255], [255, 236, 0], [255, 0, 0]] }
 };
 const ALGOS = {
@@ -248,21 +248,21 @@ const BAYER8 = (() => { const m = new Array(64); for (let y = 0; y < 8; y++) for
 
 const PRESETS = {
   vivid: { label: 'Насыщенно', note: 'Максимально яркие цвета: идеальная палитра, сильная насыщенность и контраст, диффузия ошибки. Хорошо для рисунков, постеров, логотипов и фото с яркими цветами.',
-    v: { pal: 'ideal', sat: 230, contrast: 22, bright: 0, gamma: 1, sharp: 20, auto: true, algo: 'fs', strength: 85, serp: true, dist: 'lab', en: [true, true, true, true] } },
+    v: { pal: 'ideal', sat: 230, contrast: 22, bright: 0, gamma: 1, sharp: 20, auto: true, algo: 'fs', strength: 85, dgain: 100, serp: true, dist: 'lab', en: [true, true, true, true] } },
   photo: { label: 'Фото', note: 'Нейтральная передача тонов: палитра, близкая к панели, мягкая насыщенность, диффузия Флойда — Стейнберга.',
-    v: { pal: 'panel', sat: 130, contrast: 8, bright: 0, gamma: 1, sharp: 10, auto: true, algo: 'fs', strength: 100, serp: true, dist: 'lab', en: [true, true, true, true] } },
+    v: { pal: 'panel', sat: 130, contrast: 8, bright: 0, gamma: 1, sharp: 10, auto: true, algo: 'fs', strength: 100, dgain: 100, serp: true, dist: 'lab', en: [true, true, true, true] } },
   graphic: { label: 'Графика / текст', note: 'Чёткие края и ровные заливки: без размытия цветов, ближайший цвет без дизеринга, высокая насыщенность.',
-    v: { pal: 'ideal', sat: 200, contrast: 30, bright: 0, gamma: 1, sharp: 0, auto: false, algo: 'none', strength: 100, serp: false, dist: 'lab', en: [true, true, true, true] } },
+    v: { pal: 'ideal', sat: 200, contrast: 30, bright: 0, gamma: 1, sharp: 0, auto: false, algo: 'none', strength: 100, dgain: 0, serp: false, dist: 'lab', en: [true, true, true, true] } },
   exact: { label: 'Как есть', note: 'Без обработки: картинка, уже состоящая из четырёх цветов панели, переносится пиксель в пиксель (для калибровочной таблицы и готовых 4-цветных рисунков).',
-    v: { pal: 'ideal', sat: 100, contrast: 0, bright: 0, gamma: 1, sharp: 0, auto: false, algo: 'none', strength: 100, serp: false, dist: 'rgb', en: [true, true, true, true] } },
+    v: { pal: 'ideal', sat: 100, contrast: 0, bright: 0, gamma: 1, sharp: 0, auto: false, algo: 'none', strength: 100, dgain: 0, serp: false, dist: 'rgb', en: [true, true, true, true] } },
   mono: { label: 'Чёрно-белое', note: 'Только чёрный и белый (жёлтый и красный выключены): самое чёткое изображение и самое быстрое обновление восприятием.',
-    v: { pal: 'panel', sat: 100, contrast: 10, bright: 0, gamma: 1, sharp: 15, auto: true, algo: 'atkinson', strength: 100, serp: true, dist: 'rgb', en: [true, true, false, false] } },
+    v: { pal: 'panel', sat: 100, contrast: 10, bright: 0, gamma: 1, sharp: 15, auto: true, algo: 'atkinson', strength: 100, dgain: 100, serp: true, dist: 'rgb', en: [true, true, false, false] } },
   retro: { label: 'Ретро-растр', note: 'Упорядоченный дизеринг Байера: регулярный узор, как в старых играх; не «ползёт» при мелких изменениях картинки.',
-    v: { pal: 'ideal', sat: 180, contrast: 15, bright: 0, gamma: 1, sharp: 0, auto: true, algo: 'bayer8', strength: 100, serp: false, dist: 'lab', en: [true, true, true, true] } }
+    v: { pal: 'ideal', sat: 180, contrast: 15, bright: 0, gamma: 1, sharp: 0, auto: true, algo: 'bayer8', strength: 100, dgain: 100, serp: false, dist: 'lab', en: [true, true, true, true] } }
 };
 
 const DEF = { fit: 'cover', bg: 0, zoom: 1, panX: 0, panY: 0, rot: 0, flipH: false, flipV: false, orient: 'left', bright: 0, contrast: 22, gamma: 1, sat: 230, sharp: 20, auto: true,
-  pal: 'ideal', dist: 'lab', algo: 'fs', strength: 85, serp: true, en: [true, true, true, true], cust: PALETTES.custom.c.map(c => c.slice()), simPanel: false, scale: 'fit', preset: 'vivid' };
+  pal: 'ideal', dist: 'lab', algo: 'fs', strength: 85, dgain: 100, serp: true, en: [true, true, true, true], cust: PALETTES.custom.c.map(c => c.slice()), simPanel: false, scale: 'fit', preset: 'vivid' };
 const P = Object.assign({}, DEF, lsGet('gs.params', {}));
 P.en = (P.en || DEF.en).slice(0, 4); P.cust = (P.cust || DEF.cust).map(c => c.slice());
 
@@ -289,6 +289,7 @@ const CTRL = {
   'c-dith': [
     { k: 'algo', t: 'sel', l: 'Алгоритм', o: ALGOS },
     { k: 'strength', t: 'rng', l: 'Сила', min: 0, max: 100, step: 1, f: v => v + '%' },
+    { k: 'dgain', t: 'rng', l: 'Растискивание', min: 0, max: 100, step: 1, f: v => v + '%' },
     { k: 'serp', t: 'chk', l: 'Змейкой', txt: 'менять направление строк (меньше полос)' }
   ],
   'c-view': [
@@ -432,7 +433,25 @@ function lab(r, g, b, o) {                                    // линейны�
   const fx = fcb((0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047), fy = fcb(0.2126 * r + 0.7152 * g + 0.0722 * b), fz = fcb((0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883);
   o[0] = 116 * fy - 16; o[1] = 500 * (fx - fy); o[2] = 200 * (fy - fz);
 }
+/* Растискивание панели. По калибровочному снимку чёрный «расползается» на соседние белые пиксели: смесь K/W с долей белого c
+   выглядит как доля белого f(c) < c (при c = 50% — около 31%). Измерено на растре Байера 8×8, шаг 1/8:
+   f = 0, .035, .103, .188, .309, .510, .703, .849, 1. Чтобы получить на панели нужную яркость, цель перед дизерингом
+   заменяется на яркость, соответствующую обратной функции (яркость меняется, цветность сохраняется). Уровень — ползунок. */
+const DG_F = [0, 0.035, 0.103, 0.188, 0.309, 0.510, 0.703, 0.849, 1];
+function dgInv(t) { if (t <= 0) return 0; for (let i = 0; i < 8; i++) if (t <= DG_F[i + 1]) return (i + (t - DG_F[i]) / (DG_F[i + 1] - DG_F[i])) / 8; return 1; }
+function dotgain(adj, s) {
+  if (!s) return adj;
+  const k = s / 100, N = W * H, out = new Float32Array(adj.length), ienc = v => 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055);
+  for (let i = 0; i < N; i++) {
+    const r = lin8(adj[i * 3]), g = lin8(adj[i * 3 + 1]), b = lin8(adj[i * 3 + 2]), L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    if (L < 1e-5) { out[i * 3] = adj[i * 3]; out[i * 3 + 1] = adj[i * 3 + 1]; out[i * 3 + 2] = adj[i * 3 + 2]; continue; }
+    const sc = (L + k * (dgInv(L) - L)) / L;
+    out[i * 3] = ienc(Math.min(1, r * sc)); out[i * 3 + 1] = ienc(Math.min(1, g * sc)); out[i * 3 + 2] = ienc(Math.min(1, b * sc));
+  }
+  return out;
+}
 function quantize(adj) {
+  adj = dotgain(adj, P.algo === 'none' ? 0 : P.dgain);
   const N = W * H, idx = new Uint8Array(N), pal = curPalette(), en = P.en;
   const pl = pal.map(c => [lin8(c[0]), lin8(c[1]), lin8(c[2])]), pLab = pl.map(c => { const o = [0, 0, 0]; lab(c[0], c[1], c[2], o); return o; });
   const cand = [0, 1, 2, 3].filter(i => en[i]), useLab = P.dist === 'lab', tmp = [0, 0, 0];
@@ -577,6 +596,36 @@ function calibCanvas() {
 $('bCalib').onclick = async () => {
   Object.assign(P, JSON.parse(JSON.stringify(PRESETS.exact.v)), { preset: 'exact', fit: 'cover', zoom: 1, panX: 0, panY: 0, rot: 0, flipH: false, flipV: false, bg: 0 });
   writeCtls(); setSource(await createImageBitmap(calibCanvas()), 'калибровка'); saveParams();
+};
+
+/* Таблица проверки растискивания: градиенты, обработанные дизерингом Флойда — Стейнберга на идеальной палитре.
+   Левая половина (A) — без коррекции, правая (B) — с коррекцией растискивания 100%. Полосы сверху вниз: K→W, K→R, W→Y, Y→R, внизу плоские серые 25/50/75% (по яркости).
+   После съёмки градиент K→W на стороне B должен быть линейным (яркость растёт ровно), а на стороне A — тёмным в середине. */
+function calib2Canvas() {
+  const src = document.createElement('canvas'); src.width = W; src.height = H; const c = src.getContext('2d');
+  const I = PALETTES.ideal.c, lf = v => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }, ef = v => 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055);
+  const mix = (a, b, t) => 'rgb(' + [0, 1, 2].map(i => Math.round(ef(lf(I[a][i]) * (1 - t) + lf(I[b][i]) * t))).join(',') + ')';
+  c.fillStyle = '#fff'; c.fillRect(0, 0, W, H);
+  const bands = [[0, 1, 10], [0, 3, 60], [1, 2, 110], [2, 3, 160]];
+  for (const x0 of [24, 372]) {
+    for (const [a, b, y0] of bands) for (let x = 0; x < 324; x++) { c.fillStyle = mix(a, b, x / 323); c.fillRect(x0 + x, y0, 1, 44); }
+    for (let i = 0; i < 3; i++) { const v = Math.round(ef((i + 1) / 4)); c.fillStyle = 'rgb(' + v + ',' + v + ',' + v + ')'; c.fillRect(x0 + i * 114, 212, 96, 36); }
+  }
+  const adj = new Float32Array(W * H * 3), d = c.getImageData(0, 0, W, H).data;
+  for (let i = 0; i < W * H; i++) { adj[i * 3] = d[i * 4]; adj[i * 3 + 1] = d[i * 4 + 1]; adj[i * 3 + 2] = d[i * 4 + 2]; }
+  const keep = { algo: P.algo, strength: P.strength, serp: P.serp, dgain: P.dgain, pal: P.pal, dist: P.dist, en: P.en };
+  Object.assign(P, { algo: 'fs', strength: 100, serp: true, pal: 'ideal', dist: 'lab', en: [true, true, true, true] });
+  P.dgain = 0; const ia = quantize(adj); P.dgain = 100; const ib = quantize(adj); Object.assign(P, keep);
+  const idx = new Uint8Array(W * H); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) idx[y * W + x] = x < 360 ? ia[y * W + x] : ib[y * W + x];
+  const cv = idxToCanvas(idx, I), g = cv.getContext('2d'), col = k => 'rgb(' + I[k].join(',') + ')', rect = (x, y, w, h, k) => { g.fillStyle = col(k); g.fillRect(x, y, w, h); };
+  rect(0, 0, W, 2, 0); rect(0, H - 2, W, 2, 0); rect(0, 0, 2, H, 0); rect(W - 2, 0, 2, H, 0); rect(359, 4, 2, H - 8, 0);
+  for (const [x, y] of [[8, 8], [W - 9, 8], [8, H - 9], [W - 9, H - 9]]) { rect(x - 4, y, 9, 1, 3); rect(x, y - 4, 1, 9, 3); }
+  g.fillStyle = col(0); g.font = 'bold 9px monospace'; g.textBaseline = 'top'; g.fillText('A', 24, 1); g.fillText('B', 372, 1);
+  return cv;
+}
+$('bCalib2').onclick = async () => {
+  Object.assign(P, JSON.parse(JSON.stringify(PRESETS.exact.v)), { preset: 'exact', fit: 'cover', zoom: 1, panX: 0, panY: 0, rot: 0, flipH: false, flipV: false, bg: 0 });
+  writeCtls(); setSource(await createImageBitmap(calib2Canvas()), 'проверка растискивания'); saveParams();
 };
 
 // ---- мышь: перетаскивание и колесо
