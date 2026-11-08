@@ -26,11 +26,14 @@
 <h2>1. Связь</h2>
 <button id="bPing" disabled>Ping</button> <button id="bStat" disabled>Счётчики метки</button> <button id="bReset" disabled>Сброс счётчиков</button>
 
-<h2>2. Загрузка в ОЗУ метки (данные только считаются, во флеш не пишутся)</h2>
+<h2>2. Загрузка образа</h2>
+<label>Куда: <select id="mode"><option value="0">в ОЗУ метки (данные только считаются)</option><option value="1">во флеш метки, слот ниже</option></select></label>
+<label>слот <select id="slot"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option selected>7</option></select></label>
+<p class="n">Слот n лежит по адресу n × 0x10000. Слоты 3–6 в дампе занимает старая прошивка, слоты 1, 2 и 7 пустые. Перед записью метка стирает слот целиком (около 1 с), контрольная запись в конце слота появляется последней.</p>
 <label>Размер: <select id="size">
   <option value="2048">2 КБ</option><option value="10240">10 КБ</option><option value="46080" selected>46 080 Б (один кадр 720×256)</option><option value="92160">90 КБ</option>
 </select></label>
-<button class="p" id="bUp" disabled>Отправить</button> <button id="bStop" disabled>Остановить</button>
+<button class="p" id="bUp" disabled>Отправить</button> <button id="bVer" disabled>Проверить слот во флеш</button> <button id="bStop" disabled>Остановить</button>
 <div class="bar"><div id="prog"></div></div>
 <div id="res"></div>
 
@@ -78,6 +81,9 @@ function describe(a) {
       const names = ['успешно', 'BUSY не снялся за 3 с', 'сектор не пуст после стирания', 'бит записи (WEL) не установился', 'данные не совпали при чтении', 'неверные параметры'];
       log((a[0] === 0xA1 ? 'стирание: ' : 'запись страницы: ') + (names[a[1]] || a[1]) + '; BUSY ' + (u32(a.slice(2, 6)) / 1000).toFixed(1) + ' мс; SR1: после команды ' + a[6].toString(16) + ', в конце ' + a[7].toString(16) + ', после WREN ' + a[8].toString(16) + '; не FF/расхождений: ' + (a[9] | a[10] << 8));
       break; }
+    case 0xA4: {
+      const st = ['флеш совпадает с записью (CRC верный)', 'в слоте нет действительной записи', 'CRC флеш НЕ совпал с записью'][a[1 + 1]] || ('занято/ошибка ' + a[2]);
+      log('слот ' + a[1] + ': ' + st + '; ' + u32(a.slice(3, 7)) + ' байт, CRC при чтении ' + u32(a.slice(7, 11)).toString(16)); break; }
     case 0xA3: log('чтение: результат ' + a[1] + ', байт не равных FF: ' + (a.length >= 6 ? u32(a.slice(2, 6)) : '-')); break;
     default: log('уведомление ' + hex(a));
   }
@@ -89,7 +95,7 @@ async function sendRetry(arr, resp) {
   await send(arr, resp);
 }
 
-function setUi(on) { for (const id of ['bDisc', 'bPing', 'bStat', 'bReset', 'bUp', 'bFInfo', 'bFErase', 'bFProg', 'bFScan']) $(id).disabled = !on; $('bConn').disabled = on; }
+function setUi(on) { for (const id of ['bVer', 'bDisc', 'bPing', 'bStat', 'bReset', 'bUp', 'bFInfo', 'bFErase', 'bFProg', 'bFScan']) $(id).disabled = !on; $('bConn').disabled = on; }
 $('bConn').onclick = async () => {
   try {
     dev = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: 'V300' }], optionalServices: [SVC] });
@@ -111,6 +117,7 @@ $('bFInfo').onclick = () => send([0x20], true).catch(e => log('' + e));
 $('bFErase').onclick = () => { log('стираю сектор ' + $('sec').value + ' ...'); send([0x21, +$('sec').value], true).catch(e => log('' + e)); };
 $('bFProg').onclick = () => { log('записываю страницу в сектор ' + $('sec').value + ' ...'); send([0x22, +$('sec').value], true).catch(e => log('' + e)); };
 $('bFScan').onclick = () => send([0x23, +$('sec').value, 0], true).catch(e => log('' + e));
+$('bVer').onclick = () => { log('читаю слот ' + $('slot').value + ' из флеш ...'); send([0x24, +$('slot').value], true).catch(e => log('' + e)); };
 $('bStop').onclick = () => { stopFlag = true; };
 
 // ---- upload (RAM sink). Window of 4 pages in flight; the tag buffers 8.
@@ -137,9 +144,13 @@ async function upload(total) {
     await sendRetry([0x12, p & 255, p >> 8], false);
   };
   try {
-    await sendRetry([0x10, 0, ...le32(total)], true);
-    const a0 = await expect(a => a[0] === 0x90, 3000);
-    if (!a0 || a0[1] !== 0) throw new Error('метка не приняла BEGIN: ' + (a0 ? hex(a0) : 'нет ответа'));
+    const mode = +$('mode').value, slot = +$('slot').value;
+    if (mode && total > 0xF000) throw new Error('во флеш помещается не больше 61 440 байт');
+    log(mode ? 'BEGIN: во флеш, слот ' + slot + ' (метка сначала стирает слот) ...' : 'BEGIN: в ОЗУ');
+    await sendRetry(mode ? [0x10, 1, ...le32(total), slot] : [0x10, 0, ...le32(total)], true);
+    const a0 = await expect(a => a[0] === 0x90, mode ? 20000 : 3000);
+    if (!a0 || a0[1] !== 0) throw new Error('метка не приняла BEGIN: ' + (a0 ? hex(a0) : 'нет ответа') + (a0 && a0[1] === 4 ? ' (стирание не удалось)' : ''));
+    if (mode) log('слот стёрт, начинаю передачу');
     let base = 0, sent = 0, lastProgress = performance.now();
     while (base < pages) {
       if (stopFlag) { await sendRetry([0x14], true); throw new Error('остановлено'); }
@@ -157,11 +168,19 @@ async function upload(total) {
       $('prog').style.width = (100 * base / pages).toFixed(0) + '%';
     }
     let crc = null;
-    for (let i = 0; i < 5 && !crc; i++) { await sendRetry([0x13], true); crc = await expect(r => r[0] === 0x94, 2000); }
+    for (let i = 0; i < 6 && !crc; i++) { await sendRetry([0x13], true); crc = await expect(r => r[0] === 0x94, 2500); }
     if (!crc) throw new Error('нет ответа на END');
     const dt = (performance.now() - t0) / 1000, got = u32(crc.slice(2, 6));
     const ok = crc[1] === 0 && got === want && u32(crc.slice(6, 10)) === total;
     $('res').textContent = (ok ? 'ГОТОВО: контрольная сумма совпала' : 'ОШИБКА: контрольная сумма не совпала') + '. ' + total + ' байт за ' + dt.toFixed(1) + ' с = ' + (total / dt / 1024).toFixed(2) + ' КБ/с; повторов ' + retried;
+    if (ok && mode) {
+      log('запись во флеш завершена, проверяю чтением обратно ...');
+      await sendRetry([0x24, slot], true);
+      const v = await expect(r => r[0] === 0xA4, 15000);
+      if (!v) throw new Error('нет ответа на проверку слота');
+      describe(v);
+      $('res').textContent += ' Проверка чтением из флеш: ' + (v[2] === 0 ? 'CRC совпал' : 'ОШИБКА (код ' + v[2] + ')') + '.';
+    }
     log($('res').textContent + ' (CRC метки ' + got.toString(16) + ', у страницы ' + want.toString(16) + ')');
   } catch (e) { log('загрузка прервана: ' + e.message); $('res').textContent = 'Прервано: ' + e.message; }
   busy = false; $('bUp').disabled = !(dev && dev.gatt.connected); $('bStop').disabled = true;

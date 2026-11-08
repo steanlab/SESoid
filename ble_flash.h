@@ -10,7 +10,8 @@
 #define FL_SIZE        0x80000u
 #define FL_SECTOR      4096u
 #define FL_PAGE        256u
-#define FL_TEST_END    0x10000u     // writes are accepted below this address only (blank area 0x00000..0x2FFFF of the dump)
+#define FL_TEST_END    0x10000u     // default write range 0x00000..0x0FFFF (blank test area); the upload opens one slot at a time
+#define FL_SLOT_SIZE   0x10000u     // slots 1..7 at n * 64 KiB
 
 // result codes (also sent to the phone)
 #define FLR_OK         0
@@ -22,6 +23,7 @@
 #define FLR_RUNNING    0xFF
 
 void fl_init(void);                                  // pins; called on every new connection
+void fl_set_range(uint32_t lo, uint32_t hi);           // addresses where erase/program are allowed (default: test area)
 bool fl_busy(void);                                  // an operation is running
 void fl_poll(void);                                  // main loop: advances the running operation when the radio leaves enough time
 bool fl_start_info(void);                            // JEDEC id + status registers -> fl_result_t
@@ -42,5 +44,6 @@ typedef struct {
 extern volatile fl_result_t fl_res;
 extern volatile bool fl_done;                        // set when an operation finishes, cleared by the user of the result
 
-// For the page writer of stage 3b: blocking-free interface used by ble_up.c to store received pages.
+// Read n (<= 256) bytes if the radio leaves enough time; false = try again later (or an operation is running).
+bool fl_read_page(uint32_t addr, uint8_t *buf, uint32_t n);
 #endif

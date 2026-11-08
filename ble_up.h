@@ -2,7 +2,8 @@
 //
 // Everything is in pages of 256 bytes, sent as 16 chunks of 16 bytes. All multi-byte values are little endian.
 // Phone -> tag (writes to the RX characteristic, first byte = opcode; opcodes 0x01..0x03 are the old stage-2 tests):
-//   10 mode total(4)        BEGIN  mode 0 = RAM sink (data is only counted and checksummed), mode 1 = external flash (stage 3b)
+//   10 mode total(4) [slot] BEGIN  mode 0 = RAM sink (data is only counted and checksummed); mode 1 = write to external flash slot 1..7
+//                                  (slot n = n * 64 KiB; the image sectors and the record sector at +0xF000 are erased first, then the answer comes)
 //   11 idx(2) data(16)      CHUNK  idx = 16-byte chunk number from the start of the image; idempotent (may be repeated)
 //   12 page(2)              PAGE   the phone has sent all chunks of this page: the tag checks them and commits the page
 //   13                      END    all pages sent: the tag answers with the CRC32 of the whole image
@@ -11,11 +12,14 @@
 //   21 sector               FLASH ERASE TEST   sector 0..15 of the test area (4 KiB each), measured BUSY time, blank check
 //   22 sector               FLASH PROGRAM TEST one test page (pattern) at the start of that sector, verified
 //   23 sector(2)            FLASH SCAN   (read only, any sector 0..127) number of bytes that are not FF
+//   24 slot                 SLOT VERIFY  reads the slot back from the flash and compares its CRC32 with the record written at the end of the upload
 // Tag -> phone (notifications on the TX characteristic):
-//   90 status mode          BEGIN answer (status 0 = ok, 1 = bad parameters, 3 = mode not available)
+//   90 status mode [slot]   BEGIN answer (status 0 = ok, 1 = bad parameters / busy, 4 = erase failed)
 //   92 page(2) status       page committed (0), 1 = out of order (then expected page follows as 2 more bytes), 2 = storage error
 //   93 page(2) mask(2)      page incomplete: bit n set = chunk n was received; the phone repeats the missing chunks and the PAGE message
-//   94 status crc(4) total(4)  END answer (status 0 = all pages committed; 1 = pages missing)
+//   94 status crc(4) total(4)  END answer (status 0 = all pages committed and, in flash mode, the record is written; 1 = pages missing; 2 = storage error)
+//   A4 slot status total(4) crc(4)  slot verify answer (0 = flash content matches the record, 1 = no valid record, 2 = CRC differs, 9 = busy/bad slot)
+// The record (page at slot + 0xF000): 'SLD1', total(4), crc32(4), flags(4); it is written last, so an interrupted upload leaves the slot invalid.
 //   A0 jedec(3) sr1 sr2 sr3 ; A1/A2 result busy_us(4) sr_first sr_last sr_wel nonff(2) ; A3 result nonff(4)
 #ifndef BLE_UP_H
 #define BLE_UP_H

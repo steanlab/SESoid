@@ -27,6 +27,7 @@ volatile bool fl_done;
 
 typedef enum { S_IDLE, S_ERASE_WAIT, S_ERASE_VERIFY, S_PROG_WAIT, S_PROG_VERIFY, S_SCAN } fl_state_t;
 static fl_state_t st;
+static uint32_t wr_lo = 0, wr_hi = FL_TEST_END;
 static uint32_t cur_addr, off, t0, last_sr_us;
 static uint8_t page_buf[FL_PAGE];
 
@@ -76,8 +77,13 @@ static void cmd0(uint32_t c) { cs_low(); wbyte(c); cs_high(); }
 static uint32_t rd_reg(uint32_t c) { cs_low(); wbyte(c); uint32_t v = rbyte(); cs_high(); return v; }
 static void addr3(uint32_t a) { wbyte(a >> 16); wbyte(a >> 8); wbyte(a); }
 
+void fl_set_range(uint32_t lo, uint32_t hi) { wr_lo = lo; wr_hi = hi; }
+
+static void wait_us(uint32_t us) { uint32_t t = RAIL_GetTime(); while ((uint32_t)(RAIL_GetTime() - t) < us) { } }
+
 void fl_init(void)
 {
+  wr_lo = 0; wr_hi = FL_TEST_END;
   CMU->CLKEN0 |= CMU_CLKEN0_GPIO;
   pin_set(CS_PORT, CS_PIN);
   pin_clr(CLK_PORT, CLK_PIN);
@@ -87,6 +93,8 @@ void fl_init(void)
   setmode(MISO_PORT, MISO_PIN, 1);   // input
   st = S_IDLE;
   fl_done = false;
+  cmd0(0xAB);                        // release from deep power-down (harmless otherwise); the first JEDEC read after power-up was 00 00 00
+  wait_us(60);
 }
 
 bool fl_busy(void) { return st != S_IDLE; }
@@ -129,7 +137,7 @@ bool fl_start_info(void)
 
 bool fl_start_erase(uint32_t addr)
 {
-  if (st != S_IDLE || (addr & (FL_SECTOR - 1u)) || addr >= FL_TEST_END) return false;
+  if (st != S_IDLE || (addr & (FL_SECTOR - 1u)) || addr < wr_lo || addr >= wr_hi) return false;
   if (ll_free_us() < 1500u) return false;                // try again later
   begin_op(2);
   cur_addr = addr;
@@ -146,7 +154,7 @@ bool fl_start_erase(uint32_t addr)
 
 bool fl_start_program(uint32_t addr, const uint8_t *data)
 {
-  if (st != S_IDLE || (addr & (FL_PAGE - 1u)) || addr >= FL_TEST_END) return false;
+  if (st != S_IDLE || (addr & (FL_PAGE - 1u)) || addr < wr_lo || addr >= wr_hi) return false;
   if (ll_free_us() < SLICE_PAGE_US) return false;
   begin_op(3);
   memcpy(page_buf, data, FL_PAGE);
@@ -226,4 +234,14 @@ void fl_poll(void)
     default:
       return;
   }
+}
+
+bool fl_read_page(uint32_t addr, uint8_t *buf, uint32_t n)
+{
+  if (st != S_IDLE || n > FL_PAGE || addr + n > FL_SIZE) return false;
+  if (ll_free_us() < (n > 32u ? SLICE_READ_US : 600u)) { DIAG_INC(fl_blocked); return false; }
+  cs_low(); wbyte(0x03); addr3(addr);
+  for (uint32_t i = 0; i < n; i++) buf[i] = (uint8_t)rbyte();
+  cs_high();
+  return true;
 }
