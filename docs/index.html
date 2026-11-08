@@ -1254,7 +1254,7 @@ function fdVerdict(f) {
 function nfcBkPart(a) {
   nfcPending = false;
   if (a[1] < 59) NFC.bk[a[1]] = Array.from(a.slice(2, 18));
-  NFC.bkBusy = true; nfcButtons(); renderNfc2();
+  NFC.bkBusy = true; nfcButtons(); renderNfc2(true);
 }
 const nfcBkFull = () => { for (let i = 0; i < 59; i++) if (!NFC.bk[i]) return false; return true; };
 function nfcOpDone() {
@@ -1338,7 +1338,7 @@ $('bNfcUnlock').onclick = () => {
 for (const id of ['nfcUrl', 'nfcWrOk', 'nfcUnOk']) $(id).addEventListener('input', nfcButtons);
 $('nfcUrl').value = (() => { try { if (/^https?:$/.test(location.protocol)) return location.origin + location.pathname.replace(/index\.html$/, ''); } catch (e) { /* без адреса страницы */ } return 'https://steanlab.github.io/SESoid/'; })();
 nfcButtons();
-function renderNfc2() {
+function renderNfc2(quiet) {
   const L = [], st = NFC.st;
   const got = NFC.bk.filter(Boolean).length;
   if (got) L.push('Копия чипа: прочитано блоков ' + got + ' из 59' + (nfcBkFull() ? ' — полная.' : '.'));
@@ -1347,7 +1347,7 @@ function renderNfc2() {
     L.push(nm + ': ' + (st.state === 2 ? 'выполнено и проверено' : 'ОШИБКА — ' + nfcResTxt(st)) + '.');
   }
   $('nfcOut2').textContent = L.join('\n');
-  if (L.length) log('NFC: ' + L.join(' | '));
+  if (L.length && !quiet) log('NFC: ' + L.join(' | '));
 }
 function renderNfc() {
   const out = $('nfcOut'), show = $('nfcShow').checked, st = NFC.st, L = [];

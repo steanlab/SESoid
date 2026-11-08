@@ -146,6 +146,11 @@ bool ll_send(uint8_t llid, const uint8_t *data, uint8_t len)    // main context 
   return true;
 }
 
+uint8_t ll_outbox_free(void)                       // main context
+{
+  return (uint8_t)((out_head + OUT_N - out_tail - 1u) % OUT_N);
+}
+
 static bool outbox_pop(ll_pdu_t *p)                // interrupt/arming context (consumer)
 {
   if (out_head == out_tail) return false;

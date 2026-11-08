@@ -313,6 +313,7 @@ void ctl_poll(void)
     last_tx_us = now;
   }
   if ((uint32_t)(now - last_tx_us) < PACE_US) return;
+  if (ll_outbox_free() < 4) return;                                         // keep room in the queue for the write responses
 
   if (panel_diag()->state == 2 && !diag_sent) { diag_sent = true; want_diag = true; }      // the report goes out by itself when the run ends
   if (hwtest_clock()->state == 2 && !clock_sent) { clock_sent = true; want_clock = true; }   // the clock report goes out by itself when the test ends

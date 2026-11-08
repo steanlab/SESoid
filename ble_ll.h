@@ -30,6 +30,10 @@ void ll_poll(void);
 // Main context: queue one LL PDU for the master (it leaves in the next connection event). False when the queue is full.
 bool ll_send(uint8_t llid, const uint8_t *data, uint8_t len);
 
+// Main context: free places in the queue (it holds 7). Bursts of notifications wait until enough are free, so that the write
+// response of the phone and the single answers always find room (a lost write response stalls the phone's GATT for 30 s).
+uint8_t ll_outbox_free(void);
+
 // Interrupt context: RAIL event handler while connected.
 void ll_on_event(RAIL_Handle_t h, RAIL_Events_t events);
 
