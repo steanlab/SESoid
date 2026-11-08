@@ -1,14 +1,16 @@
 # Silicon Labs Project Configuration Tools: slcp, v0, Component selection file.
-# SES V300 (EFR32FG22C121F256GM40): stage 1 probe, BLE advertising + passive listening on RAIL.
+# SES V300 (EFR32FG22C121F256GM40): stage 2, connectable BLE peripheral on RAIL (own link layer + small GATT server).
 # Component set is derived from the OpenEPaperLink EFR32xG22 project (known to generate with GSDK 4.4.1),
 # everything application-specific removed. No bootloader: the image starts at flash address 0.
 project_name: v300_ble_probe
 label: v300_ble_probe
-description: SES V300 stage 1, check that the FG22 radio does BLE (RAIL BLE 1M PHY)
+description: SES V300 stage 2, BLE connection and GATT on RAIL BLE 1M PHY (own link layer)
 quality: development
 source:
 - {path: main.c}
 - {path: app.c}
+- {path: ble_ll.c}
+- {path: ble_att.c}
 sdk: {id: gecko_sdk, version: 4.4.1}
 toolchain_settings:
 - {value: debug, option: optimize}
