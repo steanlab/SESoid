@@ -162,6 +162,7 @@ void app_init(void)
 #undef X
   ;
   g_diag.stage = 1;
+  g_diag.knob_sched = 0;   // 0 = polled RAIL_StartRx, 1 = RAIL_ScheduleRx (set over SWD with ble_probe.py --set knob_sched=1)
 
   h = sl_rail_util_get_handle(SL_RAIL_UTIL_HANDLE_INST0);
   RAIL_Version_t ver;

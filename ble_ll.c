@@ -47,6 +47,13 @@ typedef struct {
   uint32_t est;               // estimated anchor (start of preamble of the master's first packet) of the armed event
   uint32_t last_real_anchor;  // anchor really measured
   uint32_t arm_at;
+  uint32_t t_start;
+  uint32_t cur_widen, cur_extra;
+  bool     rx_pending;      // polled mode: RAIL_StartRx still to be called at rx_start
+  uint16_t rx_phys;
+  uint32_t rx_start;
+  uint32_t rx_search_us;
+  volatile bool ev_tx_seen;
   uint32_t search_extra;      // transmit window length while the master has not been heard yet (or after an update instant)
   bool     synced;
   volatile bool     heard_any;
@@ -219,7 +226,7 @@ static void rx_isr(RAIL_Handle_t h)
     RAIL_RxPacketDetails_t det;
     det.timeReceived.timePosition = RAIL_PACKET_TIME_AT_PACKET_END;
     det.timeReceived.totalPacketBytes = (uint16_t)(info.packetBytes + 3u);
-    if (RAIL_GetRxPacketDetails(h, ph, &det) == RAIL_STATUS_NO_ERROR) {
+    if (RAIL_GetRxPacketDetails(h, ph, &det) == RAIL_STATUS_NO_ERROR && det.timeReceived.timePosition != RAIL_PACKET_TIME_INVALID) {
       t_start = to_preamble_start(det.timeReceived.timePosition, det.timeReceived.packetTime, info.packetBytes + 3u);
       g_diag.last_rssi = (uint32_t)(int32_t)det.rssi;
     } else {
@@ -273,6 +280,7 @@ static void rx_isr(RAIL_Handle_t h)
 static void tx_isr(RAIL_Handle_t h)
 {
   if (c.in_arm) return;
+  c.ev_tx_seen = true;
   if (c.prep_valid) {
     c.last_idx = c.prep_idx;
     c.last_tx_nesn = c.prep_nesn;
@@ -304,6 +312,14 @@ static void tx_isr(RAIL_Handle_t h)
 
 void ll_on_event(RAIL_Handle_t h, RAIL_Events_t events)
 {
+  uint32_t lp = g_diag.evlog_pos % EVLOG_N;
+  g_diag.evlog[lp][0] = RAIL_GetTime();
+  g_diag.evlog[lp][1] = (uint32_t)events;
+  g_diag.evlog[lp][2] = (uint32_t)(events >> 32);
+  g_diag.evlog_pos++;
+  if (events & RAIL_EVENT_RX_SYNC1_DETECT) DIAG_INC(sync1);
+  if (events & RAIL_EVENT_SCHEDULED_RX_STARTED) DIAG_INC(sched_start);
+  if (events & RAIL_EVENT_RX_SCHEDULED_RX_END) DIAG_INC(sched_end);
   g_diag.last_ev_lo = (uint32_t)events;
   g_diag.last_ev_hi = (uint32_t)(events >> 32);
   if (events & RAIL_EVENT_RX_PACKET_RECEIVED) rx_isr(h);
@@ -342,7 +358,7 @@ static void set_state_timing(void)
   t.txToTx = RAIL_TRANSITION_TIME_KEEP;
   t.txToRx = 100;                                  // be listening again well before the master's next packet (150 us after our end)
   t.rxToTx = c.rxtotx;
-  t.rxSearchTimeout = 0;
+  t.rxSearchTimeout = c.rx_search_us;
   t.txToRxSearchTimeout = 700;                     // if the master does not continue the event, stop listening
   note(RAIL_SetStateTiming(c.h, &t), 12);
   g_diag.rxtotx_cfg = c.rxtotx;
@@ -351,47 +367,72 @@ static void set_state_timing(void)
 static void arm_event(bool first)
 {
   RAIL_Handle_t h = c.h;
-  uint32_t extra = 0;
+  uint32_t base = 0, extra, widen, start, end;
+  uint8_t logical;
+  uint16_t phys;
+  bool advance = !first;
 
-  if (!first) {
-    uint32_t base;
+  if (first) {
+    c.ev_cnt = 0;
+  } else {
+    // close the event that has just ended: where did the master really start?
     if (c.ev_got) {
-      base = c.anchor_ev;
-      c.last_real_anchor = base;
-      c.synced = true;
+      int32_t err = (int32_t)(c.anchor_ev - c.est);
+      if (err < (int32_t)g_diag.anchor_err_min) g_diag.anchor_err_min = (uint32_t)err;
+      if (err > (int32_t)g_diag.anchor_err_max) g_diag.anchor_err_max = (uint32_t)err;
+      if (err < -(int32_t)(c.cur_widen + WIN_MARGIN_PRE_US + 1000u) ||
+          err > (int32_t)(c.cur_extra + c.cur_widen + WIN_MARGIN_POST + 1000u)) {
+        DIAG_INC(anchor_bad);                 // a time stamp that does not fit the window it was received in: not trusted
+        base = c.est;
+      } else {
+        base = c.anchor_ev;
+        c.last_real_anchor = base;
+        c.synced = true;
+      }
+      if (!c.ev_tx_seen) DIAG_INC(rx_no_tx);
     } else {
       base = c.est;
       DIAG_INC(ev_missed);
     }
-    c.ev_cnt++;
-    if (c.upd_pending && (int16_t)(c.ev_cnt - c.upd_instant) == 0) {
-      c.est = base + c.interval_us + c.upd_woff_us;
-      c.interval_us = c.upd_interval_us;
-      c.timeout_us = c.upd_timeout_us;
-      c.latency = c.upd_latency;
-      c.search_extra = c.upd_wsize_us;
-      c.synced = false;
-      c.upd_pending = false;
-      DIAG_INC(upd_applied);
-    } else {
-      c.est = base + c.interval_us;
-    }
-    if (c.chm_pending && (int16_t)(c.ev_cnt - c.chm_instant) == 0) {
-      memcpy((void *)c.chm, c.chm_new, 5);
-      build_used_table();
-      c.chm_pending = false;
-      DIAG_INC(chm_applied);
-    }
   }
-  if (!c.synced) extra = c.search_extra;
 
-  uint8_t logical = next_channel();
-  uint16_t phys = (uint16_t)(logical + (logical < 11u ? 1u : 2u));
+  for (uint32_t guard = 0;; guard++) {
+    if (advance) {
+      c.ev_cnt++;
+      if (c.upd_pending && (int16_t)(c.ev_cnt - c.upd_instant) == 0) {
+        c.est = base + c.interval_us + c.upd_woff_us;
+        c.interval_us = c.upd_interval_us;
+        c.timeout_us = c.upd_timeout_us;
+        c.latency = c.upd_latency;
+        c.search_extra = c.upd_wsize_us;
+        c.synced = false;
+        c.upd_pending = false;
+        DIAG_INC(upd_applied);
+      } else {
+        c.est = base + c.interval_us;
+      }
+      if (c.chm_pending && (int16_t)(c.ev_cnt - c.chm_instant) == 0) {
+        memcpy((void *)c.chm, c.chm_new, 5);
+        build_used_table();
+        c.chm_pending = false;
+        DIAG_INC(chm_applied);
+      }
+    }
+    advance = true;
+    extra = c.synced ? 0u : c.search_extra;
+    logical = next_channel();
+    phys = (uint16_t)(logical + (logical < 11u ? 1u : 2u));
+    uint32_t age_us = c.est - c.last_real_anchor;
+    widen = age_us / 3700u + 40u;                     // 270 ppm of clock error plus a margin
+    start = c.est - widen - WIN_MARGIN_PRE_US;
+    end = c.est + extra + widen + WIN_MARGIN_POST;
+    if (guard >= 64u || (int32_t)(end - RAIL_GetTime()) > 300) break;
+    DIAG_INC(catchup);                                // the window is already over (main loop was stalled): count it as a missed event
+    base = c.est;
+  }
   c.cur_chan = logical;
-  uint32_t age_us = c.est - c.last_real_anchor;
-  uint32_t widen = age_us / 3700u + 40u;              // 270 ppm of clock error plus a margin
-  uint32_t start = c.est - widen - WIN_MARGIN_PRE_US;
-  uint32_t end = c.est + extra + widen + WIN_MARGIN_POST;
+  c.cur_widen = widen;
+  c.cur_extra = extra;
   c.arm_at = c.est + c.interval_us - ARM_LEAD_US;
 
   // tune the turnaround from the measured gaps (keeps the answer at 150 us +- a few us)
@@ -408,6 +449,8 @@ static void arm_event(bool first)
     c.gap_err_n = 0;
   }
 
+  bool sched = g_diag.knob_sched != 0u;
+  if (!sched) start -= 150u;                          // the polled start has a little more jitter than the scheduled one
   c.in_arm = true;
   RAIL_Idle(h, RAIL_IDLE_ABORT, true);
   if (s_cal_needed) {
@@ -416,26 +459,38 @@ static void arm_event(bool first)
     note(RAIL_Calibrate(h, NULL, RAIL_CAL_ALL_PENDING), 5);
   }
   RAIL_ResetFifo(h, true, true);
-  if (g_diag.rxtotx_cfg != c.rxtotx) set_state_timing();
+  c.rx_search_us = sched ? 0u : (end - start);
+  set_state_timing();
   note(RAIL_BLE_ConfigChannelRadioParams(h, c.crcinit, c.aa, logical, false), 1);
   c.ev_got = false;
+  c.ev_tx_seen = false;
   prepare_next(h);
 
-  RAIL_ScheduleRxConfig_t cfg;
-  cfg.start = start;
-  cfg.startMode = RAIL_TIME_ABSOLUTE;
-  cfg.end = end;
-  cfg.endMode = RAIL_TIME_ABSOLUTE;
-  cfg.rxTransitionEndSchedule = 1;
-  cfg.hardWindowEnd = 0;
-  RAIL_Status_t st = RAIL_ScheduleRx(h, phys, &cfg, NULL);
-  if (st != RAIL_STATUS_NO_ERROR) {
-    note(st, 4);
-    DIAG_INC(arm_fail);
-    st = RAIL_StartRx(h, phys, NULL);                // too late for the schedule: listen right away
-    note(st, 4);
+  c.rx_pending = false;
+  if (sched) {
+    RAIL_ScheduleRxConfig_t cfg;
+    cfg.start = start;
+    cfg.startMode = RAIL_TIME_ABSOLUTE;
+    cfg.end = end;
+    cfg.endMode = RAIL_TIME_ABSOLUTE;
+    cfg.rxTransitionEndSchedule = 1;
+    cfg.hardWindowEnd = 0;
+    RAIL_Status_t st = RAIL_ScheduleRx(h, phys, &cfg, NULL);
+    if (st != RAIL_STATUS_NO_ERROR) {
+      note(st, 4);
+      DIAG_INC(arm_fail);
+      st = RAIL_StartRx(h, phys, NULL);                // too late for the schedule: listen right away
+      note(st, 4);
+    }
+  } else {
+    c.rx_phys = phys;
+    c.rx_start = start;
+    c.rx_pending = true;                               // ll_poll() starts the receiver when the time comes
   }
   c.in_arm = false;
+  int32_t dt = (int32_t)(start - RAIL_GetTime());      // how long before the window we finished arming (negative = late)
+  if (dt < (int32_t)g_diag.arm_dt_min) g_diag.arm_dt_min = (uint32_t)dt;
+  if (dt > (int32_t)g_diag.arm_dt_max) g_diag.arm_dt_max = (uint32_t)dt;
   DIAG_INC(ev_armed);
   g_diag.ev_cnt = c.ev_cnt;
 }
@@ -447,7 +502,10 @@ static void ll_end(uint32_t reason)
 {
   RAIL_Handle_t h = c.h;
   c.active = false;
+  g_diag.conn_ms = (RAIL_GetTime() - c.t_start) / 1000u;
+  g_diag.end_age_ms = (RAIL_GetTime() - c.last_rx_time) / 1000u;
   RAIL_Idle(h, RAIL_IDLE_ABORT, true);
+  note(RAIL_ConfigEvents(h, RAIL_EVENT_RX_SYNC1_DETECT | RAIL_EVENT_SCHEDULED_RX_STARTED | RAIL_EVENT_RX_SCHEDULED_RX_END, 0), 14);
   RAIL_StateTransitions_t tr = { RAIL_RF_STATE_RX, RAIL_RF_STATE_RX };
   note(RAIL_SetRxTransitions(h, &tr), 13);
   note(RAIL_SetTxTransitions(h, &tr), 13);
@@ -501,6 +559,11 @@ bool ll_start(const uint8_t *ci, uint32_t ci_end_us)
   c.last_unmapped = 0;
   build_used_table();
   c.upd_pending = c.chm_pending = c.terminate = false;
+  c.ev_cnt = 0;
+  c.rx_pending = false;
+  c.ev_tx_seen = false;
+  c.ev_got = false;
+  c.t_start = RAIL_GetTime();
   c.est = ci_end_us + 1250u + (uint32_t)winoff * 1250u;      // earliest moment the master's first packet can start
   c.last_real_anchor = c.est;
   c.search_extra = (uint32_t)winsize * 1250u;
@@ -530,7 +593,16 @@ bool ll_start(const uint8_t *ci, uint32_t ci_end_us)
   note(RAIL_SetRxTransitions(h, &rx_tr), 13);
   note(RAIL_SetTxTransitions(h, &tx_tr), 13);
   g_diag.rxtotx_cfg = 0;
+  c.rx_search_us = 0;
   set_state_timing();
+  g_diag.arm_dt_min = 0x7FFFFFFFu;  g_diag.arm_dt_max = 0x80000000u;
+  g_diag.anchor_err_min = 0x7FFFFFFFu;  g_diag.anchor_err_max = 0x80000000u;
+  g_diag.poll_gap_max = 0;  g_diag.conn_ms = 0;  g_diag.end_age_ms = 0;
+  g_diag.evlog_pos = 0;
+  memset((void *)g_diag.evlog, 0, sizeof(g_diag.evlog));
+  // extra RAIL events only while connected (they cost interrupts): sync word detected, scheduled receive start/end, timeout
+  note(RAIL_ConfigEvents(h, RAIL_EVENT_RX_SYNC1_DETECT | RAIL_EVENT_SCHEDULED_RX_STARTED | RAIL_EVENT_RX_SCHEDULED_RX_END | RAIL_EVENT_RX_TIMEOUT,
+                         RAIL_EVENT_RX_SYNC1_DETECT | RAIL_EVENT_SCHEDULED_RX_STARTED | RAIL_EVENT_RX_SCHEDULED_RX_END | RAIL_EVENT_RX_TIMEOUT), 14);
 
   g_diag.interval_us = c.interval_us;
   g_diag.timeout_ms = (uint32_t)timeout * 10u;
@@ -647,8 +719,23 @@ static void data_pdu(const ll_pdu_t *p)
 
 void ll_poll(void)
 {
-  if (!c.active) return;
+  static uint32_t last_poll;
+  if (!c.active) { last_poll = 0; return; }
   uint32_t now = RAIL_GetTime();
+  g_diag.poll_calls++;
+  if (last_poll != 0u) {
+    uint32_t gap = now - last_poll;
+    if (gap > g_diag.poll_gap_max) g_diag.poll_gap_max = gap;
+  }
+  last_poll = now;
+  g_diag.radio_state = (uint32_t)RAIL_GetRadioState(c.h);
+
+  // polled mode: open the receive window at the planned moment
+  if (c.rx_pending && (int32_t)(now - c.rx_start) >= 0) {
+    c.rx_pending = false;
+    if ((int32_t)(now - c.rx_start) > 200) DIAG_INC(rxpend_late);
+    note(RAIL_StartRx(c.h, c.rx_phys, NULL), 4);
+  }
 
   ll_pdu_t p;
   while (inbox_pop(&p)) {
