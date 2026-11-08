@@ -11,6 +11,12 @@ source:
 - {path: app.c}
 - {path: ble_ll.c}
 - {path: ble_att.c}
+include:
+- path: ''
+  file_list:
+  - {path: ble_diag.h}
+  - {path: ble_ll.h}
+  - {path: ble_att.h}
 sdk: {id: gecko_sdk, version: 4.4.1}
 toolchain_settings:
 - {value: debug, option: optimize}
