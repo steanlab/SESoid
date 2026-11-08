@@ -200,7 +200,7 @@
   </div>
   <div class="card">
     <h2>Монитор выводов (поиск NFC)</h2>
-    <p class="n">Читает свободные выводы процессора (не заняты flash, панелью и отладкой) и показывает, какие из них меняют уровень. Включите режим, поднесите телефон или NFC-карту к метке и уберите: вывод, который менялся вместе с этим, и есть линия NFC-микросхемы (обычно «детектор поля» FD). Проверьте все три режима: линия с открытым стоком видна только с подтяжкой вверх, а плавающий вход ловит ещё и наводки. Монитор сам выключается через 5 минут и при обрыве связи и возвращает выводы как были.</p>
+    <p class="n">Читает свободные выводы процессора (не заняты flash, панелью и отладкой) и показывает, какие из них меняют уровень. Включите режим, поднесите телефон или NFC-карту к метке и уберите: вывод, который менялся вместе с этим, и есть линия NFC-микросхемы (обычно «детектор поля» FD). Нажатие на вывод в сетке исключает его из наблюдения (он остаётся как был), так можно подтягивать вверх только один вывод. Проверьте все три режима: линия с открытым стоком видна только с подтяжкой вверх, а плавающий вход ловит ещё и наводки. Монитор сам выключается через 5 минут и при обрыве связи и возвращает выводы как были.</p>
     <div class="row"><button id="bPm1" disabled>Плавающие входы</button><button id="bPm2" disabled>Подтяжка вверх</button><button id="bPm3" disabled>Подтяжка вниз</button><button id="bPmStop" disabled>Остановить</button><button id="bPmClr" disabled>Сбросить историю</button></div>
     <label style="display:block;margin:6px 0"><input type="checkbox" id="pmSwd"> следить и за выводами отладки PA1–PA3 (SWD); после проверки лучше выключить</label>
     <div id="pmStat" class="n"></div>
@@ -1035,7 +1035,13 @@ const PM_OWN = { PA0: 'flash CLK', PA4: 'flash MISO', PA5: 'flash CS', PA7: 'п�
 const PM_SWD = { PA1: 'SWD', PA2: 'SWD', PA3: 'SWD' };
 const PM_MODE = ['выключен', 'плавающие входы', 'подтяжка вверх', 'подтяжка вниз'];
 tag.pmHist = {};
-function pmSet(m) { cmd([0x3E, m | ($('pmSwd').checked ? 0x80 : 0)], 'монитор выводов'); }
+tag.pmSel = 0x3FFFFFF;                                   // выводы, выбранные для наблюдения (бит n = вывод n); по умолчанию все
+function pmSet(m) { const s = tag.pmSel >>> 0; cmd([0x3E, m | ($('pmSwd').checked ? 0x80 : 0), s & 255, s >>> 8 & 255, s >>> 16 & 255, s >>> 24 & 255], 'монитор выводов'); }
+$('pmGrid').onclick = e => {
+  const c = e.target.closest('.pmc'); if (!c || c.dataset.i === undefined) return;
+  tag.pmSel = (tag.pmSel ^ (1 << +c.dataset.i)) >>> 0;
+  if (tag.pm && tag.pm.mode) pmSet(tag.pm.mode); else renderPins(null);
+};
 $('bPm1').onclick = () => pmSet(1);
 $('bPm2').onclick = () => pmSet(2);
 $('bPm3').onclick = () => pmSet(3);
@@ -1048,19 +1054,21 @@ function renderPins(a) {
     tag.pm = { mode, swd, el: u16(a, 2), level: u32(a, 4) >>> 0, hi: u32(a, 8) >>> 0, lo: u32(a, 12) >>> 0, edges: u16(a, 16), last: a[18] };
     if (mode) tag.pmHist[mode] = ((tag.pm.hi & tag.pm.lo) >>> 0);
   }
-  const m = tag.pm; if (!m) return;
+  const m = tag.pm || { mode: 0, swd: false, el: 0, level: 0, hi: 0, lo: 0, edges: 0, last: 255 }; if (!tag.pm) tag.pm = m;
   const chg = (m.hi & m.lo) >>> 0, cells = [];
   for (let i = 0; i < PM_N.length; i++) {
     const nm = PM_N[i], bit = (1 << i) >>> 0;
-    let cls = 'pmc', txt = '';
+    let cls = 'pmc', txt = '', pick = false;
     if (PM_OWN[nm]) { cls += ' own'; txt = PM_OWN[nm]; }
     else if (PM_SWD[nm] && !(m.swd && m.mode)) { cls += ' own'; txt = 'отладка (SWD), не трогаю'; }
-    else if (!m.mode) txt = 'не наблюдается';
+    else if (!(tag.pmSel & bit)) { cls += ' own'; txt = 'исключён, не трогаю'; pick = true; }
+    else if (!m.mode) { txt = 'не наблюдается'; pick = true; }
     else {
+      pick = true;
       cls += (m.level & bit) ? ' hi' : ' lo';
       if (chg & bit) { cls += ' chg'; txt = 'МЕНЯЛСЯ'; } else txt = (m.hi & bit) ? 'всегда 1' : 'всегда 0';
     }
-    cells.push('<div class="' + cls + '"><b>' + nm + '</b><br>' + txt + '</div>');
+    cells.push('<div class="' + cls + '"' + (pick ? ' data-i="' + i + '" style="cursor:pointer"' : '') + '><b>' + nm + '</b><br>' + txt + '</div>');
   }
   $('pmGrid').innerHTML = cells.join('');
   $('pmStat').textContent = 'режим: ' + PM_MODE[m.mode] + (m.mode ? '; идёт ' + m.el + ' с из 300; изменений уровня: ' + m.edges + (m.last !== 255 ? '; последний менялся ' + PM_N[m.last] : '') : '');
@@ -1080,6 +1088,7 @@ function renderPins(a) {
   }
   $('pmNote').textContent = L.join('\n');
 }
+renderPins(null);
 $('bFInfo').onclick = () => cmd([0x20]);
 $('bFErase').onclick = () => { log('стираю сектор ' + $('sec').value + ' ...'); cmd([0x21, +$('sec').value]); };
 $('bFProg').onclick = () => { log('записываю страницу в сектор ' + $('sec').value + ' ...'); cmd([0x22, +$('sec').value]); };
