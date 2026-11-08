@@ -69,9 +69,16 @@ jobs:
           echo "--- /opt/silabs/sdks"; ls -la /opt/silabs/sdks 2>/dev/null | head -20
           echo "--- /opt/silabs/python"; ls /opt/silabs/python 2>/dev/null | head -20
           echo "--- /opt/silabs/slc-cli"; ls /opt/silabs/slc-cli 2>/dev/null | head -20
-          echo "--- slc generate --help"; slc generate --help 2>&1 | head -50 || true
-          echo "--- SDKs in the image"
-          find /opt /usr/local /opt/silabs/sdks -maxdepth 6 \( -name '*.slcs' \) 2>/dev/null | head -20
+          echo "--- python used by slc (JEP)"
+          cat /opt/silabs/python/requirements.txt 2>/dev/null | head -30
+          ls /opt/silabs/python/bin 2>/dev/null | head -10
+          PYB=$(ls /opt/silabs/python/bin/python3* 2>/dev/null | head -1)
+          echo "python binary: $PYB"
+          [ -n "$PYB" ] && "$PYB" -c "import sys; print(sys.version)" 2>&1 | head -3
+          [ -n "$PYB" ] && "$PYB" -c "import jinja2, yaml; print('jinja2', jinja2.__version__)" 2>&1 | head -3
+          [ -n "$PYB" ] && "$PYB" -m pip list 2>&1 | head -30
+          sed -n 1,40p /opt/silabs/slc-cli/readme.md 2>/dev/null
+          echo "--- slc configuration --help"; slc configuration --help 2>&1 | head -40 || true
 
           # Candidates: SDKs shipped in the image (slc and SDK were put together there on purpose), then the cloned one.
           CANDS=$(find /opt -maxdepth 6 -name gecko_sdk.slcs 2>/dev/null | xargs -r -n1 dirname)
@@ -92,10 +99,12 @@ jobs:
             slc configuration --gcc-toolchain="$(dirname "$(dirname "$(command -v arm-none-eabi-gcc)")")/" 2>&1 | tail -1 || true
             rm -rf ./out
             tag=$(echo "$GSDK_PATH" | tr '/' '_')
-            if HOME=/tmp/h slc generate -s "$GSDK_PATH" -p v300_ble_probe.slcp -o makefile -d ./out -cp > "gen$tag.log" 2>&1; then
+            if HOME=/tmp/h slc generate -v=4 -s "$GSDK_PATH" -p v300_ble_probe.slcp -o makefile -d ./out -cp > "gen$tag.log" 2>&1; then
               tail -5 "gen$tag.log"; gen_ok=1; break
             else
               grep -v "^  " "gen$tag.log" | head -12
+              echo "--- verbose log, lines about python / jep / traceback / error:"
+              grep -n -i "jep\|traceback\|python\|exception\|error" "gen$tag.log" | grep -v "Potential jar issue" | cut -c1-300 | head -40
             fi
           done
           [ $gen_ok = 1 ] || { echo "slc generate failed with every SDK"; exit 1; }
