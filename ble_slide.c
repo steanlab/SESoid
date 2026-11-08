@@ -47,12 +47,14 @@ static void set_defaults(slide_cfg_t *c)
   c->mask = 0xFE;                          // slots 1..7
   c->temp_c = 25;
   c->tx_dbm = 6;
+  c->nfc = 0;
 }
 
 static void sanitize(slide_cfg_t *c)
 {
   c->enabled = c->enabled ? 1u : 0u;
   c->mode = c->mode ? 1u : 0u;
+  c->nfc = c->nfc ? 1u : 0u;
   if (c->interval_min < 1u) c->interval_min = 1u;
   if (c->interval_min > 1440u) c->interval_min = 1440u;
   c->mask &= 0xFEu;
@@ -71,7 +73,8 @@ static void pack_entry(uint8_t *e, const slide_cfg_t *c)
   e[5] = c->enabled; e[6] = c->mode; e[7] = c->mask;
   e[8] = (uint8_t)c->interval_min; e[9] = (uint8_t)(c->interval_min >> 8);
   e[10] = (uint8_t)c->temp_c; e[11] = (uint8_t)c->tx_dbm;
-  memset(e + 12, 0, 4);
+  e[12] = c->nfc;                          // was reserved (0) in older entries, which therefore read as "off"
+  memset(e + 13, 0, 3);
   wr32(e + 16, up_crc32(0, e, 16));
 }
 
@@ -80,7 +83,7 @@ static bool unpack_entry(const uint8_t *e, slide_cfg_t *c)
   if (rd32(e) != ENTRY_MAGIC || e[4] != 1 || rd32(e + 16) != up_crc32(0, e, 16)) return false;
   c->enabled = e[5]; c->mode = e[6]; c->mask = e[7];
   c->interval_min = (uint16_t)(e[8] | (e[9] << 8));
-  c->temp_c = (int8_t)e[10]; c->tx_dbm = (int8_t)e[11];
+  c->temp_c = (int8_t)e[10]; c->tx_dbm = (int8_t)e[11]; c->nfc = e[12];
   sanitize(c);
   return true;
 }

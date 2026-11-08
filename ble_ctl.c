@@ -25,6 +25,9 @@ static bool want_result;
 static bool want_diag, diag_sent;
 static bool want_clock, clock_sent, want_pins, want_scan, want_nfc, nfc_sent;
 static uint8_t nfc_left = 7;      // next NFC chip report packet (0..6), 7 = nothing pending
+static uint8_t nfc_fd_left = 0xFF, nfc_bk_left = 0xFF;   // next FD watch packet / backup block, 0xFF = nothing pending
+static bool tap_pending;
+static uint32_t tap_t0, tap_next_try;
 static uint32_t last_nfc_tx_us;
 static uint32_t last_pins_tx_us, last_scan_tx_us;
 
@@ -34,7 +37,7 @@ void ctl_reset(void)
 {
   want_status = want_cfg = want_slots_req = want_result = want_diag = false;
   want_clock = want_pins = want_scan = want_nfc = false;
-  nfc_left = 7;
+  nfc_left = 7; nfc_fd_left = nfc_bk_left = 0xFF; nfc_sent = true;
   nfc_reset();                                           // the NFC chip is switched off with the connection
   hwtest_reset();                                        // the pin monitor stops with the connection
   slots_left = 8;
@@ -58,10 +61,11 @@ bool ctl_write(const uint8_t *v, uint8_t len)
     case 0x32: queue_result(0x32, len == 2 ? slide_show(v[1]) : SLR_BAD_SLOT); break;
     case 0x33: queue_result(0x33, slide_next()); break;
     case 0x34:
-      if (len == 8) {
+      if (len == 8 || len == 9) {
         slide_cfg_t c;
         c.enabled = v[1]; c.mode = v[2]; c.interval_min = (uint16_t)(v[3] | (v[4] << 8)); c.mask = v[5];
         c.temp_c = (int8_t)v[6]; c.tx_dbm = (int8_t)v[7];
+        c.nfc = len == 9 ? v[8] : slide_cfg()->nfc;                    // the NFC tap switch comes with fw 1.7 pages; older pages send 8 bytes
         slide_set_cfg(&c);
       }
       want_cfg = true;
@@ -86,23 +90,32 @@ bool ctl_write(const uint8_t *v, uint8_t len)
     case 0x3C: clock_sent = false; queue_result(0x3C, hwtest_clock_start() ? SLR_OK : SLR_PANEL_BUSY); break;
     case 0x3D: want_clock = true; break;
     case 0x3E:
-      nfc_stop();
+      nfc_stop(); nfc_hold(true);
       if ((len == 2 || len == 6) && hwtest_pins_start(v[1], len == 6 ? (uint32_t)(v[2] | (v[3] << 8) | ((uint32_t)v[4] << 16) | ((uint32_t)v[5] << 24)) : 0xFFFFFFFFu)) want_pins = true;
       else queue_result(0x3E, SLR_BAD_SLOT);
       break;
     case 0x3F:
-      if (len == 2 && v[1] >= 0x10 && v[1] <= 0x13) {                                   // NFC chip (ble_nfc.h)
-        if (v[1] == 0x12) { nfc_stop(); want_nfc = true; }
-        else if (v[1] == 0x13) { want_nfc = true; if (nfc_state()->mode == 1 && nfc_state()->state >= 2) nfc_left = 0; }
-        else {
-          hwtest_scan_abort(); hwtest_pins_start(PM_MODE_OFF, 0xFFFFFFFFu);              // the scanner and the monitor use the same pins
-          nfc_sent = (v[1] == 0x11);                                                     // the snapshot is sent when it ends, the live view at once
-          queue_result(0x3F, (v[1] == 0x10 ? nfc_snapshot_start() : nfc_live_start()) ? SLR_OK : SLR_BAD_SLOT);
+      if (v[1] >= 0x10 && v[1] <= 0x22 && (v[1] <= 0x16 || v[1] >= 0x20)) {              // NFC chip (ble_nfc.h)
+        uint8_t ok = SLR_OK;
+        bool start = false;
+        if (v[1] == 0x10 || v[1] == 0x11 || v[1] == 0x14 || v[1] == 0x21 || v[1] == 0x22) { hwtest_scan_abort(); hwtest_pins_start(PM_MODE_OFF, 0xFFFFFFFFu); }   // they share the pins
+        if (v[1] == 0x12 && len == 2) { nfc_stop(); want_nfc = true; }
+        else if (v[1] == 0x13 && len == 2) { want_nfc = true; nfc_left = (nfc_state()->mode == NFC_M_SNAP && nfc_state()->state >= 2) ? 0 : 7; nfc_fd_left = (nfc_state()->mode == NFC_M_LIVE && nfc_fd()->n) ? 0 : 0xFF; nfc_bk_left = (nfc_state()->mode == NFC_M_BACKUP && nfc_state()->state == 2) ? 0 : 0xFF; }
+        else if (v[1] == 0x10 && len == 2) { start = true; ok = nfc_snapshot_start() ? SLR_OK : SLR_BAD_SLOT; }
+        else if (v[1] == 0x11 && (len == 2 || len == 6)) { start = true; ok = nfc_live_start(len == 6 ? ((uint32_t)(v[2] | (v[3] << 8) | ((uint32_t)v[4] << 16) | ((uint32_t)v[5] << 24)) & ~hwtest_pins_owned() & ~0xEu) : 0) ? SLR_OK : SLR_BAD_SLOT; }
+        else if (v[1] == 0x14 && len == 2) { start = true; ok = nfc_backup_start() ? SLR_OK : SLR_BAD_SLOT; }
+        else if (v[1] == 0x20 && len == 18) { if (!nfc_wbuf_set(v[2], v + 3)) queue_result(0x3F, SLR_BAD_SLOT); }            // one block of the write buffer, no answer unless refused
+        else if (v[1] == 0x21 && len == 4 && v[3] == 0xA5) { start = true; ok = nfc_write_start(v[2]) ? SLR_OK : SLR_BAD_SLOT; }   // 0xA5 = armed
+        else if (v[1] == 0x22 && len == 3 && v[2] == 0xA5) { start = true; ok = nfc_unlock_start() ? SLR_OK : SLR_BAD_SLOT; }
+        else queue_result(0x3F, SLR_BAD_SLOT);
+        if (start) {
+          if (ok == SLR_OK) nfc_sent = false;
+          queue_result(0x3F, ok);
           want_nfc = true;
         }
       }
-      else if (len == 7 && v[1] == 2) { nfc_stop(); queue_result(0x3F, hwtest_scan_start(v[2], (uint32_t)(v[3] | (v[4] << 8) | ((uint32_t)v[5] << 16) | ((uint32_t)v[6] << 24))) ? SLR_OK : SLR_BAD_SLOT); }
-      else if (len == 11 && v[1] == 5) { nfc_stop(); queue_result(0x3F, hwtest_scan_start_pwr(v[2], (uint32_t)(v[3] | (v[4] << 8) | ((uint32_t)v[5] << 16) | ((uint32_t)v[6] << 24)), (uint32_t)(v[7] | (v[8] << 8) | ((uint32_t)v[9] << 16) | ((uint32_t)v[10] << 24))) ? SLR_OK : SLR_BAD_SLOT); }
+      else if (len == 7 && v[1] == 2) { nfc_stop(); nfc_hold(true); queue_result(0x3F, hwtest_scan_start(v[2], (uint32_t)(v[3] | (v[4] << 8) | ((uint32_t)v[5] << 16) | ((uint32_t)v[6] << 24))) ? SLR_OK : SLR_BAD_SLOT); }
+      else if (len == 11 && v[1] == 5) { nfc_stop(); nfc_hold(true); queue_result(0x3F, hwtest_scan_start_pwr(v[2], (uint32_t)(v[3] | (v[4] << 8) | ((uint32_t)v[5] << 16) | ((uint32_t)v[6] << 24)), (uint32_t)(v[7] | (v[8] << 8) | ((uint32_t)v[9] << 16) | ((uint32_t)v[10] << 24))) ? SLR_OK : SLR_BAD_SLOT); }
       else if (len == 2 && v[1] == 3) want_scan = true;
       else if (len == 2 && v[1] == 4) { hwtest_scan_abort(); want_scan = true; }
       else { if (len == 2 && v[1] == 1) hwtest_pins_clear(); want_pins = true; }
@@ -181,7 +194,8 @@ static void send_scan(void)
   att_notify(r, 20);
 }
 
-// NFC chip report: 0xBC idx data(16) for the blocks (idx 0..5), 0xBC 6 regs_ok r0..r6 for the session registers, 0xBD status
+// NFC chip report: 0xBC idx data(16) for the blocks (idx 0..5), 0xBC 6 regs_ok r0..r6 for the session registers, 0xBD status,
+// 0xBE pin cnt_lo_field(4) cnt_hi_field(4) cnt_lo_nofield(4) cnt_hi_nofield(4) per watched pin, 0xBF block data(16) per backup block
 static void send_nfc_part(uint8_t idx)
 {
   const nfc_t *c = nfc_state();
@@ -191,25 +205,43 @@ static void send_nfc_part(uint8_t idx)
   else { r[2] = c->regs_ok; memcpy(r + 3, c->regs, NFC_REGS); att_notify(r, 3 + NFC_REGS); }
 }
 
+static void send_nfc_fd(uint8_t k)
+{
+  const nfc_fd_t *f = nfc_fd();
+  uint8_t r[18];
+  r[0] = 0xBE; r[1] = f->pin[k];
+  wr32(r + 2, f->lo_f[k]); wr32(r + 6, f->hi_f[k]); wr32(r + 10, f->lo_n[k]); wr32(r + 14, f->hi_n[k]);
+  att_notify(r, 18);
+}
+
+static void send_nfc_bk(uint8_t b)
+{
+  uint8_t r[18];
+  r[0] = 0xBF; r[1] = b; memcpy(r + 2, nfc_backup_block(b), 16);
+  att_notify(r, 18);
+}
+
 static void send_nfc_status(void)
 {
   const nfc_t *c = nfc_state();
-  uint8_t r[14];
+  uint8_t r[16];
   r[0] = 0xBD; r[1] = c->state; r[2] = c->mode; r[3] = c->fail;
   r[4] = (uint8_t)((c->ns_valid ? 1u : 0u) | (c->field_now ? 2u : 0u) | (c->field_ever ? 4u : 0u));
   r[5] = c->regs[NFC_LIVE_NS_REG]; r[6] = (uint8_t)c->events; r[7] = (uint8_t)(c->events >> 8);
   r[8] = (uint8_t)c->live_s; r[9] = (uint8_t)(c->live_s >> 8); r[10] = (uint8_t)c->polls; r[11] = (uint8_t)(c->polls >> 8); r[12] = c->regs_ok;
-  att_notify(r, 13);
+  r[13] = c->op_res; r[14] = c->op_blk; r[15] = c->fd_n;
+  att_notify(r, 16);
 }
 
 static void send_cfg(void)
 {
   const slide_cfg_t *c = slide_cfg();
-  uint8_t r[12];
+  uint8_t r[13];
   int16_t a = slide_tx_actual_ddbm();
   r[0] = 0xB4; r[1] = 1; r[2] = c->enabled; r[3] = c->mode; r[4] = (uint8_t)c->interval_min; r[5] = (uint8_t)(c->interval_min >> 8);
   r[6] = c->mask; r[7] = (uint8_t)c->temp_c; r[8] = (uint8_t)c->tx_dbm; r[9] = (uint8_t)a; r[10] = (uint8_t)((uint16_t)a >> 8);
-  att_notify(r, 11);
+  r[11] = c->nfc; r[12] = nfc_tap_count();
+  att_notify(r, 13);
 }
 
 static void send_slot(uint8_t s)
@@ -264,7 +296,14 @@ void ctl_poll(void)
 {
   uint32_t now = RAIL_GetTime();
   hwtest_poll();
+  nfc_tap_enable(slide_cfg()->nfc != 0);
+  nfc_hold(hwtest_scan()->state == 1 || hwtest_pins()->mode != PM_MODE_OFF);       // the scanner and the pin monitor own those pins while they run
   nfc_poll();
+  if (nfc_tap_take()) { tap_pending = true; tap_t0 = now; tap_next_try = now; }
+  if (tap_pending && (int32_t)(now - tap_next_try) >= 0) {                       // a tap shows the next slide; while the panel or the flash is busy it is tried again
+    uint8_t r = slide_next();
+    if (r == SLR_OK || r == SLR_BAD_SLOT || (uint32_t)(now - tap_t0) > 90000000u) tap_pending = false; else tap_next_try = now + 1000000u;
+  }
   if (reboot_pending && (int32_t)(now - reboot_at_us) >= 0) sys_reboot();
 
   uint8_t st, er, sr, sh;
@@ -282,11 +321,18 @@ void ctl_poll(void)
   if (want_clock && hwtest_clock()->state != 1) { send_clock(); want_clock = false; last_tx_us = now; return; }
   if (hwtest_scan_changed()) want_scan = true;
   if (hwtest_scan()->state == 1 && (uint32_t)(now - last_scan_tx_us) >= 500000u) want_scan = true;
-  if (nfc_state()->mode == 1 && nfc_state()->state >= 2 && !nfc_sent) { nfc_sent = true; nfc_left = 0; want_nfc = true; }   // the snapshot goes out by itself when it ends
+  if (nfc_state()->state >= 2 && !nfc_sent) {                                    // the report of a finished run goes out by itself
+    nfc_sent = true; want_nfc = true;
+    if (nfc_state()->mode == NFC_M_SNAP) nfc_left = 0;
+    if (nfc_state()->mode == NFC_M_LIVE && nfc_fd()->n) nfc_fd_left = 0;
+    if (nfc_state()->mode == NFC_M_BACKUP && nfc_state()->state == 2) nfc_bk_left = 0;
+  }
   if (nfc_changed()) want_nfc = true;
-  if (nfc_state()->state == 1 && nfc_state()->mode == 2 && (uint32_t)(now - last_nfc_tx_us) >= 1000000u) want_nfc = true;
+  if (nfc_state()->state == 1 && nfc_state()->mode == NFC_M_LIVE && (uint32_t)(now - last_nfc_tx_us) >= 1000000u) want_nfc = true;
   if (nfc_left <= NFC_BLOCKS) { send_nfc_part(nfc_left++); last_tx_us = now; return; }
-  if (want_nfc && !(nfc_state()->state == 1 && nfc_state()->mode == 1)) { send_nfc_status(); want_nfc = false; last_nfc_tx_us = now; last_tx_us = now; return; }
+  if (nfc_fd_left < nfc_fd()->n) { send_nfc_fd(nfc_fd_left++); if (nfc_fd_left >= nfc_fd()->n) nfc_fd_left = 0xFF; last_tx_us = now; return; }
+  if (nfc_bk_left < NFC_BK_BLOCKS) { send_nfc_bk(nfc_bk_left++); if (nfc_bk_left >= NFC_BK_BLOCKS) nfc_bk_left = 0xFF; last_tx_us = now; return; }
+  if (want_nfc && !(nfc_state()->state == 1 && nfc_state()->mode != NFC_M_LIVE)) { send_nfc_status(); want_nfc = false; last_nfc_tx_us = now; last_tx_us = now; return; }
   if (want_scan) { send_scan(); want_scan = false; last_scan_tx_us = now; last_tx_us = now; return; }
   if (want_pins) { send_pins(); want_pins = false; last_pins_tx_us = now; last_tx_us = now; return; }
   if (want_diag) { send_diag(); want_diag = false; last_tx_us = now; return; }

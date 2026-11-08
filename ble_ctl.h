@@ -25,8 +25,14 @@
 //                           pins float, 1 pulled up, 2 pulled down                                        -> B3, then BB (twice a second, and at the end)
 //   3F 05 opt mask(4) pwr(4) I2C SCAN with power pins: each pin of pwr is driven high in turn (push-pull) during a whole scan of mask (2..4 pins);
 //                           stops at the first device and reports the power pin                              -> B3, then BB
+//   34 en mode interval(2) mask temp tx [nfc]   the optional 9th byte switches the NFC tap (fw 1.7): a phone tap on the tag shows the next slide
 //   3F 10                   NFC CHIP SNAPSHOT (read only): power on, read the blocks and session registers, power off  -> B3, then BC x7 and BD
-//   3F 11                   NFC CHIP LIVE: power on, poll the status register 5 times a second for 2 minutes   -> B3, then BD on every change and every second
+//   3F 11 [pins(4)]         NFC CHIP LIVE: power on, poll the status register 5 times a second for 2 minutes   -> B3, then BD on every change and every second.
+//                           With pins: FD WATCH, those free pins get the pull-up and are sampled each ms (field flag polled 50 times a second); BE per pin at the end
+//   3F 14                   NFC CHIP BACKUP of blocks 00..3A                                                      -> B3, BF x59 and BD
+//   3F 20 idx data(16)      NFC write buffer, block idx (0..6 = chip block 1..7); answered by B3 only if refused
+//   3F 21 n A5              NFC WRITE the buffer to chip blocks 1..n (A5 = armed), verified by reading back       -> B3, then BD (op_res, op_blk)
+//   3F 22 A5                NFC UNLOCK: clear the static and dynamic lock bytes over I2C (A5 = armed)               -> B3, then BD
 //   3F 12                   NFC CHIP OFF                                                                     -> BD
 //   3F 13                   NFC CHIP REPORT again                                                            -> BC x7 (snapshot only) and BD
 //   3F 03                   I2C SCAN REPORT                                                              -> BB
@@ -36,7 +42,7 @@
 //                           bit1 flash idle, bit2 scanning)
 //   B1 slot flags total(4) crc(4)       flags: bit0 record valid, bit1 showable (46 080 bytes), bit2 in the playlist, bit3 shown last
 //   B3 op status            result of 32/33/38/39: 0 started, 1 panel busy, 2 nothing to show, 3 flash busy
-//   B4 ver en mode int(2) mask temp tx_req tx_actual(2, tenth of dBm)
+//   B4 ver en mode int(2) mask temp tx_req tx_actual(2, tenth of dBm) nfc taps   (nfc = tap switch, taps = taps detected since start, wraps at 256; fw 1.7)
 //   B5                      reboot acknowledged
 //   B6 idx data...          hardware info fragments (idx 0..3), see ble_ctl.c
 //   B7 pstat perr src shown panel update finished (sent on its own)
@@ -45,7 +51,9 @@
 //   B9 state flags sel ctune_xi ctune_xo fact_xi fact_xo lfxo_ms(2) cnt_lfxo(3) cnt_lfrco(3) cnt_ulfrco(3) captune
 //                           clock test report, fields as in hwtest_clock_t (ble_hwtest.h); a count is HFXO cycles per CT_DOWN_x / 2 cycles of the clock
 //   BC idx data(16)         NFC chip block idx 0..5 (blocks 00 01 02 38 3A FE, see nfc_block_addr), then BC 6 regs_ok r0..r6 = the session registers
-//   BD state mode fail flags ns events(2) live_s(2) polls(2) regs_ok
+//   BE pin lo_field(4) hi_field(4) lo_nofield(4) hi_nofield(4)   FD watch: samples of one pin by the field flag at the time (pin index as in BA)
+//   BF block data(16)       backup block 0x00..0x3A
+//   BD state mode fail flags ns events(2) live_s(2) polls(2) regs_ok op_res op_blk fd_n
 //                           NFC chip status, fields as in nfc_t (ble_nfc.h); flags bit0 NS_REG valid, bit1 field present now, bit2 field seen
 //   BB state|opt<<4 pairs_total pairs_done stuck hits sda scl addr pwr pwr_now 0 0(spare) high(4) held(4)   (pwr, pwr_now: pin index, 0xFF none)
 //                           I2C scan report, fields as in hwtest_scan_t (state 0 never, 1 running, 2 finished, 3 aborted; pin indices as in BA; addr = 7 bit)

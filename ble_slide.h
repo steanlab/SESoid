@@ -17,6 +17,7 @@ typedef struct {
   uint8_t  mask;           // bit n (1..7) = slot n takes part in the slideshow
   int8_t   temp_c;         // temperature handed to the panel (waveform choice)
   int8_t   tx_dbm;         // Bluetooth transmit power request, dBm (RAIL clips it to what the chip can do)
+  uint8_t  nfc;            // 1 = a tap of a phone on the NFC chip shows the next slide (ble_nfc.h); older saved settings read 0
 } slide_cfg_t;
 
 typedef struct {

@@ -9,7 +9,7 @@ const MOCK = `
   const crcT = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
   const crc = b => { let c = 0xFFFFFFFF; for (const x of b) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
   const le32 = v => [v & 255, v >>> 8 & 255, v >>> 16 & 255, v >>> 24 & 255];
-  const tag = { flash: new Uint8Array(8 * 65536).fill(255), cfg: { en: 1, mode: 0, iv: 60, mask: 0xFE, temp: 20, tx: 6 }, cur: 0, src: 1, shown: 0,
+  const tag = { flash: new Uint8Array(8 * 65536).fill(255), cfg: { en: 1, mode: 0, iv: 60, mask: 0xFE, temp: 20, tx: 6, nfc: 0 }, cur: 0, src: 1, shown: 0,
     up: null, log: [], dropPage: 3, dropped: false, rebooted: 0, fills: [] };
   window.__tag = tag;
   let notify = null;
@@ -51,7 +51,7 @@ const MOCK = `
       for (let s = 1; s <= 7; s++) { const i = slotInfo(s); N([0xB1, s, (i.valid ? 1 : 0) | (i.valid && i.total === 46080 ? 2 : 0) | (tag.cfg.mask >> s & 1 ? 4 : 0) | (tag.cur === s ? 8 : 0), ...le32(i.total), ...le32(i.crc)]); }
     } else if (op === 0x32) { tag.cur = v[1]; tag.src = 2; tag.shown = v[1]; N([0xB3, 0x32, 0]); }
     else if (op === 0x33) N([0xB3, 0x33, 0]);
-    else if (op === 0x34) { tag.cfg = { en: v[1], mode: v[2], iv: v[3] | v[4] << 8, mask: v[5], temp: v[6] << 24 >> 24, tx: v[7] << 24 >> 24 }; sendCfg(); }
+    else if (op === 0x34) { tag.cfg = { en: v[1], mode: v[2], iv: v[3] | v[4] << 8, mask: v[5], temp: v[6] << 24 >> 24, tx: v[7] << 24 >> 24, nfc: v.length >= 9 ? v[8] : tag.cfg.nfc }; tag.cfgLen = v.length; sendCfg(); }
     else if (op === 0x35) sendCfg();
     else if (op === 0x36) { tag.rebooted++; N([0xB5]); }
     else if (op === 0x37) {
@@ -68,11 +68,19 @@ const MOCK = `
     else if (op === 0x3D) N(clkPkt(true));
     else if (op === 0x3E && tag.old11 && v.length !== 2) N([0xB3, 0x3E, 2]);
     else if (op === 0x3E) { tag.pmMask = v.length >= 6 ? (v[2] | v[3] << 8 | v[4] << 16 | v[5] << 24) >>> 0 : 0xFFFFFFFF; tag.pmLen = v.length; tag.pm = { mode: v[1] & 3, swd: v[1] & 0x80, level: 0, hi: 0, lo: 0, edges: 0, last: 255, el: 0 }; tag.pmBase(); N(pmPkt()); }
+    else if (op === 0x3F && v[1] === 0x14) { tag.nfcCmd = 0x14; tag.nfcMode = 3; nfcInit(); N([0xB3, 0x3F, tag.nfcOk === false ? 2 : 0]); if (tag.nfcOk !== false) setTimeout(() => { for (let i = 0; i < 59; i++) N([0xBF, i, ...tag.chip[i]]); nfcSend(); }, 60); }
+    else if (op === 0x3F && v[1] === 0x20) { tag.wbuf = tag.wbuf || []; tag.wbuf[v[2]] = Array.from(v.slice(3, 19)); tag.wbufN = (tag.wbufN || 0) + 1; }
+    else if (op === 0x3F && v[1] === 0x21) {
+      tag.writeArgs = Array.from(v); tag.nfcMode = 4; N([0xB3, 0x3F, v.length === 4 && v[3] === 0xA5 ? 0 : 1]); tag.nfcRes = [0, 0];
+      if (tag.wp) tag.nfcRes = [2, 1]; else for (let i = 0; i < v[2]; i++) tag.chip[1 + i] = tag.wbuf[i];
+      setTimeout(() => nfcSend(), 80);
+    }
+    else if (op === 0x3F && v[1] === 0x22) { tag.unlockArgs = Array.from(v); tag.nfcMode = 5; tag.wp = false; tag.chip[0][10] = 0; tag.chip[0][11] = 0; tag.nfcRes = [0, 0]; N([0xB3, 0x3F, 0]); setTimeout(() => nfcSend(), 80); }
     else if (op === 0x3F && v[1] >= 0x10 && v[1] <= 0x13) {
-      tag.nfcCmd = v[1];
+      tag.nfcCmd = v[1]; if (v[1] === 0x11) tag.fdArgs = Array.from(v);
       if (v[1] === 0x12) N([0xBD, 2, tag.nfcMode || 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
       else {
-        if (v[1] !== 0x13) { tag.nfcMode = v[1] === 0x11 ? 2 : 1; N([0xB3, 0x3F, tag.nfcOk === false ? 2 : 0]); }
+        if (v[1] !== 0x13) { tag.nfcMode = v[1] === 0x11 ? 2 : 1; tag.nfcRes = [0, 0]; N([0xB3, 0x3F, tag.nfcOk === false ? 2 : 0]); }
         if (tag.nfcOk !== false) setTimeout(() => nfcSend(), 80);
       }
     }
@@ -89,18 +97,30 @@ const MOCK = `
   tag.pmBase = () => { const m = tag.pm, W = (PMASK & tag.pmMask) >>> 0; m.level = m.mode === 2 ? W : 0; m.hi = m.level; m.lo = W & ~m.level; };
   function pmPkt() { const m = tag.pm; return [0xBA, m.mode | m.swd, m.el & 255, m.el >> 8, ...le32(m.level >>> 0), ...le32(m.hi >>> 0), ...le32(m.lo >>> 0), m.edges & 255, m.edges >> 8, m.last, 0]; }
   tag.pmPush = () => N(pmPkt());
+  function nfcInit() { if (!tag.chip) { const b = nfcBlocks(); tag.chip = Array.from({ length: 59 }, (_, i) => i < 6 ? b[i].slice() : Array(16).fill(0)); } }
+  function nfcBlocks() { return [
+      [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x11, 0x22, 0x33, 0x44, 0x00, 0xFF, 0xFF, 0xE1, 0x10, 0x6D, 0x0F],
+      [0x03, 0x1D, 0xD1, 0x01, 0x19, 0x55, 0x04, ...Array.from('nfc.example.com/EE285D4B').map(c => c.charCodeAt(0)).slice(0, 9)],
+      [...Array.from('nfc.example.com/EE285D4B').map(c => c.charCodeAt(0)).slice(9), 0xFE, 0, 0, 0, 0, 0, 0, 0, 0],
+      Array(16).fill(0), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], Array(16).fill(0x5A)]; }
   function nfcSend() {
     const blk = [
       [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x11, 0x22, 0x33, 0x44, 0x00, 0xFF, 0xFF, 0xE1, 0x10, 0x6D, 0x0F],
       [0x03, 0x1D, 0xD1, 0x01, 0x19, 0x55, 0x04, ...Array.from('nfc.example.com/EE285D4B').map(c => c.charCodeAt(0)).slice(0, 9)],
       [...Array.from('nfc.example.com/EE285D4B').map(c => c.charCodeAt(0)).slice(9), 0xFE, 0, 0, 0, 0, 0, 0, 0, 0],
       Array(16).fill(0), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], Array(16).fill(0x5A)];
+    nfcInit();
     if (tag.nfcMode === 1) {
       for (let i = 0; i < 6; i++) N([0xBC, i, ...blk[i]]);
       N([0xBC, 6, 0x7F, 0x01, 0, 0, 0, 0, 0x08, tag.nfcNs === undefined ? 0x20 : tag.nfcNs]);
     }
     const ns = tag.nfcNs === undefined ? 0x20 : tag.nfcNs;
-    N([0xBD, tag.nfcDead ? 3 : 2, tag.nfcMode, tag.nfcDead ? 0x7F : 0, tag.nfcDead ? 0 : (tag.nfcMode === 2 ? 1 | ((ns & 1) << 1) | ((tag.nfcEver ? 1 : 0) << 2) : 0), ns, tag.nfcEvents || 0, 0, 7, 0, 35, 0, tag.nfcDead ? 0 : 0x7F]);
+    if (tag.nfcMode === 2 && tag.fdArgs && tag.fdArgs.length === 6) {
+      const m = (tag.fdArgs[2] | tag.fdArgs[3] << 8 | tag.fdArgs[4] << 16 | tag.fdArgs[5] << 24) >>> 0;
+      for (let i = 0; i < 26; i++) if (m >> i & 1) N(i === 8 ? [0xBE, i, ...le32(900), ...le32(100), ...le32(2), ...le32(1500)] : [0xBE, i, ...le32(0), ...le32(1000), ...le32(0), ...le32(1500)]);
+    }
+    const nr = tag.nfcRes || [0, 0], fdn = tag.nfcMode === 2 && tag.fdArgs && tag.fdArgs.length === 6 ? 9 : 0;
+    N([0xBD, tag.nfcDead ? 3 : (tag.nfcMode >= 4 && nr[0] ? 3 : 2), tag.nfcMode, tag.nfcDead ? 0x7F : 0, tag.nfcDead ? 0 : (tag.nfcMode === 2 ? 1 | ((ns & 1) << 1) | ((tag.nfcEver ? 1 : 0) << 2) : 0), ns, tag.nfcEvents || 0, 0, 7, 0, 35, 0, tag.nfcDead ? 0 : 0x7F, tag.nfcMode >= 4 ? nr[0] : 0, tag.nfcMode >= 4 ? nr[1] : 0, fdn]);
   }
   function scanPkt(st) {
     const hit = tag.scanHit !== false, opt = tag.scanArgs ? tag.scanArgs[2] : 0, pw = tag.scanArgs && tag.scanArgs[1] === 5 && hit ? 11 : 255;
@@ -112,7 +132,7 @@ const MOCK = `
     const fl = tag.xtal ? 0x01 | 0x04 | 0x10 | 0x20 | 0x40 : 0x01 | 0x80 | 0x20 | 0x40;
     return [0xB9, 2, fl, 3 | (1 << 3) | (1 << 5), 0x8C, 0x7A, 0x8C, 0x7A, tag.xtal ? 0x93 : 0xFF, tag.xtal ? 0x01 : 0xFF, c & 255, c >> 8 & 255, c >> 16, r & 255, r >> 8 & 255, r >> 16, u & 255, u >> 8 & 255, u >> 16, 0x30];
   }
-  function sendCfg() { const c = tag.cfg; N([0xB4, 1, c.en, c.mode, c.iv & 255, c.iv >> 8, c.mask, c.temp & 255, c.tx & 255, 60, 0]); }
+  function sendCfg() { const c = tag.cfg; N([0xB4, 1, c.en, c.mode, c.iv & 255, c.iv >> 8, c.mask, c.temp & 255, c.tx & 255, 60, 0, ...(tag.cfgOld ? [] : [c.nfc ? 1 : 0, 3])]); }
   const chr = { addEventListener: (n, f) => { notify = f; }, startNotifications: async () => {}, writeValueWithResponse: async v => handle(new Uint8Array(v.buffer ? v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength) : v)), writeValueWithoutResponse: async v => handle(new Uint8Array(v.buffer ? v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength) : v)) };
   const svc = { getCharacteristic: async () => chr };
   const device = { name: 'V300-TEST', gatt: { connected: false, connect: async function () { this.connected = true; return { getPrimaryService: async () => svc }; }, disconnect: function () { this.connected = false; device.__d && device.__d(); } }, addEventListener: (n, f) => { device.__d = f; } };
@@ -332,6 +352,73 @@ const MOCK = `
   await pg.evaluate(() => { window.__tag.nfcDead = false; window.__tag.nfcOk = false; });
   await pg.click('#bNfcSnap'); await pg.waitForTimeout(500);
   ok((await pg.textContent('#nfcOut')).includes('не приняла команду'), 'nfc: old firmware refusal explained');
+  await pg.evaluate(() => { window.__tag.nfcOk = true; });
+
+  // --- NFC tap switch in settings
+  await pg.click('[data-t=cfg]'); await pg.waitForTimeout(200);
+  await pg.click('#bCfgGet'); await pg.waitForTimeout(300);
+  ok(await pg.evaluate(() => !document.getElementById('cNfc').disabled) && (await pg.textContent('#cNfcInfo')).includes('касаний с запуска метки: 3'), 'nfc tap: switch enabled, touch counter shown');
+  await pg.check('#cNfc'); await pg.click('#bCfg'); await pg.waitForTimeout(400);
+  ok((await pg.evaluate(() => window.__tag.cfg.nfc)) === 1 && (await pg.evaluate(() => window.__tag.cfgLen)) === 9, 'nfc tap: 9th byte carries the switch');
+  ok(await pg.isChecked('#cNfc'), 'nfc tap: switch stays on after readback');
+  await pg.evaluate(() => { window.__tag.cfgOld = true; });
+  await pg.click('#bCfgGet'); await pg.waitForTimeout(300);
+  ok(await pg.evaluate(() => document.getElementById('cNfc').disabled) && (await pg.textContent('#cNfcInfo')).includes('1.7'), 'nfc tap: old firmware disables the switch');
+  await pg.click('#bCfg'); await pg.waitForTimeout(300);
+  ok((await pg.evaluate(() => window.__tag.cfgLen)) === 8, 'nfc tap: old firmware gets the 8-byte settings command');
+  await pg.evaluate(() => { window.__tag.cfgOld = false; });
+  await pg.click('#bCfgGet'); await pg.waitForTimeout(300);
+
+  await pg.click('[data-t=tools]'); await pg.waitForTimeout(200);
+  // --- NFC: FD pin search
+  await pg.check('#nfcFd'); await pg.click('#bNfcLive'); await pg.waitForTimeout(700);
+  const fdA = await pg.evaluate(() => window.__tag.fdArgs);
+  const fdMask = (fdA[2] | fdA[3] << 8 | fdA[4] << 16 | fdA[5] << 24) >>> 0;
+  ok(fdA.length === 6 && fdMask === [6, 8, 10, 11, 12, 13, 21, 22, 23].reduce((m, i) => m | 1 << i, 0) >>> 0, 'fd: command carries the nine free pins');
+  no = await pg.textContent('#nfcOut');
+  ok(/PA8 +★ ПОХОЖЕ НА FD/.test(no) && (no.match(/ПОХОЖЕ НА FD/g) || []).length === 1, 'fd: only the pin that follows the field is flagged');
+  ok(no.includes('с полем внизу 90%') && no.includes('без поля вверху 100%'), 'fd: figures shown');
+  await pg.uncheck('#nfcFd'); await pg.click('#bNfcLive'); await pg.waitForTimeout(500);
+  ok((await pg.evaluate(() => window.__tag.fdArgs)).length === 2 && !(await pg.textContent('#nfcOut')).includes('Поиск вывода FD'), 'fd: plain live run sends no mask');
+
+  // --- NFC: backup, write, restore, unlock
+  ok(await pg.evaluate(() => document.getElementById('bNfcWr').disabled && document.getElementById('bNfcUnlock').disabled && document.getElementById('bNfcDl').disabled), 'nfc write: locked until a backup exists');
+  await pg.click('#bNfcBk'); await pg.waitForTimeout(900);
+  ok((await pg.textContent('#nfcOut2')).includes('прочитано блоков 59 из 59') && !(await pg.textContent('#nfcOut2')).includes('AA BB'), 'backup: complete and the serial data is not shown');
+  ok(await pg.evaluate(() => !document.getElementById('bNfcDl').disabled), 'backup: download enabled');
+  const dl = pg.waitForEvent('download'); await pg.click('#bNfcDl'); const dlf = await dl;
+  const dlp = await dlf.path(); const dlb = require('fs').readFileSync(dlp);
+  ok(dlf.suggestedFilename() === 'nfc_chip_backup.bin' && dlb.length === 944 && dlb[0] === 0xAA && dlb[16] === 0x03, 'backup: file is 59x16 bytes in block order');
+  ok(await pg.evaluate(() => document.getElementById('bNfcWr').disabled), 'nfc write: still locked until the confirmation box is ticked');
+  await pg.check('#nfcWrOk'); await pg.waitForTimeout(100);
+  ok(await pg.evaluate(() => !document.getElementById('bNfcWr').disabled), 'nfc write: enabled after backup and confirmation');
+  ok((await pg.inputValue('#nfcUrl')).startsWith('https://') , 'nfc write: default URL is filled');
+  await pg.fill('#nfcUrl', 'ftp://x'); await pg.waitForTimeout(100);
+  ok(await pg.evaluate(() => document.getElementById('bNfcWr').disabled) && (await pg.textContent('#nfcUrlInfo')).includes('http'), 'nfc write: bad scheme refused');
+  await pg.fill('#nfcUrl', 'https://example.org/app/'); await pg.waitForTimeout(100);
+  ok((await pg.textContent('#nfcUrlInfo')).includes('в чип запишется 24 байт (2 блоков'), 'nfc write: size shown');
+  await pg.fill('#nfcUrl', 'https://' + 'a'.repeat(120)); await pg.waitForTimeout(100);
+  ok(await pg.evaluate(() => document.getElementById('bNfcWr').disabled) && (await pg.textContent('#nfcUrlInfo')).includes('слишком длинная'), 'nfc write: too long refused');
+  await pg.fill('#nfcUrl', 'https://example.org/app/'); await pg.waitForTimeout(100);
+  await pg.evaluate(() => { window.__tag.wp = true; });
+  await pg.click('#bNfcWr'); await pg.waitForTimeout(700);
+  const wa = await pg.evaluate(() => window.__tag.writeArgs);
+  ok(wa && wa.length === 4 && wa[2] === 2 && wa[3] === 0xA5, 'nfc write: commit is armed and counts blocks');
+  ok((await pg.textContent('#nfcOut2')).includes('не совпали') && (await pg.textContent('#nfcOut2')).includes('Снять блокировку'), 'nfc write: ignored write explained, unlock suggested');
+  ok(await pg.evaluate(() => document.getElementById('bNfcUnlock').disabled), 'unlock: needs its own confirmation');
+  await pg.check('#nfcUnOk'); await pg.click('#bNfcUnlock'); await pg.waitForTimeout(500);
+  ok((await pg.evaluate(() => window.__tag.unlockArgs)).join() === '63,34,165' && (await pg.textContent('#nfcOut2')).includes('Снятие блокировки: выполнено'), 'unlock: armed command, success shown');
+  await pg.click('#bNfcWr'); await pg.waitForTimeout(700);
+  const ch = await pg.evaluate(() => window.__tag.chip);
+  const wantTxt = Array.from('https://example.org/app/').slice(8).map(c => c.charCodeAt(0));
+  ok(ch[1].slice(0, 7).join() === [3, 4 + 1 + wantTxt.length, 0xD1, 1, 1 + wantTxt.length, 0x55, 4].join() && ch[1][7] === wantTxt[0] && ch[2].includes(0xFE), 'nfc write: NDEF record built correctly');
+  ok((await pg.textContent('#nfcOut2')).includes('Запись ссылки: выполнено'), 'nfc write: success shown');
+  await pg.click('#bNfcRestore'); await pg.waitForTimeout(700);
+  const ch2 = await pg.evaluate(() => window.__tag.chip);
+  ok(ch2[1].join() === [0x03, 0x1D, 0xD1, 0x01, 0x19, 0x55, 0x04, ...Array.from('nfc.example.com/EE285D4B').map(c => c.charCodeAt(0)).slice(0, 9)].join() && ch2[2][14] === 0xFE || ch2[2].includes(0xFE), 'restore: stock record written back from the backup');
+  await pg.evaluate(() => { window.__tag.nfcOk = false; });
+  await pg.click('#bNfcBk'); await pg.waitForTimeout(400);
+  ok((await pg.textContent('#nfcOut2')).includes('1.7'), 'backup: old firmware refusal explained');
   await pg.evaluate(() => { window.__tag.nfcOk = true; });
 
   // --- tools: flash sector select has 0..14

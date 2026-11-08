@@ -132,14 +132,15 @@ int main(void)
   tick(31000);
 
   // settings: save, reload, wear log
-  slide_cfg_t n2 = *slide_cfg(); n2.interval_min = 5; n2.mask = (1u << 4) | (1u << 5); n2.mode = 1; n2.temp_c = -3; n2.tx_dbm = -8;
+  CHECK(slide_cfg()->nfc == 0, "NFC tap is off by default");
+  slide_cfg_t n2 = *slide_cfg(); n2.nfc = 1; n2.interval_min = 5; n2.mask = (1u << 4) | (1u << 5); n2.mode = 1; n2.temp_c = -3; n2.tx_dbm = -8;
   slide_set_cfg(&n2); tick(200);
   CHECK(last_tx == -8, "TX power not applied (%d)", last_tx);
   CHECK(prog_count == 1 && erase_count == 0, "first save: %d programs %d erases", prog_count, erase_count);
   CHECK(slide_next_in_s() <= 300 && slide_next_in_s() > 290, "countdown restarted with the new interval: %u", slide_next_in_s());
   slide_init();                                            // "reboot"
   c = slide_cfg();
-  CHECK(c->interval_min == 5 && c->mask == 0x30 && c->mode == 1 && c->temp_c == -3 && c->tx_dbm == -8 && c->enabled == 1, "settings not reloaded");
+  CHECK(c->interval_min == 5 && c->mask == 0x30 && c->mode == 1 && c->temp_c == -3 && c->tx_dbm == -8 && c->enabled == 1 && c->nfc == 1, "settings not reloaded");
   // random mode never repeats the current slot when there is a choice (after a reboot the splash comes first; the countdown starts after it)
   tick(31000);
   panel_show_splash(); tick(31000);
@@ -160,8 +161,9 @@ int main(void)
   CHECK(range_violations == 0, "%d writes outside the allowed range", range_violations);
   for (uint32_t a = 0; a < 0x10000; a++) if (a < 0xF000 && mem[a] != 0xFF) { CHECK(0, "test area modified at %x", a); break; }
   // out of range values are clamped
-  slide_cfg_t bad = { 2, 3, 5000, 0xFF, 120, 100 }; slide_set_cfg(&bad);
+  slide_cfg_t bad = { 2, 3, 5000, 0xFF, 120, 100, 0 }; slide_set_cfg(&bad);
   CHECK(slide_cfg()->enabled == 1 && slide_cfg()->mode == 1 && slide_cfg()->interval_min == 1440 && slide_cfg()->mask == 0xFE && slide_cfg()->temp_c == 60 && slide_cfg()->tx_dbm == 20, "clamping");
+  bad.nfc = 7; slide_set_cfg(&bad); CHECK(slide_cfg()->nfc == 1, "nfc flag clamped to 1");
   // auto mode off
   bad.enabled = 0; bad.interval_min = 1; slide_set_cfg(&bad); CHECK(slide_next_in_s() == 0xFFFFFFFFu, "auto off must disable the countdown");
   printf(fails ? "FAILED (%d)\n" : "ALL OK\n", fails);
