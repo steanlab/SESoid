@@ -93,6 +93,7 @@ static ll_pdu_t outbox[OUT_N];
 static volatile uint8_t out_head, out_tail;
 static RAIL_Handle_t g_h;
 static volatile bool s_cal_needed;
+static uint32_t s_last_poll;
 
 static inline uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 static inline uint32_t rd32(const uint8_t *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((uint32_t)p[3] << 24); }
@@ -564,6 +565,7 @@ bool ll_start(const uint8_t *ci, uint32_t ci_end_us)
   c.ev_tx_seen = false;
   c.ev_got = false;
   c.t_start = RAIL_GetTime();
+  s_last_poll = 0;
   c.est = ci_end_us + 1250u + (uint32_t)winoff * 1250u;      // earliest moment the master's first packet can start
   c.last_real_anchor = c.est;
   c.search_extra = (uint32_t)winsize * 1250u;
@@ -719,15 +721,14 @@ static void data_pdu(const ll_pdu_t *p)
 
 void ll_poll(void)
 {
-  static uint32_t last_poll;
-  if (!c.active) { last_poll = 0; return; }
+  if (!c.active) return;
   uint32_t now = RAIL_GetTime();
   g_diag.poll_calls++;
-  if (last_poll != 0u) {
-    uint32_t gap = now - last_poll;
+  if (s_last_poll != 0u) {
+    uint32_t gap = now - s_last_poll;
     if (gap > g_diag.poll_gap_max) g_diag.poll_gap_max = gap;
   }
-  last_poll = now;
+  s_last_poll = now;
   g_diag.radio_state = (uint32_t)RAIL_GetRadioState(c.h);
 
   // polled mode: open the receive window at the planned moment
@@ -744,7 +745,11 @@ void ll_poll(void)
   }
 
   if (c.terminate && (int32_t)(now - c.terminate_at) >= 0) { ll_end(g_diag.disc_reason); return; }
+  // Supervision timeout. The time is compared as a SIGNED difference: last_rx_time is written by the radio interrupt, which can
+  // run after "now" was read at the top of this function, and then last_rx_time is "in the future" (an unsigned subtraction would
+  // give about 4e9 us and end a healthy connection right after a packet; this was the cause of the dead connections).
   uint32_t lim = c.heard_any ? c.timeout_us : 6u * c.interval_us + 10000u;
-  if ((uint32_t)(now - c.last_rx_time) > lim) { ll_end(0x200u); return; }
+  int32_t silent = (int32_t)(now - c.last_rx_time);
+  if (silent > 0 && (uint32_t)silent > lim) { ll_end(0x200u); return; }
   if ((int32_t)(now - c.arm_at) >= 0) arm_event(false);
 }
