@@ -44,6 +44,27 @@ typedef struct {
   uint8_t  last;                  // pin index of the last change, 0xFF none
 } hwtest_pins_t;
 
+// ---- I2C scanner. Looks for an I2C device (the NFC chip) on pairs of the free pins. Nothing is driven high: a released line is an input
+// with the internal pull-up, a low is a push-pull low. Pins of the mask that are not part of the pair are left floating, pulled up or
+// pulled down (SC_OPT_*). A pair whose lines do not rise after being released is skipped ("stuck": for instance a chip without power).
+#define SC_MAX_PINS    6
+#define SC_OPT_FLOAT   0
+#define SC_OPT_PULLUP  1
+#define SC_OPT_PULLDN  2
+typedef struct {
+  uint8_t  state;                 // 0 never run, 1 running, 2 finished, 3 aborted
+  uint8_t  opt;
+  uint8_t  pairs_total, pairs_done, stuck;
+  uint8_t  hits;                  // devices found (all of them counted, the first three kept)
+  struct { uint8_t sda, scl, addr; } hit[3];   // pin indices and 7-bit address
+  uint32_t high;                  // pins that were seen high when released (bit n = pin n)
+} hwtest_scan_t;
+
+bool hwtest_scan_start(uint8_t opt, uint32_t mask);       // 2..SC_MAX_PINS free pins; false if the mask is not usable
+void hwtest_scan_abort(void);
+const hwtest_scan_t *hwtest_scan(void);
+bool hwtest_scan_changed(void);                           // true once when the state changed or a device was found: the answer should be sent
+
 void hwtest_reset(void);                                  // new connection / disconnect: stops the pin monitor and puts the pins back
 void hwtest_poll(void);                                   // main loop
 bool hwtest_clock_start(void);                            // false if a test is already running

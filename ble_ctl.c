@@ -22,15 +22,15 @@ static bool reboot_pending;
 static uint8_t res_op, res_status;
 static bool want_result;
 static bool want_diag, diag_sent;
-static bool want_clock, clock_sent, want_pins;
-static uint32_t last_pins_tx_us;
+static bool want_clock, clock_sent, want_pins, want_scan;
+static uint32_t last_pins_tx_us, last_scan_tx_us;
 
 static void wr32(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24); }
 
 void ctl_reset(void)
 {
   want_status = want_cfg = want_slots_req = want_result = want_diag = false;
-  want_clock = want_pins = false;
+  want_clock = want_pins = want_scan = false;
   hwtest_reset();                                        // the pin monitor stops with the connection
   slots_left = 8;
   hw_left = 4;
@@ -85,8 +85,10 @@ bool ctl_write(const uint8_t *v, uint8_t len)
       else queue_result(0x3E, SLR_BAD_SLOT);
       break;
     case 0x3F:
-      if (len == 2 && v[1] == 1) hwtest_pins_clear();
-      want_pins = true;
+      if (len == 7 && v[1] == 2) queue_result(0x3F, hwtest_scan_start(v[2], (uint32_t)(v[3] | (v[4] << 8) | ((uint32_t)v[5] << 16) | ((uint32_t)v[6] << 24))) ? SLR_OK : SLR_BAD_SLOT);
+      else if (len == 2 && v[1] == 3) want_scan = true;
+      else if (len == 2 && v[1] == 4) { hwtest_scan_abort(); want_scan = true; }
+      else { if (len == 2 && v[1] == 1) hwtest_pins_clear(); want_pins = true; }
       break;
     default: break;
   }
@@ -146,6 +148,18 @@ static void send_pins(void)
   r[0] = 0xBA; r[1] = p->mode; r[2] = (uint8_t)p->elapsed_s; r[3] = (uint8_t)(p->elapsed_s >> 8);
   wr32(r + 4, p->level); wr32(r + 8, p->seen_hi); wr32(r + 12, p->seen_lo);
   r[16] = (uint8_t)p->edges; r[17] = (uint8_t)(p->edges >> 8); r[18] = p->last;
+  att_notify(r, 20);
+}
+
+// I2C scanner report: BB state opt pairs_total pairs_done stuck hits (sda scl addr)x3 high(4)
+static void send_scan(void)
+{
+  const hwtest_scan_t *c = hwtest_scan();
+  uint8_t r[20];
+  memset(r, 0, sizeof(r));
+  r[0] = 0xBB; r[1] = c->state; r[2] = c->opt; r[3] = c->pairs_total; r[4] = c->pairs_done; r[5] = c->stuck; r[6] = c->hits;
+  for (int i = 0; i < 3; i++) { r[7 + 3 * i] = c->hit[i].sda; r[8 + 3 * i] = c->hit[i].scl; r[9 + 3 * i] = c->hit[i].addr; }
+  wr32(r + 16, c->high);
   att_notify(r, 20);
 }
 
@@ -226,6 +240,9 @@ void ctl_poll(void)
   if (hwtest_pins_changed()) want_pins = true;
   if (hwtest_pins()->mode != PM_MODE_OFF && (uint32_t)(now - last_pins_tx_us) >= 1000000u) want_pins = true;
   if (want_clock && hwtest_clock()->state != 1) { send_clock(); want_clock = false; last_tx_us = now; return; }
+  if (hwtest_scan_changed()) want_scan = true;
+  if (hwtest_scan()->state == 1 && (uint32_t)(now - last_scan_tx_us) >= 500000u) want_scan = true;
+  if (want_scan) { send_scan(); want_scan = false; last_scan_tx_us = now; last_tx_us = now; return; }
   if (want_pins) { send_pins(); want_pins = false; last_pins_tx_us = now; last_tx_us = now; return; }
   if (want_diag) { send_diag(); want_diag = false; last_tx_us = now; return; }
   if (want_result) { uint8_t r[3] = { 0xB3, res_op, res_status }; att_notify(r, 3); want_result = false; last_tx_us = now; return; }

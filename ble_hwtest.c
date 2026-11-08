@@ -204,11 +204,11 @@ static uint32_t pm_read(void)
   return lv & pm_mask;
 }
 
-static void pm_restore(void)
+static void pins_restore(uint32_t mask)
 {
   for (int p = 0; p < 4; p++) {
     for (int n = 0; n < port_size[p]; n++) {
-      if (!(pm_mask & PIN(p, n))) continue;
+      if (!(mask & PIN(p, n))) continue;
       uint32_t m = n < 8 ? (sv_model[p] >> (n * 4)) & 0xFu : (sv_modeh[p] >> ((n - 8) * 4)) & 0xFu;
       uint32_t d = (sv_dout[p] >> n) & 1u;
       if (d) GPIO->P[p].DOUT |= 1u << n; else GPIO->P[p].DOUT &= ~(1u << n);
@@ -216,6 +216,8 @@ static void pm_restore(void)
     }
   }
 }
+
+static void pm_restore(void) { pins_restore(pm_mask); }
 
 void hwtest_pins_clear(void)
 {
@@ -231,6 +233,7 @@ bool hwtest_pins_start(uint8_t mode, uint32_t only)
 {
   uint8_t m = mode & 0x7Fu;
   if (m > PM_MODE_PULLDN) return false;
+  hwtest_scan_abort();                                       // the scanner and the monitor never use the pins together
   if (pm_run) { pm_restore(); pm_run = false; }
   memset(&pm, 0, sizeof(pm));
   pm.last = 0xFF;
@@ -275,9 +278,159 @@ static void pm_poll(void)
   if ((pm.seen_hi & pm.seen_lo) != before) pm_changed = true;
 }
 
+
+// =====================================================================================================================
+// I2C scanner
+// =====================================================================================================================
+#define SC_HALF_US    5u            // half a clock period: about 60 kHz
+#define SC_STRETCH_US 200u          // how long a clock that does not rise is waited for
+#define SC_SETTLE_MAX_US 60000u     // a released line that is still low after this is called stuck
+#define SC_PACE_US    1000u         // one address per call, one call per millisecond at most
+#define SC_ADDR_FIRST 0x08u
+#define SC_ADDR_LAST  0x77u
+
+typedef enum { SS_IDLE = 0, SS_SETUP, SS_SETTLE, SS_ADDR } ss_t;
+
+static hwtest_scan_t sc;
+static ss_t ss;
+static uint8_t sc_pin[SC_MAX_PINS], sc_n, sc_i, sc_j, sc_addr, sc_sda, sc_scl;
+static uint32_t sc_mask, sc_t0, sc_next;
+static bool sc_changed;
+
+const hwtest_scan_t *hwtest_scan(void) { return &sc; }
+bool hwtest_scan_changed(void) { bool c = sc_changed; sc_changed = false; return c; }
+
+static void pin_split(int idx, int *port, int *n)
+{
+  int p = 3;
+  while (p > 0 && idx < port_first[p]) p--;
+  *port = p; *n = idx - port_first[p];
+}
+
+// pin modes of the series 2 GPIO: 0 off, 1 input, 2 input with pull (DOUT selects up or down), 4 push-pull
+static void pin_cfg(int idx, uint32_t mode, uint32_t dout)
+{
+  int p, n; pin_split(idx, &p, &n);
+  if (dout) GPIO->P[p].DOUT |= 1u << n; else GPIO->P[p].DOUT &= ~(1u << n);
+  set_field(&GPIO->P[p].MODEL, &GPIO->P[p].MODEH, n, mode);
+}
+static uint32_t pin_read(int idx) { int p, n; pin_split(idx, &p, &n); return ((uint32_t)GPIO->P[p].DIN >> n) & 1u; }
+
+static void wait_us(uint32_t us) { uint32_t t0 = RAIL_GetTime(); while ((uint32_t)(RAIL_GetTime() - t0) < us) { } }
+
+static void sda_rel(void) { pin_cfg(sc_sda, 2, 1); }
+static void sda_low(void) { pin_cfg(sc_sda, 4, 0); }
+static void scl_low(void) { pin_cfg(sc_scl, 4, 0); }
+static bool scl_rel(void)                                   // false if the clock does not rise (a stuck line or a device that stretches too long)
+{
+  pin_cfg(sc_scl, 2, 1);
+  uint32_t t0 = RAIL_GetTime();
+  while (!pin_read(sc_scl)) { if ((uint32_t)(RAIL_GetTime() - t0) > SC_STRETCH_US) return false; }
+  return true;
+}
+
+// one address write transaction; ok = false if the bus did not behave, *ack = a device answered
+static bool i2c_probe(uint8_t addr, bool *ack)
+{
+  bool ok = true;
+  *ack = false;
+  sda_rel(); ok &= scl_rel(); wait_us(SC_HALF_US);
+  sda_low(); wait_us(SC_HALF_US); scl_low(); wait_us(SC_HALF_US);                     // start
+  for (int k = 7; k >= 0; k--) {
+    uint8_t bit = (uint8_t)(((addr << 1) >> k) & 1u);                                   // the last bit (k = 0) is the write flag, 0
+    if (bit) sda_rel(); else sda_low();
+    wait_us(SC_HALF_US); ok &= scl_rel(); wait_us(SC_HALF_US); scl_low(); wait_us(SC_HALF_US);
+  }
+  sda_rel(); wait_us(SC_HALF_US);
+  ok &= scl_rel(); wait_us(SC_HALF_US);
+  *ack = pin_read(sc_sda) == 0;
+  scl_low(); wait_us(SC_HALF_US);
+  sda_low(); wait_us(SC_HALF_US); ok &= scl_rel(); wait_us(SC_HALF_US); sda_rel(); wait_us(SC_HALF_US);   // stop
+  return ok;
+}
+
+static void sc_finish(uint8_t state)
+{
+  pins_restore(sc_mask);
+  ss = SS_IDLE; sc.state = state; sc_changed = true;
+}
+
+void hwtest_scan_abort(void) { if (ss != SS_IDLE) sc_finish(3); }
+
+bool hwtest_scan_start(uint8_t opt, uint32_t mask)
+{
+  if (opt > SC_OPT_PULLDN) return false;
+  mask &= ALL_MASK & ~OWNED_MASK & ~SWD_MASK;
+  int n = 0;
+  for (int i = 0; i < PM_PINS; i++) if (mask & (1u << i)) { if (n < SC_MAX_PINS) sc_pin[n] = (uint8_t)i; n++; }
+  if (n < 2 || n > SC_MAX_PINS) return false;
+  hwtest_scan_abort();
+  if (pm_run) { pm_restore(); pm_run = false; pm.mode = PM_MODE_OFF; pm_changed = true; }
+  memset(&sc, 0, sizeof(sc));
+  sc.state = 1; sc.opt = opt; sc.pairs_total = (uint8_t)(n * (n - 1));
+  sc_n = (uint8_t)n; sc_mask = mask; sc_i = 0; sc_j = 1;
+  CMU->CLKEN0 |= CMU_CLKEN0_GPIO;
+  for (int p = 0; p < 4; p++) { sv_model[p] = GPIO->P[p].MODEL; sv_modeh[p] = GPIO->P[p].MODEH; sv_dout[p] = GPIO->P[p].DOUT; }
+  ss = SS_SETUP;
+  sc_next = RAIL_GetTime();
+  sc_changed = true;
+  return true;
+}
+
+static void sc_next_pair(void)
+{
+  sc.pairs_done++;
+  do {
+    sc_j++;
+    if (sc_j >= sc_n) { sc_i++; sc_j = 0; }
+  } while (sc_i < sc_n && sc_i == sc_j);
+  ss = sc_i >= sc_n ? SS_IDLE : SS_SETUP;
+  if (ss == SS_IDLE) sc_finish(2);
+}
+
+static void sc_poll(void)
+{
+  if (ss == SS_IDLE) return;
+  uint32_t now = RAIL_GetTime();
+  if ((int32_t)(now - sc_next) < 0) return;
+  sc_next = now + SC_PACE_US;
+  switch (ss) {
+    case SS_IDLE: break;
+    case SS_SETUP:
+      sc_sda = sc_pin[sc_i]; sc_scl = sc_pin[sc_j];
+      for (int k = 0; k < sc_n; k++) {
+        if (sc_pin[k] == sc_sda || sc_pin[k] == sc_scl) pin_cfg(sc_pin[k], 2, 1);       // released: pulled up
+        else if (sc.opt == SC_OPT_PULLUP) pin_cfg(sc_pin[k], 2, 1);
+        else if (sc.opt == SC_OPT_PULLDN) pin_cfg(sc_pin[k], 2, 0);
+        else pin_cfg(sc_pin[k], 1, 0);
+      }
+      sc_t0 = now; sc_next = now;
+      ss = SS_SETTLE;
+      break;
+    case SS_SETTLE: {
+      bool sda_h = pin_read(sc_sda), scl_h = pin_read(sc_scl);
+      if (sda_h) sc.high |= 1u << sc_sda;
+      if (scl_h) sc.high |= 1u << sc_scl;
+      if (sda_h && scl_h) { sc_addr = SC_ADDR_FIRST; ss = SS_ADDR; }
+      else if ((uint32_t)(now - sc_t0) > SC_SETTLE_MAX_US) { sc.stuck++; sc_changed = true; sc_next_pair(); }
+      break; }
+    case SS_ADDR: {
+      bool ack, ok = i2c_probe(sc_addr, &ack);
+      if (!ok) { sc.stuck++; sc_changed = true; sc_next_pair(); break; }                  // the clock did not behave: give up on this pair
+      if (ack) {
+        if (sc.hits < 3) { sc.hit[sc.hits].sda = sc_sda; sc.hit[sc.hits].scl = sc_scl; sc.hit[sc.hits].addr = sc_addr; }
+        if (sc.hits < 255) sc.hits++;
+        sc_changed = true;
+      }
+      if (sc_addr >= SC_ADDR_LAST) sc_next_pair(); else sc_addr++;
+      break; }
+  }
+}
+
 // =====================================================================================================================
 void hwtest_reset(void)
 {
+  hwtest_scan_abort();
   if (pm_run) { pm_restore(); pm_run = false; pm.mode = PM_MODE_OFF; }
 }
 
@@ -285,4 +438,5 @@ void hwtest_poll(void)
 {
   ct_poll();
   pm_poll();
+  sc_poll();
 }

@@ -21,6 +21,25 @@ static int ext[4][16];                       // external drive per pin: -1 nothi
 static int cal_starts;
 
 static const int psize[4] = { 9, 5, 8, 4 };
+// model of an I2C device on PD2 (SDA) / PD3 (SCL), address DEVADDR; lines read low when the "chip" has no power (bus_powered = 0)
+#define DEVADDR 0x55
+static int i2c_model, bus_powered, slave_present, slave_low, sda_master = 1, scl_line = 1;
+static void i2c_slave(void)
+{
+  static int psda = 1, pscl = 1, st, bitn, shift, pend;
+  int sda = sda_master, scl = scl_line;
+  if (!slave_present) { psda = sda; pscl = scl; return; }
+  if (pscl && scl && psda && !sda) { st = 1; bitn = 0; shift = 0; slave_low = 0; pend = 0; }
+  else if (pscl && scl && !psda && sda) { st = 0; slave_low = 0; }
+  else if (!pscl && scl) {
+    if (st == 1) { shift = (shift << 1) | sda; bitn++; if (bitn == 8) { if ((shift >> 1) == DEVADDR && !(shift & 1)) pend = 1; else st = 0; } }
+  } else if (pscl && !scl) {
+    if (st == 1 && bitn == 8 && pend) { slave_low = 1; st = 2; pend = 0; }
+    else if (st == 2) { slave_low = 0; st = 0; }
+  }
+  psda = sda; pscl = scl;
+}
+
 
 static void sim(void)
 {
@@ -65,10 +84,17 @@ static void sim(void)
       int v = 0;
       if (ext[p][n] >= 0) v = ext[p][n];
       else if (mode == 2) v = (g_gpio.P[p].DOUT >> n) & 1u;
+      else if (mode == 4) v = (g_gpio.P[p].DOUT >> n) & 1u;
+      if (i2c_model && p == 2 && n == 5) v = 0;                 // PC5 is loaded by the unpowered chip: low even when pulled up
+      if (i2c_model && p == 3 && (n == 2 || n == 3)) {         // PD2 = SDA, PD3 = SCL of the model device
+        int m = (mode == 4) ? (int)((g_gpio.P[p].DOUT >> n) & 1u) : (mode == 2 && ((g_gpio.P[p].DOUT >> n) & 1u) ? bus_powered : 0);
+        if (n == 2) { sda_master = m; v = m && !slave_low; } else { scl_line = m; v = m; }
+      }
       if (v) din |= 1u << n;
     }
     g_gpio.P[p].DIN = din;
   }
+  if (i2c_model) i2c_slave();
 }
 
 uint32_t RAIL_GetTime(void) { now_us += step_us; sim(); return now_us; }
@@ -271,6 +297,63 @@ static void test_pins(void)
 
 }
 
+
+static void scan_wait(void) { uint32_t t0 = now_us; while (hwtest_scan()->state == 1 && now_us - t0 < 20000000u) { RAIL_GetTime(); hwtest_poll(); } }
+
+static void test_scan(void)
+{
+  printf("i2c scan\n");
+  world_reset();
+  i2c_model = 1; bus_powered = 1; slave_present = 1; slave_low = 0;
+  g_gpio.P[3].MODEL = 0x00003333u; g_gpio.P[2].MODEL = 0x74444444u; g_gpio.P[2].DOUT = 0x1Fu;
+  GpioT saved = g_gpio;
+  uint32_t mask = PC(5) | PD(2) | PD(3);
+
+  CHECK(!hwtest_scan_start(0, PD(2)), "one pin is not enough");
+  CHECK(!hwtest_scan_start(0, PA(0) | PC(0) | PA(1)), "owned and SWD pins are dropped, nothing left");
+  CHECK(!hwtest_scan_start(7, mask), "bad option refused");
+  CHECK(hwtest_scan_start(0, mask | PC(0) | PA(2)), "scan starts, owned pins in the mask are ignored");
+  scan_wait();
+  const hwtest_scan_t *c = hwtest_scan();
+  CHECK(c->state == 2, "finished, state %u", c->state);
+  CHECK(c->pairs_total == 6 && c->pairs_done == 6, "six ordered pairs of three pins: %u/%u", c->pairs_done, c->pairs_total);
+  CHECK(c->hits == 1 && c->hit[0].sda == 24 && c->hit[0].scl == 25 && c->hit[0].addr == DEVADDR, "device found once on SDA=PD2 SCL=PD3 at 0x55: hits %u sda %u scl %u addr %02x", c->hits, c->hit[0].sda, c->hit[0].scl, c->hit[0].addr);
+  CHECK(c->stuck == 4, "the four pairs that include PC5 (it reads low) are stuck, got %u", c->stuck);
+  CHECK((c->high & (PD(2) | PD(3))) == (PD(2) | PD(3)), "PD2 and PD3 seen high");
+  CHECK(g_gpio.P[3].MODEL == saved.P[3].MODEL && g_gpio.P[3].DOUT == saved.P[3].DOUT && g_gpio.P[2].MODEL == saved.P[2].MODEL && g_gpio.P[2].DOUT == saved.P[2].DOUT, "pins restored");
+  CHECK(hwtest_scan_changed() && !hwtest_scan_changed(), "changes reported once");
+
+  printf("i2c scan: no power\n");
+  bus_powered = 0;
+  CHECK(hwtest_scan_start(0, mask), "scan starts");
+  scan_wait();
+  CHECK(c->state == 2 && c->stuck == 6 && c->hits == 0 && c->high == 0, "all pairs stuck, nothing seen: stuck %u hits %u high %08x", c->stuck, c->hits, c->high);
+
+  printf("i2c scan: powered, no device\n");
+  bus_powered = 1; slave_present = 0;
+  CHECK(hwtest_scan_start(0, PD(2) | PD(3)), "scan starts with two pins");
+  scan_wait();
+  CHECK(c->state == 2 && c->pairs_total == 2 && c->hits == 0 && c->stuck == 0, "two clean pairs, no device: stuck %u hits %u", c->stuck, c->hits);
+
+  printf("i2c scan: other pins pulled up / down, abort, monitor takes over\n");
+  slave_present = 1;
+  CHECK(hwtest_scan_start(SC_OPT_PULLUP, mask), "scan with the third pin pulled up");
+  for (int i = 0; i < 400; i++) { RAIL_GetTime(); hwtest_poll(); }
+  CHECK(c->state == 1, "still running");
+  CHECK(((g_gpio.P[3].MODEL >> 12) & 0xFu) == 2u && ((g_gpio.P[3].DOUT >> 3) & 1u) == 1u, "PD3 is the third pin of the first pair and pulled up: %08x", g_gpio.P[3].MODEL);
+  hwtest_scan_abort();
+  CHECK(c->state == 3, "aborted");
+  CHECK(g_gpio.P[3].MODEL == saved.P[3].MODEL && g_gpio.P[2].MODEL == saved.P[2].MODEL, "restored after abort");
+  CHECK(hwtest_scan_start(SC_OPT_PULLDN, mask), "scan with the third pin pulled down");
+  CHECK(hwtest_pins_start(PM_MODE_FLOAT, 0xFFFFFFFFu), "the monitor starts and ends the scan");
+  CHECK(c->state == 3, "scan aborted by the monitor");
+  hwtest_pins_start(PM_MODE_OFF, 0);
+  CHECK(hwtest_scan_start(0, mask), "scan starts again");
+  hwtest_reset();
+  CHECK(c->state == 3 && g_gpio.P[3].MODEL == saved.P[3].MODEL, "a reset (connection ended) stops the scan");
+  i2c_model = 0;
+}
+
 int main(void)
 {
   setvbuf(stdout, NULL, _IONBF, 0);
@@ -280,6 +363,7 @@ int main(void)
   test_clock_already_on();
   test_clock_dead_lfrco();
   test_pins();
+  test_scan();
   if (fails) { printf("%d FAILED\n", fails); return 1; }
   printf("ALL OK\n");
   return 0;
