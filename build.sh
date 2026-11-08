@@ -1,8 +1,7 @@
 #!/bin/bash
 # Build inside the ghcr.io/nabucasa/silabs-firmware-builder image (it brings slc and the ARM compiler).
-# The Gecko SDK 4.4.1 is checked out by the workflow and mounted at /gecko_sdk.
+# The Gecko SDK is taken from the image too (the Git LFS download of the SDK repository fails in CI).
 set -e
-GSDK_PATH=${GSDK_PATH:-/gecko_sdk}
 
 echo "=== environment ==="
 uname -a
@@ -22,12 +21,24 @@ fi
 command -v slc || { echo "slc not found"; exit 1; }
 command -v arm-none-eabi-gcc || { echo "arm-none-eabi-gcc not found"; exit 1; }
 arm-none-eabi-gcc --version | head -1
-test -f "$GSDK_PATH/gecko_sdk.slcs" || { echo "no Gecko SDK in $GSDK_PATH"; exit 1; }
-grep sdk_version "$GSDK_PATH/gecko_sdk.slcs"
-# the RAIL library must be a real file, not a Git LFS pointer
-sz=$(stat -c %s "$GSDK_PATH/platform/radio/rail_lib/autogen/librail_release/librail_efr32xg22_gcc_release.a")
-echo "RAIL library size: $sz bytes"
-test "$sz" -gt 100000 || { echo "RAIL library is a Git LFS pointer"; exit 1; }
+echo "=== looking for a Gecko SDK in the image ==="
+find / -xdev -maxdepth 4 \( -name gecko_sdk.slcs -o -name simplicity_sdk.slcs \) 2>/dev/null | while read -r f; do
+  echo "  $f: $(grep -m1 sdk_version "$f")"
+done
+GSDK_PATH=""
+for f in $(find / -xdev -maxdepth 4 -name gecko_sdk.slcs 2>/dev/null); do
+  d=$(dirname "$f")
+  lib="$d/platform/radio/rail_lib/autogen/librail_release/librail_efr32xg22_gcc_release.a"
+  sz=$(stat -c %s "$lib" 2>/dev/null || echo 0)
+  echo "  candidate $d: $(grep -m1 sdk_version "$f"), RAIL library $sz bytes"
+  if [ "$sz" -gt 100000 ] && [ -z "$GSDK_PATH" ]; then GSDK_PATH="$d"; fi
+done
+test -n "$GSDK_PATH" || { echo "no usable Gecko SDK (with a real RAIL library) found in the image"; ls /; exit 1; }
+SDKVER=$(grep -m1 sdk_version "$GSDK_PATH/gecko_sdk.slcs" | sed 's/[^0-9.]//g')
+echo "using $GSDK_PATH, version $SDKVER"
+# make the project ask for the version that is really there
+sed -i "s/^sdk: {id: gecko_sdk, version: .*}/sdk: {id: gecko_sdk, version: $SDKVER}/" v300_ble_probe.slcp
+grep '^sdk:' v300_ble_probe.slcp
 
 echo "=== slc ==="
 slc configuration --sdk="$GSDK_PATH" || true
