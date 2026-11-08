@@ -73,7 +73,7 @@
       <div class="card">
         <div class="row">
           <button class="p" id="bOpen">Открыть картинку…</button><input type="file" id="file" accept="image/*" hidden>
-          <button id="bPaste">Вставить из буфера</button><button id="bDemo">Пример</button>
+          <button id="bPaste">Вставить из буфера</button><button id="bDemo">Пример</button><button id="bCalib" title="Таблица из четырёх цветов панели для калибровки: загрузите в слот и сфотографируйте">Калибровочная таблица</button>
           <span class="n" id="srcName" style="margin:0">нет картинки: перетащите файл на предпросмотр, вставьте Ctrl+V или откройте</span>
         </div>
         <div id="pvwrap"><canvas id="pv" width="720" height="256"></canvas><div id="pvhint">Предпросмотр 720 × 256 (как будет на экране).<br>Перетащите сюда картинку. После загрузки колёсиком мыши меняется масштаб, перетаскиванием — положение.</div></div>
@@ -245,6 +245,8 @@ const PRESETS = {
     v: { pal: 'panel', sat: 130, contrast: 8, bright: 0, gamma: 1, sharp: 10, auto: true, algo: 'fs', strength: 100, serp: true, dist: 'lab', en: [true, true, true, true] } },
   graphic: { label: 'Графика / текст', note: 'Чёткие края и ровные заливки: без размытия цветов, ближайший цвет без дизеринга, высокая насыщенность.',
     v: { pal: 'ideal', sat: 200, contrast: 30, bright: 0, gamma: 1, sharp: 0, auto: false, algo: 'none', strength: 100, serp: false, dist: 'lab', en: [true, true, true, true] } },
+  exact: { label: 'Как есть', note: 'Без обработки: картинка, уже состоящая из четырёх цветов панели, переносится пиксель в пиксель (для калибровочной таблицы и готовых 4-цветных рисунков).',
+    v: { pal: 'ideal', sat: 100, contrast: 0, bright: 0, gamma: 1, sharp: 0, auto: false, algo: 'none', strength: 100, serp: false, dist: 'rgb', en: [true, true, true, true] } },
   mono: { label: 'Чёрно-белое', note: 'Только чёрный и белый (жёлтый и красный выключены): самое чёткое изображение и самое быстрое обновление восприятием.',
     v: { pal: 'panel', sat: 100, contrast: 10, bright: 0, gamma: 1, sharp: 15, auto: true, algo: 'atkinson', strength: 100, serp: true, dist: 'rgb', en: [true, true, false, false] } },
   retro: { label: 'Ретро-растр', note: 'Упорядоченный дизеринг Байера: регулярный узор, как в старых играх; не «ползёт» при мелких изменениях картинки.',
@@ -528,6 +530,46 @@ function demoImage() {                                    // пример для
   x.fillStyle = '#fff'; x.font = 'bold 120px sans-serif'; x.textAlign = 'center'; x.fillText('GECKO SLIDE', 720, 110); x.fillStyle = '#000'; x.font = 'bold 54px sans-serif'; x.fillText('4 цвета BWRY', 720, 480);
   return c;
 }
+
+/* Калибровочная таблица 720×256 из точных цветов идеальной палитры (K W Y R).
+   Верхний ряд: сплошные поля K W Y R. Дальше шесть линеек смешения по 9 шагов (доля второго цвета 0, 1/8 … 1, упорядоченный растр 8×8):
+   слева сверху вниз K→W, K→R, K→Y; справа сверху вниз W→R, W→Y, Y→R. Внизу: тонкие линии 1 и 2 пикселя, шахматка, диагональ,
+   вложенные рамки и угловые кресты для привязки кадра. */
+function calibCanvas() {
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H; const c = cv.getContext('2d');
+  const C = PALETTES.ideal.c.map(v => 'rgb(' + v.join(',') + ')');             // 0 K, 1 W, 2 Y, 3 R
+  const rect = (x, y, w, h, k) => { c.fillStyle = C[k]; c.fillRect(x, y, w, h); };
+  rect(0, 0, W, H, 1);
+  rect(0, 0, W, 2, 0); rect(0, H - 2, W, 2, 0); rect(0, 0, 2, H, 0); rect(W - 2, 0, 2, H, 0);       // рамка
+  const txt = (s, x, y, k) => { c.fillStyle = C[k]; c.font = 'bold 9px monospace'; c.textBaseline = 'top'; c.fillText(s, x, y); };
+  // верхний ряд: сплошные поля
+  const names = ['K', 'W', 'Y', 'R'], tc = [1, 0, 0, 1];
+  for (let i = 0; i < 4; i++) { rect(24 + i * 174, 8, 150, 46, i); txt(names[i], 30 + i * 174, 12, tc[i]); }
+  // линейки смешения
+  const B = (() => { const m = []; for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) m.push(BAYER8[y * 8 + x]); return m; })();
+  const ramps = [[0, 1, 24, 62], [0, 3, 24, 108], [0, 2, 24, 154], [1, 3, 372, 62], [1, 2, 372, 108], [2, 3, 372, 154]];
+  for (const [a, b, x0, y0] of ramps) for (let s = 0; s < 9; s++) for (let y = 0; y < 40; y++) for (let x = 0; x < 36; x++) {
+    const k = B[(y & 7) * 8 + (x & 7)] < s * 8 ? b : a;
+    rect(x0 + s * 36 + x, y0 + y, 1, 1, k);
+  }
+  // нижний ряд: тесты тонких деталей
+  const y0 = 200, h = 46;
+  for (let x = 0; x < 72; x += 2) rect(24 + x, y0, 1, h, 0);                          // линии 1 пкс чёрные
+  for (let x = 0; x < 72; x += 4) rect(104 + x, y0, 2, h, 0);                         // линии 2 пкс чёрные
+  for (let y = 0; y < h; y += 2) rect(184, y0 + y, 72, 1, 0);                         // горизонтальные 1 пкс
+  for (let y = 0; y < h; y++) for (let x = 0; x < 72; x++) if (((x + y) & 1) === 0) rect(264 + x, y0 + y, 1, 1, 0);   // шахматка K/W
+  for (let y = 0; y < h; y++) for (let x = 0; x < 72; x++) if (((x + y) & 1) === 0) rect(344 + x, y0 + y, 1, 1, 3);   // шахматка R/W
+  for (let y = 0; y < h; y++) for (let x = 0; x < 72; x++) if (((x + y) & 1) === 0) rect(424 + x, y0 + y, 1, 1, 2);   // шахматка Y/W
+  for (let y = 0; y < h; y++) for (let x = 0; x < 72; x++) rect(504 + x, y0 + y, 1, 1, ((x + y) >> 2 & 1) ? 3 : 2);   // диагональ Y/R
+  for (let i = 0; i < 4; i++) { rect(584 + i * 6, y0 + i * 6, 112 - i * 12, 2, i & 1 ? 1 : 0); rect(584 + i * 6, y0 + h - 2 - i * 6, 112 - i * 12, 2, i & 1 ? 1 : 0); }
+  // угловые кресты
+  for (const [x, y] of [[8, 8], [W - 9, 8], [8, H - 9], [W - 9, H - 9]]) { rect(x - 4, y, 9, 1, 3); rect(x, y - 4, 1, 9, 3); }
+  return cv;
+}
+$('bCalib').onclick = async () => {
+  Object.assign(P, JSON.parse(JSON.stringify(PRESETS.exact.v)), { preset: 'exact', fit: 'cover', zoom: 1, panX: 0, panY: 0, rot: 0, flipH: false, flipV: false, bg: 0 });
+  writeCtls(); setSource(await createImageBitmap(calibCanvas()), 'калибровка'); saveParams();
+};
 
 // ---- мышь: перетаскивание и колесо
 (() => {
