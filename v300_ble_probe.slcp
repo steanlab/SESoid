@@ -18,6 +18,7 @@ source:
 - {path: ble_slide.c}
 - {path: ble_ctl.c}
 - {path: ble_sys.c}
+- {path: ble_hwtest.c}
 include:
 - path: ''
   file_list:
@@ -32,6 +33,7 @@ include:
   - {path: ble_slide.h}
   - {path: ble_ctl.h}
   - {path: ble_sys.h}
+  - {path: ble_hwtest.h}
 sdk: {id: gecko_sdk, version: 4.4.1}
 toolchain_settings:
 - {value: debug, option: optimize}

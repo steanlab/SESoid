@@ -8,6 +8,7 @@
 #include "ble_up.h"
 #include "ble_ll.h"
 #include "ble_diag.h"
+#include "ble_hwtest.h"
 #include "rail.h"
 
 #define PACE_US 12000u            // minimum time between two notifications of a burst
@@ -21,12 +22,16 @@ static bool reboot_pending;
 static uint8_t res_op, res_status;
 static bool want_result;
 static bool want_diag, diag_sent;
+static bool want_clock, clock_sent, want_pins;
+static uint32_t last_pins_tx_us;
 
 static void wr32(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24); }
 
 void ctl_reset(void)
 {
   want_status = want_cfg = want_slots_req = want_result = want_diag = false;
+  want_clock = want_pins = false;
+  hwtest_reset();                                        // the pin monitor stops with the connection
   slots_left = 8;
   hw_left = 4;
 }
@@ -73,6 +78,16 @@ bool ctl_write(const uint8_t *v, uint8_t len)
       else queue_result(0x3A, SLR_PANEL_BUSY);
       break;
     case 0x3B: want_diag = true; break;
+    case 0x3C: clock_sent = false; queue_result(0x3C, hwtest_clock_start() ? SLR_OK : SLR_PANEL_BUSY); break;
+    case 0x3D: want_clock = true; break;
+    case 0x3E:
+      if (len == 2 && hwtest_pins_start(v[1])) want_pins = true;
+      else queue_result(0x3E, SLR_BAD_SLOT);
+      break;
+    case 0x3F:
+      if (len == 2 && v[1] == 1) hwtest_pins_clear();
+      want_pins = true;
+      break;
     default: break;
   }
   return true;
@@ -103,6 +118,34 @@ static void send_diag(void)
   r[14] = (uint8_t)d->id1; r[15] = (uint8_t)(d->id1 >> 8);
   r[16] = (uint8_t)d->id2; r[17] = (uint8_t)(d->id2 >> 8);
   r[18] = (uint8_t)d->id_slow; r[19] = (uint8_t)(d->id_slow >> 8);
+  att_notify(r, 20);
+}
+
+// clock test report (see ble_hwtest.h): B9 state flags sel ctune_xi ctune_xo fact_xi fact_xo lfxo_ms(2) cnt_lfxo(3) cnt_lfrco(3) cnt_ulfrco(3) captune
+static void send_clock(void)
+{
+  const hwtest_clock_t *c = hwtest_clock();
+  uint8_t r[20];
+  memset(r, 0, sizeof(r));
+  r[0] = 0xB9; r[1] = c->state; r[2] = c->flags; r[3] = c->sel;
+  r[4] = c->ctune_xi; r[5] = c->ctune_xo; r[6] = c->fact_xi; r[7] = c->fact_xo;
+  r[8] = (uint8_t)c->lfxo_ms; r[9] = (uint8_t)(c->lfxo_ms >> 8);
+  r[10] = (uint8_t)c->cnt_lfxo; r[11] = (uint8_t)(c->cnt_lfxo >> 8); r[12] = (uint8_t)(c->cnt_lfxo >> 16);
+  r[13] = (uint8_t)c->cnt_lfrco; r[14] = (uint8_t)(c->cnt_lfrco >> 8); r[15] = (uint8_t)(c->cnt_lfrco >> 16);
+  r[16] = (uint8_t)c->cnt_ulfrco; r[17] = (uint8_t)(c->cnt_ulfrco >> 8); r[18] = (uint8_t)(c->cnt_ulfrco >> 16);
+  r[19] = c->captune;
+  att_notify(r, 20);
+}
+
+// pin monitor report: BA mode elapsed_s(2) level(4) seen_hi(4) seen_lo(4) edges(2) last_pin 0
+static void send_pins(void)
+{
+  const hwtest_pins_t *p = hwtest_pins();
+  uint8_t r[20];
+  memset(r, 0, sizeof(r));
+  r[0] = 0xBA; r[1] = p->mode; r[2] = (uint8_t)p->elapsed_s; r[3] = (uint8_t)(p->elapsed_s >> 8);
+  wr32(r + 4, p->level); wr32(r + 8, p->seen_hi); wr32(r + 12, p->seen_lo);
+  r[16] = (uint8_t)p->edges; r[17] = (uint8_t)(p->edges >> 8); r[18] = p->last;
   att_notify(r, 20);
 }
 
@@ -167,6 +210,7 @@ static void send_hw(uint8_t idx)
 void ctl_poll(void)
 {
   uint32_t now = RAIL_GetTime();
+  hwtest_poll();
   if (reboot_pending && (int32_t)(now - reboot_at_us) >= 0) sys_reboot();
 
   uint8_t st, er, sr, sh;
@@ -178,6 +222,11 @@ void ctl_poll(void)
   if ((uint32_t)(now - last_tx_us) < PACE_US) return;
 
   if (panel_diag()->state == 2 && !diag_sent) { diag_sent = true; want_diag = true; }      // the report goes out by itself when the run ends
+  if (hwtest_clock()->state == 2 && !clock_sent) { clock_sent = true; want_clock = true; }   // the clock report goes out by itself when the test ends
+  if (hwtest_pins_changed()) want_pins = true;
+  if (hwtest_pins()->mode != PM_MODE_OFF && (uint32_t)(now - last_pins_tx_us) >= 1000000u) want_pins = true;
+  if (want_clock && hwtest_clock()->state != 1) { send_clock(); want_clock = false; last_tx_us = now; return; }
+  if (want_pins) { send_pins(); want_pins = false; last_pins_tx_us = now; last_tx_us = now; return; }
   if (want_diag) { send_diag(); want_diag = false; last_tx_us = now; return; }
   if (want_result) { uint8_t r[3] = { 0xB3, res_op, res_status }; att_notify(r, 3); want_result = false; last_tx_us = now; return; }
   if (want_slots_req && !slide_scanning()) { want_slots_req = false; slots_left = 1; }

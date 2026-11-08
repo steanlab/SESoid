@@ -64,7 +64,23 @@ const MOCK = `
     else if (op === 0x39) N([0xB3, 0x39, 0]);
     else if (op === 0x20) N([0xA0, 0xEF, 0x40, 0x13, 0, 0, 0]);
     else if (op === 0x3A) { N([0xB3, 0x3A, 0]); setTimeout(() => N(tag.dead ? [0xB8, 2, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 10, 0, 0, 0, 0, 0, 0, 0] : [0xB8, 2, 0, 0, 1, 0, 0, 1, 0, 1, 1, 1, 10, 0, 0x04, 0x0D, 0x04, 0x0D, 0x04, 0x0D]), 100); }
+    else if (op === 0x3C) { N([0xB3, 0x3C, 0]); setTimeout(() => N(clkPkt()), 100); }
+    else if (op === 0x3D) N(clkPkt(true));
+    else if (op === 0x3E) { tag.pm = { mode: v[1] & 3, swd: v[1] & 0x80, level: 0, hi: 0, lo: 0, edges: 0, last: 255, el: 0 }; tag.pmBase(); N(pmPkt()); }
+    else if (op === 0x3F) { if (v[1] === 1) { tag.pm.hi = tag.pm.lo = 0; tag.pm.edges = 0; tag.pm.last = 255; tag.pmBase(); } N(pmPkt()); }
     else if (op === 0x3B) N([0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  }
+  const PMASK = (1 << 6) | (1 << 8) | (0xF << 10) | (1 << 19) | (1 << 21) | (0xF << 22);
+  tag.pm = { mode: 0, swd: 0, level: 0, hi: 0, lo: 0, edges: 0, last: 255, el: 0 };
+  tag.xtal = true;
+  tag.pmBase = () => { const m = tag.pm; m.level = m.mode === 2 ? PMASK : 0; m.hi = m.level; m.lo = PMASK & ~m.level; };
+  function pmPkt() { const m = tag.pm; return [0xBA, m.mode | m.swd, m.el & 255, m.el >> 8, ...le32(m.level >>> 0), ...le32(m.hi >>> 0), ...le32(m.lo >>> 0), m.edges & 255, m.edges >> 8, m.last, 0]; }
+  tag.pmPush = () => N(pmPkt());
+  function clkPkt(never) {
+    if (never) return [0xB9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    const c = tag.xtal ? 299994 : 0, r = 303030, u = 279272;
+    const fl = tag.xtal ? 0x01 | 0x04 | 0x10 | 0x20 | 0x40 : 0x01 | 0x80 | 0x20 | 0x40;
+    return [0xB9, 2, fl, 3 | (1 << 3) | (1 << 5), 0x8C, 0x7A, 0x8C, 0x7A, tag.xtal ? 0x93 : 0xFF, tag.xtal ? 0x01 : 0xFF, c & 255, c >> 8 & 255, c >> 16, r & 255, r >> 8 & 255, r >> 16, u & 255, u >> 8 & 255, u >> 16, 0x30];
   }
   function sendCfg() { const c = tag.cfg; N([0xB4, 1, c.en, c.mode, c.iv & 255, c.iv >> 8, c.mask, c.temp & 255, c.tx & 255, 60, 0]); }
   const chr = { addEventListener: (n, f) => { notify = f; }, startNotifications: async () => {}, writeValueWithResponse: async v => handle(new Uint8Array(v.buffer ? v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength) : v)), writeValueWithoutResponse: async v => handle(new Uint8Array(v.buffer ? v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength) : v)) };
@@ -180,11 +196,43 @@ const MOCK = `
   await pg.evaluate(() => { window.__tag.dead = true; });
   await pg.click('#bPdiag'); await pg.waitForTimeout(700);
   let dg = await pg.textContent('#pdiagOut');
-  ok(dg.includes('0x0000') && dg.includes('плавает') && dg.includes('Сырые значения'), 'diagnostics report: dead panel explained');
+  ok(dg.includes('0x0000') && dg.includes('свободна') && dg.includes('Сырые значения'), 'diagnostics report: dead panel explained');
   await pg.evaluate(() => { window.__tag.dead = false; });
   await pg.click('#bPdiag'); await pg.waitForTimeout(700);
   dg = await pg.textContent('#pdiagOut');
   ok(dg.includes('Панель отвечает'), 'diagnostics report: healthy panel');
+  // --- clock test
+  await pg.click('#bClk'); await pg.waitForTimeout(600);
+  let ck = await pg.textContent('#clkOut');
+  ok(ck.includes('Кварц 32,768 кГц есть и в норме') && ck.includes('LFRCO') && ck.includes('ULFRCO') && ck.includes('32768.66 Гц') && ck.includes('+20 ppm'), 'clock test: crystal present, frequency shown');
+  ok(ck.includes('запустился за 403 мс'), 'clock test: start time shown');
+  console.log(ck);
+  await pg.evaluate(() => { window.__tag.xtal = false; });
+  await pg.click('#bClk'); await pg.waitForTimeout(600);
+  ck = await pg.textContent('#clkOut');
+  ok(ck.includes('Кварца 32,768 кГц, судя по всему, нет') && ck.includes('не запустился'), 'clock test: no crystal explained');
+
+  // --- pin monitor
+  await pg.click('#bPm2'); await pg.waitForTimeout(300);
+  ok((await pg.$$eval('.pmc', e => e.length)) === 26, 'pin monitor: 26 cells');
+  ok((await pg.$$eval('.pmc.own', e => e.length)) === 14, 'pin monitor: 11 own pins + 3 SWD marked');
+  ok((await pg.$$eval('.pmc.hi', e => e.length)) === 12, 'pin monitor: 12 watched pins high with pull-ups');
+  await pg.evaluate(() => { const m = window.__tag.pm, b = 1 << 24; m.level &= ~b; m.lo |= b; m.edges = 1; m.last = 24; window.__tag.pmPush(); });
+  await pg.waitForTimeout(300);
+  ok((await pg.$$eval('.pmc.chg', e => e.map(x => x.textContent))).join('|').includes('PD2'), 'pin monitor: PD2 highlighted as changed');
+  let pn = await pg.textContent('#pmNote');
+  ok(pn.includes('только с подтяжкой вверх: PD2'), 'pin monitor: open-drain candidate named');
+  ok((await pg.textContent('#pmStat')).includes('PD2'), 'pin monitor: last changed pin in the status line');
+  await pg.click('#bPm1'); await pg.waitForTimeout(300);
+  pn = await pg.textContent('#pmNote');
+  ok(pn.includes('плавающие входы: менялись никакие') && pn.includes('подтяжка вверх: менялись PD2'), 'pin monitor: history kept per mode');
+  await pg.check('#pmSwd'); await pg.waitForTimeout(300);
+  ok((await pg.$$eval('.pmc.own', e => e.length)) === 11 && (await pg.$$eval('.pmc', e => e.length)) === 26, 'pin monitor: SWD pins watched when asked');
+  await pg.uncheck('#pmSwd'); await pg.click('#bPmStop'); await pg.waitForTimeout(300);
+  ok((await pg.textContent('#pmStat')).includes('выключен'), 'pin monitor: stopped');
+  await pg.click('#bPmClr'); await pg.waitForTimeout(300);
+  ok(!(await pg.textContent('#pmNote')).includes('менялись PD2'), 'pin monitor: history cleared');
+
   // --- tools: flash sector select has 0..14
   const secs = await pg.evaluate(() => document.querySelector('#sec').options.length);
   ok(secs === 15, 'flash test sectors 0..14');
