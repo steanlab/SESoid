@@ -99,7 +99,7 @@ jobs:
             slc configuration --gcc-toolchain="$(dirname "$(dirname "$(command -v arm-none-eabi-gcc)")")/" 2>&1 | tail -1 || true
             rm -rf ./out
             tag=$(echo "$GSDK_PATH" | tr '/' '_')
-            if HOME=/tmp/h slc generate -v=4 -s "$GSDK_PATH" -p v300_ble_probe.slcp -o makefile -d ./out -cp > "gen$tag.log" 2>&1; then
+            if HOME=/tmp/h slc generate -v=DEBUG -s "$GSDK_PATH" -p v300_ble_probe.slcp -o makefile -d ./out -cp > "gen$tag.log" 2>&1; then
               tail -5 "gen$tag.log"; gen_ok=1; break
             else
               grep -v "^  " "gen$tag.log" | head -12
