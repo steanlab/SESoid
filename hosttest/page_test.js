@@ -66,6 +66,7 @@ const MOCK = `
     else if (op === 0x3A) { N([0xB3, 0x3A, 0]); setTimeout(() => N(tag.dead ? [0xB8, 2, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 10, 0, 0, 0, 0, 0, 0, 0] : [0xB8, 2, 0, 0, 1, 0, 0, 1, 0, 1, 1, 1, 10, 0, 0x04, 0x0D, 0x04, 0x0D, 0x04, 0x0D]), 100); }
     else if (op === 0x3C) { N([0xB3, 0x3C, 0]); setTimeout(() => N(clkPkt()), 100); }
     else if (op === 0x3D) N(clkPkt(true));
+    else if (op === 0x3E && tag.old11 && v.length !== 2) N([0xB3, 0x3E, 2]);
     else if (op === 0x3E) { tag.pmMask = v.length >= 6 ? (v[2] | v[3] << 8 | v[4] << 16 | v[5] << 24) >>> 0 : 0xFFFFFFFF; tag.pmLen = v.length; tag.pm = { mode: v[1] & 3, swd: v[1] & 0x80, level: 0, hi: 0, lo: 0, edges: 0, last: 255, el: 0 }; tag.pmBase(); N(pmPkt()); }
     else if (op === 0x3F) { if (v[1] === 1) { tag.pm.hi = tag.pm.lo = 0; tag.pm.edges = 0; tag.pm.last = 255; tag.pmBase(); } N(pmPkt()); }
     else if (op === 0x3B) N([0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
@@ -216,6 +217,7 @@ const MOCK = `
   // --- pin monitor
   await pg.click('#bPm2'); await pg.waitForTimeout(300);
   ok((await pg.$$eval('.pmc', e => e.length)) === 26, 'pin monitor: 26 cells');
+  ok((await pg.evaluate(() => window.__tag.pmLen)) === 2, 'pin monitor: 2-byte command while all pins are selected (works on firmware 1.1)');
   ok((await pg.$$eval('.pmc.own', e => e.length)) === 14, 'pin monitor: 11 own pins + 3 SWD marked');
   ok((await pg.$$eval('.pmc.hi', e => e.length)) === 12, 'pin monitor: 12 watched pins high with pull-ups');
   await pg.evaluate(() => { const m = window.__tag.pm, b = 1 << 24; m.level &= ~b; m.lo |= b; m.edges = 1; m.last = 24; window.__tag.pmPush(); });
@@ -234,6 +236,11 @@ const MOCK = `
   await pg.click('#bPmClr'); await pg.waitForTimeout(300);
   ok(!(await pg.textContent('#pmNote')).includes('менялись PD2'), 'pin monitor: history cleared');
   // pin selection: click a cell to leave that pin out
+  await pg.evaluate(() => { window.__tag.old11 = true; });
+  await pg.click('.pmc[data-i="25"]'); await pg.waitForTimeout(100); await pg.click('#bPm2'); await pg.waitForTimeout(300);
+  ok((await pg.textContent('#pmStat')).includes('отклонила'), 'pin monitor: old firmware refusal is explained');
+  await pg.evaluate(() => { window.__tag.old11 = false; });
+  await pg.click('.pmc[data-i="25"]'); await pg.waitForTimeout(100);
   await pg.click('#bPmStop'); await pg.waitForTimeout(200);
   ok((await pg.$$eval('.pmc[data-i]', e => e.length)) === 12, 'pin monitor: 12 pins can be picked');
   await pg.click('.pmc[data-i="25"]'); await pg.waitForTimeout(200);
