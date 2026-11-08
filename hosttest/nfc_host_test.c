@@ -25,7 +25,8 @@ static int fd_on;                            // PA8 is the FD output: low while 
 static int slave_low, sda_m = 1, scl_m = 1;
 static int ch_mode, bits, acked, phase, blk, rega, have_rega, txclk, txidx, master_ack, last_rw_read, tx_is_reg, wr_idx, wr_active;
 static uint8_t shift, wr_buf[16];
-static int psda = 1, pscl = 1, addr7 = 0x55;
+static int psda = 1, pscl = 1, addr7 = 0x55, amode;
+static int map_addr(uint8_t v) { return amode == 0 ? v >> 1 : amode == 1 ? (v & 0x7F) : ((v * 5 + 11) & 0x7F); }   // what byte 0 of block 0 does to the I2C address: not known for the real chip
 static uint32_t busy_until;
 
 static int powered(void)
@@ -45,7 +46,7 @@ static void store_block(void)                // a complete 16 byte write: what t
   busy_until = now_us + 4000;
   if (wlock[blk]) return;
   if (blk == 0) {
-    addr7 = wr_buf[0] >> 1;                                      // byte 0 is the I2C address
+    addr7 = map_addr(wr_buf[0]);                                 // byte 0 is the I2C address
     mem[0][10] = wr_buf[10]; mem[0][11] = wr_buf[11];            // static lock bytes can be reset over I2C
     for (int i = 12; i < 16; i++) mem[0][i] |= wr_buf[i];        // CC: one time programmable bits
     return;                                                      // bytes 1..9 (UID) are read only
@@ -120,7 +121,7 @@ static void world(void)
   for (int i = 0; i < 8; i++) sreg[i] = (uint8_t)(0x10 + i);
   memset(wlock, 0, sizeof(wlock));
   dead = 0; field = 0; nak_blk = -1; drive_high_viol = 0; slave_low = 0; sda_m = scl_m = 1; psda = pscl = 1; ch_mode = 0; wr_active = 0;
-  addr7 = 0x55; busy_until = 0; writes = mem_writes = 0; fd_on = 0;
+  addr7 = 0x55; amode = 0; busy_until = 0; writes = mem_writes = 0; fd_on = 0;
 }
 static void run(uint32_t limit_us)
 {
@@ -347,7 +348,7 @@ static void test_unlock(void)
   nfc_tap_enable(false);
   uint8_t uid[9]; memcpy(uid, mem[0], 9);
   uint8_t b38[16]; memcpy(b38, mem[0x38], 16); b38[8] = 0xFF; b38[9] = 0x3F; b38[10] = 0x7F; memcpy(mem[0x38], b38, 16);
-  CHECK(nfc_unlock_start(), "starts");
+  CHECK(nfc_unlock_start(0xAA), "starts");
   run(5000000u);
   const nfc_t *c = nfc_state();
   CHECK(c->state == 2 && c->op_res == NFC_R_OK, "unlocked: state %u res %u blk %02x", c->state, c->op_res, c->op_blk);
@@ -360,20 +361,74 @@ static void test_unlock(void)
 
   printf("unlock: refused when block 0 is not what is expected\n");
   world(); mem[0][12] = 0x00; mem_writes = 0;
-  CHECK(nfc_unlock_start(), "starts");
+  CHECK(nfc_unlock_start(0xAA), "starts");
   run(5000000u);
   CHECK(c->state == 3 && c->op_res == NFC_R_REFUSED && mem_writes == 0, "refused, nothing written: res %u writes %d", c->op_res, mem_writes);
   world(); mem[0][0] = 0x11; mem_writes = 0;
-  CHECK(nfc_unlock_start(), "starts");
+  CHECK(nfc_unlock_start(0xAA), "starts");
   run(5000000u);
   CHECK(c->state == 3 && c->op_res == NFC_R_REFUSED && mem_writes == 0, "refused on a wrong first byte");
 
   printf("unlock: write protected block 0 is caught by the read-back\n");
   world(); wlock[0] = 1; mem_writes = 0;
-  CHECK(nfc_unlock_start(), "starts");
+  CHECK(nfc_unlock_start(0xAA), "starts");
   run(5000000u);
   CHECK(c->state == 3 && c->op_res == NFC_R_VERIFY && c->op_blk == 0, "verify: res %u blk %02x", c->op_res, c->op_blk);
   CHECK(drive_high_viol == 0, "SDA and SCL never driven high (%d)", drive_high_viol);
+}
+
+static void test_find_rescue(void)
+{
+  printf("find\n");
+  world(); nfc_tap_enable(false);
+  CHECK(nfc_find_start(), "starts");
+  run(5000000u);
+  const nfc_t *c = nfc_state();
+  CHECK(c->state == 2 && c->op_blk == 0x55 && c->fail == 0 && c->fd_n == 1, "chip at 0x55: state %u blk %02x fail %02x n %u", c->state, c->op_blk, c->fail, c->fd_n);
+  world(); addr7 = 0x2A; mem_writes = 0;
+  GpioT saved = g_gpio;
+  CHECK(nfc_find_start(), "starts");
+  run(5000000u);
+  CHECK(c->state == 2 && c->op_blk == 0x2A && c->fd_n == 1 && mem_writes == 0 && pins_same(&saved), "chip at 0x2A found, nothing written, pins back (blk %02x)", c->op_blk);
+  world(); addr7 = 0x00;
+  CHECK(nfc_find_start(), "starts");
+  run(5000000u);
+  CHECK(c->state == 2 && c->op_blk == 0x00 && c->fd_n == 1, "address 0x00 is probed too");
+  world(); dead = 1;
+  CHECK(nfc_find_start(), "starts");
+  run(5000000u);
+  CHECK(c->state == 3 && c->op_res == NFC_R_NOACK && c->fd_n == 0, "no chip: failed, none found");
+  CHECK(drive_high_viol == 0, "SDA and SCL never driven high (%d)", drive_high_viol);
+
+  printf("rescue\n");
+  world(); mem_writes = 0;
+  CHECK(nfc_rescue_start(), "starts");
+  run(60000000u);
+  CHECK(c->state == 2 && c->fail == 1 && mem_writes == 0, "already at 0x55: nothing written (fail %u writes %d)", c->fail, mem_writes);
+  const int expect[3] = { 0x55, 0x55, 0x42 };               // the byte-0 value that gives 0x55 under each model: v >> 1 never reaches it with 0xAA excluded, so 0xAA is the answer there
+  for (int m = 1; m <= 2; m++) {
+    world(); amode = m; addr7 = map_addr(0xAA);
+    uint8_t uid[9]; memcpy(uid, mem[0], 9);
+    mem[0][10] = 0xFF; mem[0][11] = 0xFF; mem_writes = 0;
+    saved = g_gpio;
+    CHECK(addr7 != 0x55, "model %d: the chip starts away from 0x55 (%02x)", m, addr7);
+    CHECK(nfc_rescue_start(), "starts");
+    run(60000000u);
+    CHECK(c->state == 2 && c->fail == 2 && addr7 == 0x55, "model %d: back at 0x55 (state %u fail %u addr %02x)", m, c->state, c->fail, addr7);
+    CHECK(c->op_blk == expect[m], "model %d: the value found is %02x (want %02x), tries %u", m, c->op_blk, expect[m], c->fd_n);
+    CHECK(mem_writes == c->fd_n, "model %d: one block write per try (%d / %u)", m, mem_writes, c->fd_n);
+    CHECK(memcmp(mem[0] + 1, uid + 1, 8) == 0 && mem[0][10] == 0xFF && mem[0][11] == 0xFF && mem[0][12] == 0xE1 && mem[0][15] == 0x0F, "model %d: the rest of block 0 as it was", m);
+    CHECK(pins_same(&saved) && drive_high_viol == 0, "model %d: pins back, nothing driven high", m);
+    nfc_tap_enable(false);
+    CHECK(nfc_snapshot_start(), "starts");
+    run(5000000u);
+    CHECK(c->state == 2 && !(c->fail & 0x3F), "model %d: a normal read works again", m);
+  }
+  printf("unlock with the value found by the rescue\n");
+  world(); amode = 2;
+  CHECK(nfc_unlock_start(0x42), "starts");
+  run(5000000u);
+  CHECK(c->state == 2 && c->op_res == NFC_R_OK && addr7 == 0x55 && mem[0][10] == 0, "unlock keeps the address with b0 = 0x42");
 }
 
 int main(void)
@@ -384,6 +439,7 @@ int main(void)
   test_tap();
   test_backup_write();
   test_unlock();
+  test_find_rescue();
   printf(fails ? "%d FAILED\n" : "ALL OK\n", fails);
   return fails != 0;
 }

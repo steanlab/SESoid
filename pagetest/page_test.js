@@ -9,7 +9,7 @@ const MOCK = `
   const crcT = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
   const crc = b => { let c = 0xFFFFFFFF; for (const x of b) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
   const le32 = v => [v & 255, v >>> 8 & 255, v >>> 16 & 255, v >>> 24 & 255];
-  const tag = { flash: new Uint8Array(8 * 65536).fill(255), cfg: { en: 1, mode: 0, iv: 60, mask: 0xFE, temp: 20, tx: 6, nfc: 0 }, cur: 0, src: 1, shown: 0,
+  const tag = { flash: new Uint8Array(8 * 65536).fill(255), cfg: { en: 1, mode: 0, iv: 60, mask: 0xFE, temp: 20, tx: 6, nfc: 0 }, chipAddr: 0x55, cur: 0, src: 1, shown: 0,
     up: null, log: [], dropPage: 3, dropped: false, rebooted: 0, fills: [] };
   window.__tag = tag;
   let notify = null;
@@ -69,12 +69,15 @@ const MOCK = `
     else if (op === 0x3E && tag.old11 && v.length !== 2) N([0xB3, 0x3E, 2]);
     else if (op === 0x3E) { tag.pmMask = v.length >= 6 ? (v[2] | v[3] << 8 | v[4] << 16 | v[5] << 24) >>> 0 : 0xFFFFFFFF; tag.pmLen = v.length; tag.pm = { mode: v[1] & 3, swd: v[1] & 0x80, level: 0, hi: 0, lo: 0, edges: 0, last: 255, el: 0 }; tag.pmBase(); N(pmPkt()); }
     else if (op === 0x3F && v[1] === 0x14) { tag.nfcCmd = 0x14; tag.nfcMode = 3; nfcInit(); N([0xB3, 0x3F, tag.nfcOk === false ? 2 : 0]); if (tag.nfcOk !== false) setTimeout(() => { for (let i = 0; i < 59; i++) N([0xBF, i, ...tag.chip[i]]); nfcSend(); }, 60); }
+    else if (op === 0x3F && v[1] === 0x20 && v.length !== 19) N([0xB3, 0x3F, 1]);
     else if (op === 0x3F && v[1] === 0x20) { tag.wbuf = tag.wbuf || []; tag.wbuf[v[2]] = Array.from(v.slice(3, 19)); tag.wbufN = (tag.wbufN || 0) + 1; }
     else if (op === 0x3F && v[1] === 0x21) {
       tag.writeArgs = Array.from(v); tag.nfcMode = 4; N([0xB3, 0x3F, v.length === 4 && v[3] === 0xA5 ? 0 : 1]); tag.nfcRes = [0, 0];
       if (tag.wp) tag.nfcRes = [2, 1]; else for (let i = 0; i < v[2]; i++) tag.chip[1 + i] = tag.wbuf[i];
       setTimeout(() => nfcSend(), 80);
     }
+    else if (op === 0x3F && v[1] === 0x30) { tag.nfcMode = 6; N([0xB3, 0x3F, 0]); setTimeout(() => N([0xBD, tag.nochip ? 3 : 2, 6, tag.chipAddr === 0x55 ? 0 : 0x31, 0, 0, 0, 0, 0, 0, 0, 0, 0, tag.nochip ? 1 : 0, tag.nochip ? 0 : tag.chipAddr, tag.nochip ? 0 : 1]), 80); }
+    else if (op === 0x3F && v[1] === 0x31) { tag.rescueArgs = Array.from(v); tag.nfcMode = 7; N([0xB3, 0x3F, v.length === 3 && v[2] === 0xA5 ? 0 : 1]); const was = tag.chipAddr; tag.chipAddr = 0x55; setTimeout(() => N([0xBD, 2, 7, was === 0x55 ? 1 : 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, was === 0x55 ? 0 : 0x42, was === 0x55 ? 0 : 5]), 80); }
     else if (op === 0x3F && v[1] === 0x22) { tag.unlockArgs = Array.from(v); tag.nfcMode = 5; tag.wp = false; tag.chip[0][10] = 0; tag.chip[0][11] = 0; tag.nfcRes = [0, 0]; N([0xB3, 0x3F, 0]); setTimeout(() => nfcSend(), 80); }
     else if (op === 0x3F && v[1] >= 0x10 && v[1] <= 0x13) {
       tag.nfcCmd = v[1]; if (v[1] === 0x11) tag.fdArgs = Array.from(v);
@@ -406,8 +409,25 @@ const MOCK = `
   ok(wa && wa.length === 4 && wa[2] === 2 && wa[3] === 0xA5, 'nfc write: commit is armed and counts blocks');
   ok((await pg.textContent('#nfcOut2')).includes('не совпали') && (await pg.textContent('#nfcOut2')).includes('Снять блокировку'), 'nfc write: ignored write explained, unlock suggested');
   ok(await pg.evaluate(() => document.getElementById('bNfcUnlock').disabled), 'unlock: needs its own confirmation');
-  await pg.check('#nfcUnOk'); await pg.click('#bNfcUnlock'); await pg.waitForTimeout(500);
-  ok((await pg.evaluate(() => window.__tag.unlockArgs)).join() === '63,34,165' && (await pg.textContent('#nfcOut2')).includes('Снятие блокировки: выполнено'), 'unlock: armed command, success shown');
+  await pg.check('#nfcUnOk'); await pg.waitForTimeout(100);
+  ok(await pg.evaluate(() => document.getElementById('bNfcUnlock').disabled), 'unlock: stays off until the rescue has found the byte-0 value');
+  await pg.evaluate(() => { window.__tag.chipAddr = 0x55; });
+  ok(await pg.evaluate(() => document.getElementById('bNfcRescue').disabled), 'rescue: needs its confirmation');
+  await pg.check('#nfcRsOk'); await pg.click('#bNfcRescue'); await pg.waitForTimeout(500);
+  ok((await pg.evaluate(() => window.__tag.rescueArgs)).join() === '63,49,165' && (await pg.textContent('#nfcOut2')).includes('ничего не записано'), 'rescue: chip already at 0x55, nothing written');
+  ok(await pg.evaluate(() => document.getElementById('bNfcUnlock').disabled), 'unlock: still off after "already at 0x55"');
+  await pg.evaluate(() => { window.__tag.chipAddr = 0x2A; });
+  await pg.click('#bNfcFind'); await pg.waitForTimeout(500);
+  ok((await pg.textContent('#nfcOut2')).includes('адресе 0x2A') && (await pg.textContent('#nfcOut2')).includes('Вернуть адрес 0x55'), 'find: chip at 0x2A reported, rescue suggested');
+  await pg.evaluate(() => { window.__tag.nochip = true; });
+  await pg.click('#bNfcFind'); await pg.waitForTimeout(500);
+  ok((await pg.textContent('#nfcOut2')).includes('никто не ответил'), 'find: nobody answered explained');
+  await pg.evaluate(() => { window.__tag.nochip = false; });
+  await pg.click('#bNfcRescue'); await pg.waitForTimeout(500);
+  ok((await pg.textContent('#nfcOut2')).includes('Нулевой байт блока 0 = 0x42') && (await pg.textContent('#nfcOut2')).includes('попыток: 5'), 'rescue: value found shown');
+  ok(await pg.evaluate(() => !document.getElementById('bNfcUnlock').disabled), 'unlock: enabled once the value is known');
+  await pg.click('#bNfcUnlock'); await pg.waitForTimeout(500);
+  ok((await pg.evaluate(() => window.__tag.unlockArgs)).join() === '63,34,165,66' && (await pg.textContent('#nfcOut2')).includes('Снятие блокировки: выполнено'), 'unlock: armed command with the byte-0 value, success shown');
   await pg.click('#bNfcWr'); await pg.waitForTimeout(700);
   const ch = await pg.evaluate(() => window.__tag.chip);
   const wantTxt = Array.from('https://example.org/app/').slice(8).map(c => c.charCodeAt(0));

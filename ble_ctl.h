@@ -32,7 +32,10 @@
 //   3F 14                   NFC CHIP BACKUP of blocks 00..3A                                                      -> B3, BF x59 and BD
 //   3F 20 idx data(16)      NFC write buffer, block idx (0..6 = chip block 1..7); answered by B3 only if refused
 //   3F 21 n A5              NFC WRITE the buffer to chip blocks 1..n (A5 = armed), verified by reading back       -> B3, then BD (op_res, op_blk)
-//   3F 22 A5                NFC UNLOCK: clear the static and dynamic lock bytes over I2C (A5 = armed)               -> B3, then BD
+//   3F 22 A5 b0             NFC UNLOCK: clear the static and dynamic lock bytes over I2C (A5 = armed; b0 = byte 0 of block 0 that gives 0x55) -> B3, then BD
+//   3F 30                   NFC FIND: probe every I2C address 0x00..0x7F, report the first two that answer (BD: op_blk, fail, fd_n = count)  -> B3, then BD
+//   3F 31 A5                NFC RESCUE: the chip answers somewhere other than 0x55: write byte 0 of block 0 until it is back at 0x55 (BD: fail 1 = was at 0x55,
+//                           fail 2 = moved back, op_blk = the byte-0 value that gives 0x55, fd_n = tries)   -> B3, then BD
 //   3F 12                   NFC CHIP OFF                                                                     -> BD
 //   3F 13                   NFC CHIP REPORT again                                                            -> BC x7 (snapshot only) and BD
 //   3F 03                   I2C SCAN REPORT                                                              -> BB

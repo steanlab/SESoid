@@ -95,18 +95,20 @@ bool ctl_write(const uint8_t *v, uint8_t len)
       else queue_result(0x3E, SLR_BAD_SLOT);
       break;
     case 0x3F:
-      if (v[1] >= 0x10 && v[1] <= 0x22 && (v[1] <= 0x16 || v[1] >= 0x20)) {              // NFC chip (ble_nfc.h)
+      if (((v[1] >= 0x10 && v[1] <= 0x16) || (v[1] >= 0x20 && v[1] <= 0x22) || v[1] == 0x30 || v[1] == 0x31)) {              // NFC chip (ble_nfc.h)
         uint8_t ok = SLR_OK;
         bool start = false;
-        if (v[1] == 0x10 || v[1] == 0x11 || v[1] == 0x14 || v[1] == 0x21 || v[1] == 0x22) { hwtest_scan_abort(); hwtest_pins_start(PM_MODE_OFF, 0xFFFFFFFFu); }   // they share the pins
+        if (v[1] == 0x10 || v[1] == 0x11 || v[1] == 0x14 || v[1] == 0x21 || v[1] == 0x22 || v[1] == 0x30 || v[1] == 0x31) { hwtest_scan_abort(); hwtest_pins_start(PM_MODE_OFF, 0xFFFFFFFFu); }   // they share the pins
         if (v[1] == 0x12 && len == 2) { nfc_stop(); want_nfc = true; }
         else if (v[1] == 0x13 && len == 2) { want_nfc = true; nfc_left = (nfc_state()->mode == NFC_M_SNAP && nfc_state()->state >= 2) ? 0 : 7; nfc_fd_left = (nfc_state()->mode == NFC_M_LIVE && nfc_fd()->n) ? 0 : 0xFF; nfc_bk_left = (nfc_state()->mode == NFC_M_BACKUP && nfc_state()->state == 2) ? 0 : 0xFF; }
         else if (v[1] == 0x10 && len == 2) { start = true; ok = nfc_snapshot_start() ? SLR_OK : SLR_BAD_SLOT; }
         else if (v[1] == 0x11 && (len == 2 || len == 6)) { start = true; ok = nfc_live_start(len == 6 ? ((uint32_t)(v[2] | (v[3] << 8) | ((uint32_t)v[4] << 16) | ((uint32_t)v[5] << 24)) & ~hwtest_pins_owned() & ~0xEu) : 0) ? SLR_OK : SLR_BAD_SLOT; }
         else if (v[1] == 0x14 && len == 2) { start = true; ok = nfc_backup_start() ? SLR_OK : SLR_BAD_SLOT; }
-        else if (v[1] == 0x20 && len == 18) { if (!nfc_wbuf_set(v[2], v + 3)) queue_result(0x3F, SLR_BAD_SLOT); }            // one block of the write buffer, no answer unless refused
+        else if (v[1] == 0x20 && len == 19) { if (!nfc_wbuf_set(v[2], v + 3)) queue_result(0x3F, SLR_BAD_SLOT); }            // one block of the write buffer, no answer unless refused
         else if (v[1] == 0x21 && len == 4 && v[3] == 0xA5) { start = true; ok = nfc_write_start(v[2]) ? SLR_OK : SLR_BAD_SLOT; }   // 0xA5 = armed
-        else if (v[1] == 0x22 && len == 3 && v[2] == 0xA5) { start = true; ok = nfc_unlock_start() ? SLR_OK : SLR_BAD_SLOT; }
+        else if (v[1] == 0x22 && len == 4 && v[2] == 0xA5) { start = true; ok = nfc_unlock_start(v[3]) ? SLR_OK : SLR_BAD_SLOT; }   // v[3] = byte 0 of block 0 that gives address 0x55 (from the rescue)
+        else if (v[1] == 0x30 && len == 2) { start = true; ok = nfc_find_start() ? SLR_OK : SLR_BAD_SLOT; }
+        else if (v[1] == 0x31 && len == 3 && v[2] == 0xA5) { start = true; ok = nfc_rescue_start() ? SLR_OK : SLR_BAD_SLOT; }
         else queue_result(0x3F, SLR_BAD_SLOT);
         if (start) {
           if (ok == SLR_OK) nfc_sent = false;

@@ -5,6 +5,7 @@
 #include "rail.h"
 
 #define ADDR          0x55u
+#define NONE          0xFFu         // no address (a 7-bit address is at most 0x7F; address 0 is a real one)
 #define HALF_US       5u            // half a clock period: about 60 kHz, the same as the scanner that found the chip
 #define STRETCH_US    200u
 #define PWRUP_US      30000u        // after the supply is switched on
@@ -48,6 +49,9 @@ static uint8_t bk[NFC_BK_BLOCKS][16];
 static uint8_t wbuf[NFC_WBUF_BLOCKS][16];
 static uint8_t wbuf_have, wn;
 static uint8_t ub0[16], ub38[16], tmp[16];
+static uint8_t un_b0;
+static uint8_t found_n, found[4], rs_cur, rs_v, rs_hit, rs_cnt;
+static uint16_t rs_idx;
 // tap
 static bool tap_en, tap_hold, tap_base, tap_prev;
 static uint8_t tap_absent, tap_pending, tap_count;
@@ -83,6 +87,7 @@ static void wait_us(uint32_t us) { uint32_t t0 = RAIL_GetTime(); while ((uint32_
 
 // ---- bit-banged I2C master: a released line is an input with the internal pull-up, a low is a push-pull low, nothing is ever driven high
 static bool bus_err;
+static uint8_t addr = ADDR;               // 7-bit address in use: ADDR, except while the address rescue looks for a chip that moved
 static void sda_rel(void) { cfg(SDA_P, SDA_N, 2, 1); }
 static void sda_low(void) { cfg(SDA_P, SDA_N, 4, 0); }
 static void scl_low(void) { cfg(SCL_P, SCL_N, 4, 0); }
@@ -126,10 +131,10 @@ static bool read_mem(uint8_t first, bool two, uint8_t second, uint8_t *buf, uint
   bool ok;
   bus_err = false;
   i2c_start();
-  ok = i2c_wbyte((uint8_t)(ADDR << 1));
+  ok = i2c_wbyte((uint8_t)(addr << 1));
   if (ok) ok = i2c_wbyte(first);
   if (ok && two) ok = i2c_wbyte(second);
-  if (ok) { i2c_start(); ok = i2c_wbyte((uint8_t)((ADDR << 1) | 1u)); }
+  if (ok) { i2c_start(); ok = i2c_wbyte((uint8_t)((addr << 1) | 1u)); }
   if (ok) for (uint8_t i = 0; i < len; i++) buf[i] = i2c_rbyte(i + 1 < len);
   i2c_stop();
   return ok && !bus_err;
@@ -143,7 +148,7 @@ static bool write_block(uint8_t blk, const uint8_t *d)
   bool ok;
   bus_err = false;
   i2c_start();
-  ok = i2c_wbyte((uint8_t)(ADDR << 1));
+  ok = i2c_wbyte((uint8_t)(addr << 1));
   if (ok) ok = i2c_wbyte(blk);
   for (int i = 0; ok && i < 16; i++) ok = i2c_wbyte(d[i]);
   i2c_stop();
@@ -153,7 +158,7 @@ static bool ack_poll(void)                                          // the chip 
 {
   bus_err = false;
   i2c_start();
-  bool ok = i2c_wbyte((uint8_t)(ADDR << 1));
+  bool ok = i2c_wbyte((uint8_t)(addr << 1));
   i2c_stop();
   return ok;
 }
@@ -186,6 +191,7 @@ static void fd_pins_back(void)
 static void finish(uint8_t state)
 {
   if (ns != NS_IDLE) { fd_pins_back(); pins_back(); }
+  addr = ADDR;
   ns = NS_IDLE; nf.state = state; nf_changed = true;
 }
 static void leave_tap(void) { pins_back(); ns = NS_IDLE; }
@@ -202,8 +208,10 @@ static bool begin(uint8_t mode)
   nfc_stop();
   memset(&nf, 0, sizeof(nf));
   nf.state = 1; nf.mode = mode;
+  addr = ADDR;
   pins_save_on();
   ns = NS_PWRUP; step = 0; sub = 0; ackn = 0; nak_run = 0; live_last_s = 0;
+  found_n = 0; rs_hit = NONE; rs_cur = 0; rs_v = 0; rs_idx = 0; rs_cnt = 0;
   fd.n = 0;                                                         // only a live run watches pins; its pins are set after this
   nf_t0 = RAIL_GetTime(); nf_next = nf_t0 + PWRUP_US;
   nf_changed = true;
@@ -211,7 +219,9 @@ static bool begin(uint8_t mode)
 }
 bool nfc_snapshot_start(void) { return begin(NFC_M_SNAP); }
 bool nfc_backup_start(void) { return begin(NFC_M_BACKUP); }
-bool nfc_unlock_start(void) { return begin(NFC_M_UNLOCK); }
+bool nfc_unlock_start(uint8_t b0) { un_b0 = b0; return begin(NFC_M_UNLOCK); }
+bool nfc_find_start(void) { return begin(NFC_M_FIND); }
+bool nfc_rescue_start(void) { return begin(NFC_M_RESCUE); }
 
 bool nfc_live_start(uint32_t fd_mask)
 {
@@ -292,7 +302,7 @@ static void job_unlock(void)
     case 0:                                                         // block 0: read, check, build the new one
       if (!read_block(0x00, ub0)) { fail_op(NFC_R_NOACK, 0x00); return; }
       if (ub0[0] != 0x04 || ub0[12] != 0xE1) { fail_op(NFC_R_REFUSED, 0x00); return; }       // not what the chip is known to hold: nothing is written
-      ub0[0] = (uint8_t)(ADDR << 1);                                // byte 0 is written as the I2C address, so the address stays
+      ub0[0] = un_b0;                                               // byte 0 of block 0 sets the I2C address: it is written with the value the rescue found for 0x55
       ub0[10] = 0x00; ub0[11] = 0x00;                               // static lock bytes
       step = 1; break;
     case 1: if (!write_block(0x00, ub0)) { fail_op(NFC_R_NOACK, 0x00); return; } step = 2; ackn = 0; break;
@@ -312,6 +322,78 @@ static void job_unlock(void)
       if (tmp[8] != 0 || tmp[9] != 0 || tmp[10] != 0) { fail_op(NFC_R_VERIFY, 0x38); return; }
       finish(2);
       break;
+  }
+}
+
+// ---- find the chip at any 7-bit address, and the rescue that moves it back to 0x55
+static bool probe(uint8_t a)                                        // an empty write to the address: harmless
+{
+  bus_err = false;
+  i2c_start();
+  bool ok = i2c_wbyte((uint8_t)(a << 1));
+  i2c_stop();
+  return ok && !bus_err;
+}
+static void job_find(void)
+{
+  for (int k = 0; k < 4 && step < 128; k++) {
+    uint8_t a = (uint8_t)step++;
+    if (probe(a)) { if (found_n < 4) found[found_n] = a; if (found_n < 255) found_n++; }
+  }
+  if (step >= 128) {
+    nf.op_blk = found_n ? found[0] : 0; nf.fail = found_n > 1 ? found[1] : 0; nf.fd_n = found_n;
+    nf.op_res = found_n ? NFC_R_OK : NFC_R_NOACK;
+    finish(found_n ? 2 : 3);
+  }
+}
+// candidate values for byte 0 of block 0: a few likely ones first, then all the others; 0xAA is the value that moved the chip away
+static const uint8_t rs_pri[4] = { 0x04, 0x55, 0x2A, 0xAB };
+static bool rs_next(uint8_t *v)
+{
+  while (rs_idx < 4u + 256u) {
+    uint8_t c = rs_idx < 4u ? rs_pri[rs_idx] : (uint8_t)(rs_idx - 4u);
+    bool first = rs_idx < 4u;
+    rs_idx++;
+    if (!first && (c == 0xAA || c == rs_pri[0] || c == rs_pri[1] || c == rs_pri[2] || c == rs_pri[3])) continue;
+    *v = c; return true;
+  }
+  return false;
+}
+// sub 0 look for the chip, 1 read block 0, 2 write the next candidate, 3 look where the chip went, 4 check it at ADDR
+static void job_rescue(void)
+{
+  switch (sub) {
+    case 0:
+      for (int k = 0; k < 4 && step < 128; k++) { uint8_t a = (uint8_t)step++; if (rs_hit == NONE && probe(a)) rs_hit = a; }
+      if (step >= 128) {
+        if (rs_hit == NONE) { fail_op(NFC_R_NOACK, 0); return; }
+        if (rs_hit == ADDR) { nf.fail = 1; nf.op_blk = 0; finish(2); return; }       // nothing to do
+        rs_cur = rs_hit; addr = rs_cur; sub = 1; rs_idx = 0; rs_cnt = 0;
+      }
+      break;
+    case 1:
+      if (!read_block(0x00, ub0)) { fail_op(NFC_R_NOACK, 0x00); return; }
+      sub = 2; break;
+    case 2: {
+      uint8_t v;
+      if (!rs_next(&v)) { fail_op(NFC_R_GONE, rs_v); return; }
+      rs_v = v; rs_cnt++;
+      uint8_t w[16]; memcpy(w, ub0, 16); w[0] = v;
+      addr = rs_cur;
+      if (!write_block(0x00, w)) { fail_op(NFC_R_NOACK, v); return; }
+      nf_next = RAIL_GetTime() + 12000u;                            // the chip stores the block (about 4 ms) before it answers anywhere
+      step = 0; rs_hit = NONE; sub = 3; break; }
+    case 3:
+      for (int k = 0; k < 4 && step < 128; k++) { uint8_t a = (uint8_t)step++; if (rs_hit == NONE && probe(a)) rs_hit = a; }
+      if (step >= 128) {
+        if (rs_hit == NONE) { fail_op(NFC_R_GONE, rs_v); return; }
+        if (rs_hit == ADDR) { addr = ADDR; sub = 4; } else { rs_cur = rs_hit; addr = rs_cur; sub = 2; }
+      }
+      break;
+    default:
+      if (!read_block(0x00, tmp)) { fail_op(NFC_R_GONE, rs_v); return; }
+      nf.op_blk = rs_v; nf.fail = 2; nf.fd_n = rs_cnt;
+      finish(2); break;
   }
 }
 
@@ -384,6 +466,8 @@ void nfc_poll(void)
         case NFC_M_BACKUP: nf_next = now + PACE_US; job_backup(); break;
         case NFC_M_WRITE:  nf_next = now + PACE_US; job_write(); break;
         case NFC_M_UNLOCK: nf_next = now + PACE_US; job_unlock(); break;
+        case NFC_M_FIND:   nf_next = now + PACE_US; job_find(); break;
+        case NFC_M_RESCUE: nf_next = now + PACE_US; job_rescue(); break;
         default:           nf_next = now + live_period(); job_live(now); break;
       }
       break;

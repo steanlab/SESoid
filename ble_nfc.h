@@ -9,7 +9,11 @@
 //   backup:   read blocks 0x00..0x3A (944 bytes) into RAM for the page to download.
 //   write:    write 1..7 blocks from block 1 on (the NDEF area) over I2C with ACK polling and read-back verification.
 //   unlock:   clear the static lock bytes (block 0, bytes 10 and 11) and the dynamic lock bytes (block 0x38, bytes 8..10) over I2C; the other bytes
-//             are written back as they were read; byte 0 of block 0 is the I2C address (0xAA = 0x55 << 1) and is written as such.
+//             are written back as they were read. Byte 0 of block 0 sets the I2C address (it always reads 0x04) and is written with the value b0 that
+//             the rescue found; the value 0xAA once moved the chip away from 0x55.
+//   find:     probe every address 0x00..0x7F (empty write), report the first two that answer.
+//   rescue:   if the chip answers somewhere else, write byte 0 of block 0 with candidate values (the other bytes as read), after each write find where
+//             the chip went, until it answers at 0x55 again; reports the value.
 // Only write and unlock ever write to the chip's memory, and only when the caller passes the arming key (see ble_ctl.c).
 #ifndef BLE_NFC_H
 #define BLE_NFC_H
@@ -31,6 +35,8 @@
 #define NFC_M_BACKUP 3
 #define NFC_M_WRITE  4
 #define NFC_M_UNLOCK 5
+#define NFC_M_FIND   6          // result: op_blk = first address that answered, fail = the second, fd_n = how many (0 none, op_res NOACK)
+#define NFC_M_RESCUE 7          // result: fail 1 = chip already at 0x55, nothing written; fail 2 = moved back, op_blk = the byte-0 value that gives 0x55, fd_n = tries
 // nf.op_res (write, unlock, backup)
 #define NFC_R_OK      0
 #define NFC_R_NOACK   1            // the chip did not acknowledge (op_blk = block)
@@ -64,7 +70,9 @@ bool nfc_live_start(uint32_t fd_mask);      // fd_mask 0 = no FD watch; the pins
 bool nfc_backup_start(void);
 bool nfc_wbuf_set(uint8_t idx, const uint8_t *d16);   // idx 0..6 = block 1..7
 bool nfc_write_start(uint8_t nblocks);      // false if the buffer is incomplete or is not an NDEF TLV that fits
-bool nfc_unlock_start(void);
+bool nfc_unlock_start(uint8_t b0);          // b0 = value of byte 0 of block 0 that keeps the address 0x55 (found by the rescue)
+bool nfc_find_start(void);                  // probe every 7-bit address 0x00..0x7F with an empty write
+bool nfc_rescue_start(void);                // chip not at 0x55: write byte 0 of block 0 with candidate values until it answers at 0x55 again
 void nfc_stop(void);                        // ends whatever runs and puts the pins back
 void nfc_poll(void);                        // main loop
 void nfc_reset(void);                       // new connection / disconnect

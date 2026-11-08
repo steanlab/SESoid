@@ -232,7 +232,12 @@
     <div class="n" id="nfcUrlInfo" style="margin:0 0 6px"></div>
     <label style="display:block;margin:4px 0"><input type="checkbox" id="nfcWrOk"> понимаю: ссылка в чипе будет заменена, копия сохранена</label>
     <div class="row"><button id="bNfcWr" disabled>2. Записать ссылку</button><button id="bNfcRestore" disabled>Вернуть исходную ссылку из копии</button></div>
-    <label style="display:block;margin:10px 0 4px"><input type="checkbox" id="nfcUnOk"> понимаю: будут записаны служебные блоки 00 и 38 чипа (байты блокировки сбрасываются в 0)</label>
+    <h3 style="margin:14px 0 4px;font-size:1rem">Адрес чипа на шине I²C</h3>
+    <p class="n">Запись в нулевой байт блока 0 меняет I²C-адрес чипа (по описанию NXP, чтение этого байта всегда даёт 04). Если после неудачной операции чип «пропал» (чтение пишет, что чип не ответил), нажмите «Найти»: метка проверит все адреса 0x00–0x7F. Если чип нашёлся не на 0x55, «Вернуть адрес 0x55» подбирает значение нулевого байта, пока чип не вернётся (до 260 записей блока 0, обычно намного меньше). Найденное значение нужно для «Снять блокировку».</p>
+    <div class="row"><button id="bNfcFind" disabled>Найти чип по всем адресам</button></div>
+    <label style="display:block;margin:6px 0"><input type="checkbox" id="nfcRsOk"> понимаю: метка будет записывать нулевой блок чипа (остальные байты блока записываются как прочитаны)</label>
+    <div class="row"><button id="bNfcRescue" disabled>Вернуть адрес 0x55</button></div>
+    <label style="display:block;margin:10px 0 4px"><input type="checkbox" id="nfcUnOk"> понимаю: будут записаны служебные блоки 00 и 38 чипа (байты блокировки сбрасываются в 0); доступно после «Вернуть адрес 0x55»</label>
     <div class="row"><button id="bNfcUnlock" disabled>3. Снять блокировку записи (нужно, только если ссылка не записалась)</button></div>
     <pre id="nfcOut2" class="n" style="white-space:pre-wrap;margin:8px 0 0"></pre>
   </div>
@@ -873,7 +878,7 @@ function onDisc() { log('соединение закрыто'); setConn(false); 
 function setConn(on) {
   $('connPill').classList.toggle('on', on); $('connTxt').textContent = on ? 'подключено: ' + (dev ? dev.name : '') : 'не подключено';
   $('bConn').disabled = on; $('bDisc').disabled = !on;
-  for (const id of ['bSlots', 'bNext', 'bCfg', 'bCfgGet', 'bShowNext', 'bSplash', 'bReboot', 'bHw', 'bPing', 'bStat', 'bReset', 'bRam', 'bPdiag', 'bPdiagGet', 'bClk', 'bClkGet', 'bPm1', 'bPm2', 'bPm3', 'bPmStop', 'bPmClr', 'bScan', 'bScanPwr', 'bScanStop', 'bScanGet', 'bNfcSnap', 'bNfcLive', 'bNfcStop', 'bNfcGet', 'bNfcBk', 'bNfcWr', 'bNfcRestore', 'bNfcUnlock', 'bFInfo', 'bFErase', 'bFProg', 'bFScan', 'bVer']) $(id).disabled = !on;
+  for (const id of ['bSlots', 'bNext', 'bCfg', 'bCfgGet', 'bShowNext', 'bSplash', 'bReboot', 'bHw', 'bPing', 'bStat', 'bReset', 'bRam', 'bPdiag', 'bPdiagGet', 'bClk', 'bClkGet', 'bPm1', 'bPm2', 'bPm3', 'bPmStop', 'bPmClr', 'bScan', 'bScanPwr', 'bScanStop', 'bScanGet', 'bNfcSnap', 'bNfcLive', 'bNfcStop', 'bNfcGet', 'bNfcBk', 'bNfcWr', 'bNfcRestore', 'bNfcUnlock', 'bNfcFind', 'bNfcRescue', 'bFInfo', 'bFErase', 'bFProg', 'bFScan', 'bVer']) $(id).disabled = !on;
   nfcButtons();
   document.querySelectorAll('.fill').forEach(b => b.disabled = !on);
   updateUpButtons(); renderSlots();
@@ -1192,7 +1197,7 @@ function renderScan(a) {
 
 /* ---- NFC-чип по I²C (ответы 0xBC блоки/регистры, 0xBD состояние) ---- */
 let nfcPending = false;
-const NFC = { blk: [], regs: [], regsOk: 0, st: null, fd: [], fdWant: false, bk: [], bkBusy: false, op: null };
+const NFC = { blk: [], regs: [], regsOk: 0, st: null, fd: [], fdWant: false, bk: [], bkBusy: false, op: null, b0: undefined };
 const NFC_BNAME = ['00 (серийные данные, блокировка, CC)', '01 (начало области NDEF)', '02 (продолжение NDEF)', '38 (динамическая блокировка, по даташиту)', '3A (конфигурация)', 'FE (рабочие регистры)'];
 const NFC_RNAME = ['NC_REG', 'LAST_NDEF_BLOCK', 'SRAM_MIRROR_BLOCK', 'WDT_LS', 'WDT_MS', 'I2C_CLOCK_STR', 'NS_REG'];
 $('bNfcSnap').onclick = () => { nfcPending = true; NFC.blk = []; NFC.regs = []; NFC.regsOk = 0; NFC.st = null; $('nfcOut').textContent = 'метка включает чип и читает его, это занимает около секунды …'; cmd([0x3F, 0x10], 'NFC-чип'); };
@@ -1215,6 +1220,7 @@ function nfcPart(a) {
 function nfcStatus(a) {
   nfcPending = false;
   NFC.st = { state: a[1], mode: a[2], fail: a[3], ns_valid: !!(a[4] & 1), field: !!(a[4] & 2), ever: !!(a[4] & 4), ns: a[5], events: a[6] | a[7] << 8, live_s: a[8] | a[9] << 8, polls: a[10] | a[11] << 8, regsOk: a[12], res: a.length > 13 ? a[13] : 0, resBlk: a.length > 14 ? a[14] : 0, fdN: a.length > 15 ? a[15] : 0 };
+  if (NFC.st.mode === 7 && NFC.st.state === 2 && NFC.st.fail === 2) NFC.b0 = NFC.st.resBlk;       // the byte-0 value that gives address 0x55
   if (NFC.st.mode >= 3 && NFC.st.state >= 2) nfcOpDone();
   if (NFC.st.mode === 2 && NFC.st.ns_valid) { NFC.regs[6] = NFC.st.ns; NFC.regsOk |= 0x40; }
   renderNfc();
@@ -1263,6 +1269,8 @@ function nfcOpDone() {
   if (st.mode === 3 && st.state === 2) toast(nfcBkFull() ? 'Копия чипа сохранена в странице. Скачайте её в файл.' : 'Копия прочитана не полностью, повторите.');
   if (st.mode === 4) toast(st.state === 2 ? 'Ссылка записана и проверена чтением.' : 'Запись не удалась: ' + nfcResTxt(st));
   if (st.mode === 5) toast(st.state === 2 ? 'Блокировка снята и проверена чтением.' : 'Снятие блокировки не удалось: ' + nfcResTxt(st));
+  if (st.mode === 6) toast(st.state === 2 ? 'Поиск закончен.' : 'Чип не найден ни на одном адресе.');
+  if (st.mode === 7) toast(st.state === 2 ? 'Операция с адресом закончена.' : 'Адрес не удалось вернуть: ' + nfcResTxt(st));
 }
 function nfcResTxt(st) {
   const b = st.resBlk.toString(16).toUpperCase().padStart(2, '0');
@@ -1271,7 +1279,7 @@ function nfcResTxt(st) {
     case 1: return 'чип не ответил (блок ' + b + ')';
     case 2: return 'чип принял запись, но при проверке чтением данные не совпали (блок ' + b + '): запись игнорируется, скорее всего из-за битов блокировки. Попробуйте «Снять блокировку записи»';
     case 3: return 'метка отказалась: чип не похож на ожидаемый (NTAG I²C plus) или запись NDEF неверна';
-    case 4: return 'чип пропал во время операции';
+    case 4: return 'чип пропал во время операции (возможно, сменился его I²C-адрес: нажмите «Найти чип по всем адресам»)';
     default: return 'код ' + st.res;
   }
 }
@@ -1284,7 +1292,9 @@ function nfcButtons() {
   $('nfcUrlInfo').textContent = u.err ? u.err : 'в чип запишется ' + u.ndef.length + ' байт (' + u.blocks + ' блоков из 7 доступных).';
   set('bNfcWr', on && full && !busy && $('nfcWrOk').checked && !u.err);
   set('bNfcRestore', on && full && !busy && $('nfcWrOk').checked && !!nfcStock());
-  set('bNfcUnlock', on && full && !busy && $('nfcUnOk').checked);
+  set('bNfcUnlock', on && full && !busy && $('nfcUnOk').checked && NFC.b0 !== undefined);
+  set('bNfcFind', on && !busy);
+  set('bNfcRescue', on && !busy && $('nfcRsOk').checked);
 }
 // NDEF-запись «ссылка»: 03 len D1 01 plen 55 prefix text FE
 function nfcBuild(url) {
@@ -1333,9 +1343,21 @@ $('bNfcUnlock').onclick = () => {
   if (!connected() || NFC.bkBusy) return;
   NFC.bkBusy = true; NFC.op = { what: 'unlock' }; NFC.st = null; nfcPending = true; nfcButtons();
   $('nfcOut2').textContent = 'метка снимает биты блокировки и проверяет чтением …';
-  cmd([0x3F, 0x22, 0xA5], 'снятие блокировки');
+  cmd([0x3F, 0x22, 0xA5, NFC.b0 & 255], 'снятие блокировки');
 };
-for (const id of ['nfcUrl', 'nfcWrOk', 'nfcUnOk']) $(id).addEventListener('input', nfcButtons);
+$('bNfcFind').onclick = () => {
+  if (!connected() || NFC.bkBusy) return;
+  NFC.bkBusy = true; NFC.op = { what: 'find' }; NFC.st = null; nfcPending = true; nfcButtons();
+  $('nfcOut2').textContent = 'метка проверяет адреса 0x00–0x7F (около 0,2 с) …';
+  cmd([0x3F, 0x30], 'поиск чипа');
+};
+$('bNfcRescue').onclick = () => {
+  if (!connected() || NFC.bkBusy) return;
+  NFC.bkBusy = true; NFC.op = { what: 'rescue' }; NFC.st = null; nfcPending = true; nfcButtons();
+  $('nfcOut2').textContent = 'метка ищет чип и подбирает значение; это может занять до нескольких секунд, не отключайтесь …';
+  cmd([0x3F, 0x31, 0xA5], 'возврат адреса');
+};
+for (const id of ['nfcUrl', 'nfcWrOk', 'nfcUnOk', 'nfcRsOk']) $(id).addEventListener('input', nfcButtons);
 $('nfcUrl').value = (() => { try { if (/^https?:$/.test(location.protocol)) return location.origin + location.pathname.replace(/index\.html$/, ''); } catch (e) { /* без адреса страницы */ } return 'https://steanlab.github.io/SESoid/'; })();
 nfcButtons();
 function renderNfc2(quiet) {
@@ -1343,15 +1365,18 @@ function renderNfc2(quiet) {
   const got = NFC.bk.filter(Boolean).length;
   if (got) L.push('Копия чипа: прочитано блоков ' + got + ' из 59' + (nfcBkFull() ? ' — полная.' : '.'));
   if (st && st.mode >= 3 && st.state >= 2) {
-    const nm = { 3: 'Копирование', 4: 'Запись ссылки', 5: 'Снятие блокировки' }[st.mode];
-    L.push(nm + ': ' + (st.state === 2 ? 'выполнено и проверено' : 'ОШИБКА — ' + nfcResTxt(st)) + '.');
+    const nm = { 3: 'Копирование', 4: 'Запись ссылки', 5: 'Снятие блокировки', 6: 'Поиск чипа', 7: 'Возврат адреса' }[st.mode];
+    const h2 = x => '0x' + x.toString(16).toUpperCase().padStart(2, '0');
+    if (st.mode === 6) L.push(st.state === 2 ? 'Чип отвечает на адресе ' + h2(st.resBlk) + (st.fail ? ' и ' + h2(st.fail) : '') + (st.fdN > 2 ? ' (всего ' + st.fdN + ' адресов)' : '') + (st.resBlk === 0x55 ? ': это обычный адрес, всё в порядке.' : '. Это не 0x55: нажмите «Вернуть адрес 0x55».') : 'Поиск: на адресах 0x00–0x7F никто не ответил. Проверьте, что включено питание чипа (вывод PC5) и что подключена линия I²C (PD2, PD3); сделайте «Прочитать чип».');
+    else if (st.mode === 7 && st.state === 2) L.push(st.fail === 1 ? 'Чип уже на адресе 0x55, ничего не записано.' : 'Возврат адреса: чип снова на 0x55. Нулевой байт блока 0 = ' + h2(st.resBlk) + ' (запомнено для «Снять блокировку»); попыток: ' + st.fdN + '. Проверьте обычным «Прочитать чип».');
+    else L.push(nm + ': ' + (st.state === 2 ? 'выполнено и проверено' : 'ОШИБКА — ' + nfcResTxt(st)) + '.');
   }
   $('nfcOut2').textContent = L.join('\n');
   if (L.length && !quiet) log('NFC: ' + L.join(' | '));
 }
 function renderNfc() {
   const out = $('nfcOut'), show = $('nfcShow').checked, st = NFC.st, L = [];
-  const mask = (arr, n) => arr.map((b, i) => i < n && !show ? '••' : b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
+  const mask = (arr, n) => arr.map((b, i) => i >= 1 && i < n && !show ? '••' : b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
   if (st) {
     const sTxt = ['', 'идёт …', 'готово', 'ЧИП НЕ ОТВЕТИЛ'][st.state] || st.state;
     if (st.mode === 2) {
@@ -1359,6 +1384,8 @@ function renderNfc() {
       L.push('Поле телефона: ' + (!st.ns_valid ? 'ещё не прочитано' : st.field ? 'ЕСТЬ' : 'нет') + '; касаний (нет→есть): ' + st.events + '; опросов: ' + st.polls + '; видели поле хоть раз: ' + (st.ever ? 'да' : 'нет'));
       if (st.ns_valid) L.push('Регистр NS_REG = 0x' + st.ns.toString(16).toUpperCase().padStart(2, '0') + ' (бит 0 = поле, по даташиту).');
       if (st.state === 3) L.push('✖ Чип перестал отвечать. Если он не отвечал и сразу, прошивка не включила питание PC5 или линия I²C занята: сделайте «Выключить» и повторите.');
+    } else if (st.mode >= 3) {
+      /* результаты копирования, записи, адреса и блокировки показываются ниже, в нижнем окне */
     } else {
       L.push('Чтение чипа: ' + sTxt + (st.state === 3 ? ': ни один блок не прочитан' : '') + '.');
       if (st.fail & 0x3F) L.push('Не ответили блоки: ' + [0, 1, 2, 3, 4, 5].filter(i => st.fail >> i & 1).map(i => NFC_BNAME[i].split(' ')[0]).join(', ') + '.');
