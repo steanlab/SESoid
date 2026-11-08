@@ -10,7 +10,8 @@
 #define FL_SIZE        0x80000u
 #define FL_SECTOR      4096u
 #define FL_PAGE        256u
-#define FL_TEST_END    0x10000u     // default write range 0x00000..0x0FFFF (blank test area); the upload opens one slot at a time
+#define FL_TEST_END    0xF000u      // default write range 0x00000..0x0EFFF (blank test area); the upload opens one slot at a time
+#define FL_CFG_SECTOR  0xF000u      // last sector of the test area: settings log of ble_slide.c (16 entries of 256 bytes)
 #define FL_SLOT_SIZE   0x10000u     // slots 1..7 at n * 64 KiB
 
 // result codes (also sent to the phone)

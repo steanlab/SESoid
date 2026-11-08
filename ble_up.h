@@ -8,8 +8,9 @@
 //   12 page(2)              PAGE   the phone has sent all chunks of this page: the tag checks them and commits the page
 //   13                      END    all pages sent: the tag answers with the CRC32 of the whole image
 //   14                      ABORT
+//   30..3F                  slideshow / settings / system commands: see ble_ctl.h (a separate module)
 //   20                      FLASH INFO  (JEDEC id and status registers)
-//   21 sector               FLASH ERASE TEST   sector 0..15 of the test area (4 KiB each), measured BUSY time, blank check
+//   21 sector               FLASH ERASE TEST   sector 0..14 of the test area (4 KiB each; sector 15 holds the settings), measured BUSY time, blank check
 //   22 sector               FLASH PROGRAM TEST one test page (pattern) at the start of that sector, verified
 //   23 sector(2)            FLASH SCAN   (read only, any sector 0..127) number of bytes that are not FF
 //   24 slot                 SLOT VERIFY  reads the slot back from the flash and compares its CRC32 with the record written at the end of the upload
@@ -30,6 +31,9 @@
 void up_reset(void);                              // new connection / disconnect
 bool up_write(const uint8_t *v, uint8_t len);     // a write to the RX characteristic; true if the opcode belongs to this module
 void up_poll(void);                               // main loop
+
+// True when no upload, slot verify or flash test is running or waiting (the flash may be used by someone else).
+bool up_idle(void);
 
 // CRC-32 (IEEE, as zlib / the JavaScript side)
 uint32_t up_crc32(uint32_t crc, const uint8_t *p, uint32_t n);

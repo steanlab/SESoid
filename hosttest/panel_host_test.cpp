@@ -30,6 +30,24 @@ static bool g_connected;
 static uint32_t g_free_us;
 bool ll_connected(void) { return g_connected; }
 uint32_t ll_free_us(void) { return g_connected ? g_free_us : 1000000u; }
+// flash model for the slot source
+static uint8_t flash_mem[0x80000];
+static int flash_deny_pct;         // percent of reads that fail ("flash busy")
+static bool flash_dead;
+bool fl_read_page(uint32_t a, uint8_t *b, uint32_t n)
+{
+  if (flash_dead || (int)(rand() % 100) < flash_deny_pct) return false;
+  memcpy(b, flash_mem + a, n);
+  return true;
+}
+uint32_t up_crc32(uint32_t crc, const uint8_t *p, uint32_t n)
+{
+  static const uint32_t t[16] = { 0x00000000, 0x1DB71064, 0x3B6E20C8, 0x26D930AC, 0x76DC4190, 0x6B6B51F4, 0x4DB26158, 0x5005713C,
+                                  0xEDB88320, 0xF00F9344, 0xD6D6A3E8, 0xCB61B38C, 0x9B64C2B0, 0x86D3D2D4, 0xA00AE278, 0xBDBDF21C };
+  crc = ~crc;
+  while (n--) { crc ^= *p++; crc = (crc >> 4) ^ t[crc & 15u]; crc = (crc >> 4) ^ t[crc & 15u]; }
+  return ~crc;
+}
 #include "../ble_splash.c"
 #include "../ble_panel.c"
 
@@ -149,7 +167,9 @@ static void init_regs(void)
 }
 
 // ---- run
-static int run_once(const char *name, bool connected, uint32_t free_pattern)
+enum { K_SPLASH, K_SLOT, K_SLOT_BADCRC, K_FILL_WHITE, K_SLOT_DEAD };
+static uint32_t frame_crc;
+static int run_once(const char *name, bool connected, uint32_t free_pattern, int kind)
 {
   memset(modeL, 0, sizeof modeL); memset(modeH, 0, sizeof modeH); memset(dout, 0, sizeof dout);
   cycles = 0; extra_us = 5000000; busy_forever = true; busy_until_us = 0; prev_rst = prev_sclk = 0; nbits = 0; have_cmd = 0; violations = 0; pending_busy_us = 0;
@@ -158,7 +178,15 @@ static int run_once(const char *name, bool connected, uint32_t free_pattern)
   char fn[64]; snprintf(fn, sizeof fn, "panel_cmds_%s.log", name);
   logf = fopen(fn, "w");
   memset((void *)&g_diag, 0, sizeof g_diag);
-  panel_start();
+  flash_dead = (kind == K_SLOT_DEAD);
+  bool started = false;
+  switch (kind) {
+    case K_SPLASH: started = panel_show_splash(); break;
+    case K_SLOT: case K_SLOT_DEAD: started = panel_show_slot(3, frame_crc); break;
+    case K_SLOT_BADCRC: started = panel_show_slot(3, frame_crc ^ 1u); break;
+    case K_FILL_WHITE: started = panel_show_fill(1); break;
+  }
+  if (!started) { printf("[%s] panel_show failed to start\n", name); return 1; }
   uint64_t t0 = now_us(), maxblock = 0; uint64_t polls = 0, gated_skips = 0;
   while (!panel_done() && now_us() - t0 < 120000000ull) {
     extra_us += 20;                             // the rest of the main loop
@@ -180,18 +208,49 @@ static int run_once(const char *name, bool connected, uint32_t free_pattern)
   printf("      pins at end: onoff=%d rst=%d cs=%d dc=%d sclk=%d sda=%d | OTP in firmware copy ok: ", pin(2, 6), pin(2, 4), pin(2, 2), pin(2, 3), pin(2, 1), pin(2, 0));
   int ok = 1; for (int i = 0; i < 112; i++) if (otp[i] != otp_model(i)) ok = 0;
   printf("%s\n", ok ? "yes" : "NO");
-  return violations + (panel_done() ? 0 : 1) + (g_diag.pn_err ? 1 : 0) + (nimg != 46080);
+  int bad = violations + (panel_done() ? 0 : 1);
+  if (kind == K_SLOT_DEAD) {                    // flash never answers: the update must end with error 11 and never switch the DC/DC on
+    FILE *lf = fopen(fn, "r"); char ln[256]; int dcdc = 0;
+    while (lf && fgets(ln, sizeof ln, lf)) if (strncmp(ln, "04", 2) == 0) dcdc = 1;
+    if (lf) fclose(lf);
+    printf("      flash dead: error %u (expect 11), DC/DC command seen %d (expect 0), status %d\n", g_diag.pn_err, dcdc, (int)panel_status());
+    return bad + (g_diag.pn_err != 11) + dcdc + (panel_status() != PST_DONE_ERR) + (pin(2, 6) != 1);
+  }
+  bad += (g_diag.pn_err ? 1 : 0) + (nimg != 46080);
+  if (kind == K_SLOT || kind == K_SLOT_BADCRC) {
+    int diff = memcmp(img, flash_mem + 3 * 0x10000, 46080);
+    printf("      slot frame equals flash content: %s | crc mismatch counter %u (expect %d)\n", diff ? "NO" : "yes", g_diag.pn_crc_bad, kind == K_SLOT_BADCRC);
+    bad += (diff != 0) + (g_diag.pn_crc_bad != (kind == K_SLOT_BADCRC ? 1u : 0u));
+  }
+  if (kind == K_FILL_WHITE) {
+    int nonwhite = 0; for (int i = 0; i < 46080; i++) if (img[i] != 0x55) nonwhite++;
+    printf("      fill white: bytes that are not 0x55: %d (expect 0)\n", nonwhite);
+    bad += nonwhite;
+  }
+  return bad;
 }
 
 int main(void)
 {
   init_regs();
   img = (uint8_t *)malloc(46080 + 128);
+  srand(7);
+  memset(flash_mem, 0xFF, sizeof flash_mem);
+  for (int i = 0; i < 46080; i++) flash_mem[3 * 0x10000 + i] = (uint8_t)(rand() >> 7);
+  frame_crc = up_crc32(0, flash_mem + 3 * 0x10000, 46080);
   int bad = 0;
-  bad += run_once("adv", false, 0);
+  bad += run_once("splash_adv", false, 0, K_SPLASH);
   FILE *f = fopen("panel_image_adv.bin", "wb"); fwrite(img, 1, 46080, f); fclose(f);
-  bad += run_once("conn", true, 4);              // connected, free time is large 40 % of the calls
+  bad += run_once("splash_conn", true, 4, K_SPLASH);
   f = fopen("panel_image_conn.bin", "wb"); fwrite(img, 1, 46080, f); fclose(f);
+  flash_deny_pct = 0;
+  bad += run_once("slot_adv", false, 0, K_SLOT);
+  flash_deny_pct = 40;
+  bad += run_once("slot_conn_flaky_flash", true, 4, K_SLOT);
+  flash_deny_pct = 0;
+  bad += run_once("slot_badcrc", false, 0, K_SLOT_BADCRC);
+  bad += run_once("fill_white", false, 0, K_FILL_WHITE);
+  bad += run_once("slot_flash_dead", false, 0, K_SLOT_DEAD);
   printf("%s\n", bad ? "FAILED" : "ALL OK");
   return bad != 0;
 }

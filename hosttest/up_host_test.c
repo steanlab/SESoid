@@ -8,6 +8,9 @@
 #include "ble_up.h"
 #include "ble_diag.h"
 #include "ble_flash.h"
+#include "ble_slide.h"
+#include "ble_panel.h"
+bool slide_flash_busy(void) { return false; } bool panel_flash_busy(void) { return false; }   // stage 4 modules: not part of this test
 volatile ble_diag_t g_diag;
 volatile fl_result_t fl_res; volatile bool fl_done;
 static uint8_t mem[0x80000]; static uint32_t lo, hi; static int deny_pct; static unsigned rnd(void);

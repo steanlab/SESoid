@@ -7,10 +7,11 @@
 #include "ble_splash.h"
 #include "ble_diag.h"
 #include "ble_ll.h"
+#include "ble_flash.h"
+#include "ble_up.h"
 #include "rail.h"
 #include "em_device.h"
 
-#define PANEL_TEMP_C   25u        // handed to the panel (command 0xE6)
 #define HALF_US        2u         // SPI clock half period; the panel accepted 2 us .. 200 us (README), 2 us is the fastest verified
 #define STEP_FREE_US   5000u      // while connected a step that touches the SPI needs this much radio-free time (longest step: OTP read ~4 ms)
 #define IMG_LINES_ADV  2          // lines per call while advertising (about 2 ms each)
@@ -29,7 +30,7 @@
 // ---- error codes (g_diag.pn_err)
 enum {
   E_NONE = 0, E_RESET = 1, E_CHIP = 2, E_OTP_ADDR = 3, E_OTP_END = 4, E_OTP_MARK = 5, E_INIT_RESET = 6, E_A5 = 7,
-  E_DCDC_ON = 8, E_REFRESH = 9, E_DCDC_OFF = 10
+  E_DCDC_ON = 8, E_REFRESH = 9, E_DCDC_OFF = 10, E_FLASH = 11
 };
 
 typedef enum {
@@ -58,6 +59,18 @@ static bool dcdc_on;
 static int img_line;
 static uint8_t otp[112];
 static uint32_t t_start, t_refresh;
+
+// what is drawn
+static panel_src_t src = PSRC_NONE;
+static panel_status_t status = PST_IDLE;
+static uint8_t slot_no, fill_code, shown;
+static uint32_t slot_crc, run_crc, n_done, last_ms;
+static int8_t temp_c = 25;
+static uint8_t pg[256];             // slot streaming: one flash page = 4 panel lines
+static int pg_idx;
+static uint32_t t_flash_wait;       // first failed flash read of the current stall (0 = none)
+static bool img_open;
+static bool inited;
 
 static uint32_t half_cycles;
 static bool use_dwt;
@@ -186,6 +199,29 @@ static void start_reset(pstate_t ret, uint8_t e)
   st = S_RST1;
 }
 
+// one panel line (64 bytes) of the current picture; false = not available right now (flash busy)
+static bool get_line(int l, uint8_t *out)
+{
+  switch (src) {
+    case PSRC_SLOT: {
+      int pi = l >> 2;
+      if (pg_idx != pi) {
+        if (!fl_read_page((uint32_t)slot_no * FL_SLOT_SIZE + (uint32_t)pi * 256u, pg, 256u)) return false;
+        pg_idx = pi;
+      }
+      memcpy(out, pg + (l & 3) * PANEL_LINE_BYTES, PANEL_LINE_BYTES);
+      run_crc = up_crc32(run_crc, out, PANEL_LINE_BYTES);
+      return true;
+    }
+    case PSRC_FILL:
+      memset(out, (int)(fill_code & 3u) * 0x55, PANEL_LINE_BYTES);
+      return true;
+    default:
+      splash_gen_line(l, out);
+      return true;
+  }
+}
+
 // ---- one step of the sequence (the state says what to do now)
 static void run(void)
 {
@@ -252,7 +288,7 @@ static void run(void)
       break;
 
     case S_INIT_A:
-      cmd1(0xE6, PANEL_TEMP_C);
+      cmd1(0xE6, (uint8_t)temp_c);
       cmd1(0xE0, 0x02);
       cmd(0xA5, 0, 0);
       wait_busy(2000, S_INIT_B, E_A5, false);
@@ -284,21 +320,32 @@ static void run(void)
       break;
 
     case S_IMG: {
-      if (img_line == 0) {                      // CS stays low for the whole image: nothing else touches the panel meanwhile
+      if (!img_open) {                          // CS stays low for the whole image: nothing else touches the panel meanwhile
         pc_clr(CS_PIN); pc_clr(DC_PIN);
         wbyte(0x10);
         pc_set(DC_PIN);
+        img_open = true;
+        run_crc = 0;
+        pg_idx = -1;
       }
       int n = ll_connected() ? 1 : IMG_LINES_ADV;
       uint8_t line[PANEL_LINE_BYTES];
       while (n-- > 0 && img_line < PANEL_LINES) {
-        splash_gen_line(img_line, line);
+        if (!get_line(img_line, line)) {        // the flash is busy with something else: try again in the next call
+          uint32_t now = RAIL_GetTime();
+          if (!t_flash_wait) t_flash_wait = now | 1u;
+          else if ((uint32_t)(now - t_flash_wait) > 5000000u) { img_open = false; fail(E_FLASH); }
+          break;
+        }
+        t_flash_wait = 0;
         for (int i = 0; i < PANEL_LINE_BYTES; i++) wbyte(line[i]);
         img_line++;
       }
       g_diag.pn_line = (uint32_t)img_line;
       if (img_line >= PANEL_LINES) {
         pc_set(CS_PIN); pc_set(DC_PIN);
+        img_open = false;
+        if (src == PSRC_SLOT && run_crc != slot_crc) g_diag.pn_crc_bad++;     // shown anyway; the number says the flash content was not what the record promised
         st = S_ON;
       }
       break;
@@ -363,21 +410,57 @@ static void run(void)
   }
 }
 
-void panel_start(void)
+static bool begin(panel_src_t source)
 {
-#if PANEL_SPLASH_ENABLE
-  CMU->CLKEN0 |= CMU_CLKEN0_GPIO;
-  dwt_init();
+  if (st != S_IDLE && st != S_DONE) return false;
+  if (!inited) {
+    CMU->CLKEN0 |= CMU_CLKEN0_GPIO;
+    dwt_init();
+    inited = true;
+  }
+  src = source;
   err = 0;
   dcdc_on = false;
   wk = W_NONE;
   t_refresh = 0;
+  img_open = false;
+  t_flash_wait = 0;
   g_diag.pn_err = 0;
   g_diag.pn_line = 0;
   g_diag.pn_refresh_ms = 0;
+  g_diag.pn_src = (uint32_t)source;
+  status = PST_RUNNING;
   t_start = RAIL_GetTime();
   st = S_PWR_A;
   g_diag.pn_state = (uint32_t)st;
+  return true;
+}
+
+bool panel_show_splash(void) { shown = 0; return begin(PSRC_SPLASH); }
+
+bool panel_show_slot(uint8_t slot, uint32_t crc)
+{
+  if (slot < 1 || slot > 7 || st == S_PWR_A || (st != S_IDLE && st != S_DONE)) return false;
+  slot_no = slot; slot_crc = crc;
+  if (!begin(PSRC_SLOT)) return false;
+  shown = slot;
+  return true;
+}
+
+bool panel_show_fill(uint8_t code)
+{
+  fill_code = code & 3u;
+  if (!begin(PSRC_FILL)) return false;
+  shown = fill_code;
+  return true;
+}
+
+void panel_set_temp(int8_t celsius) { temp_c = celsius; }
+
+void panel_start(void)
+{
+#if PANEL_SPLASH_ENABLE
+  (void)panel_show_splash();
 #endif
 }
 
@@ -415,9 +498,20 @@ void panel_poll(void)
   g_diag.pn_state = (uint32_t)st;
   g_diag.pn_err = err;
   if (st == S_DONE) {
-    g_diag.pn_t_ms = (RAIL_GetTime() - t_start) / 1000u;
+    last_ms = (RAIL_GetTime() - t_start) / 1000u;
+    g_diag.pn_t_ms = last_ms;
+    status = err ? PST_DONE_ERR : PST_DONE_OK;
+    n_done++;
+    g_diag.pn_count = n_done;
   }
 }
 
 bool panel_busy(void) { return st != S_IDLE && st != S_DONE; }
 bool panel_done(void) { return st == S_DONE; }
+panel_status_t panel_status(void) { return status; }
+uint8_t panel_error(void) { return err; }
+panel_src_t panel_source(void) { return src; }
+uint8_t panel_shown(void) { return shown; }
+uint32_t panel_count(void) { return n_done; }
+uint32_t panel_last_ms(void) { return last_ms; }
+bool panel_flash_busy(void) { return src == PSRC_SLOT && st >= S_PWR_A && st <= S_IMG; }

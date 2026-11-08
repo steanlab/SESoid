@@ -4,6 +4,8 @@
 #include "ble_att.h"
 #include "ble_flash.h"
 #include "ble_diag.h"
+#include "ble_slide.h"
+#include "ble_panel.h"
 
 #define PAGE   256u
 #define CHUNK  16u
@@ -70,9 +72,17 @@ void up_reset(void)
   flash_pending = false;
   flash_q_op = 0;
   begin_ack_due = end_wanted = vfy_active = false;
-  fl_init();
+  if (!slide_flash_busy()) fl_init();              // a running settings write must not lose its flash state
   sync_diag();
 }
+
+bool up_idle(void)
+{
+  return !up_busy() && !flash_q_op && !flash_pending && !vfy_active;
+}
+
+// the flash is in use by the slideshow code (settings write) or by the panel update streaming a slide out of it
+static bool flash_taken(void) { return slide_flash_busy() || panel_flash_busy(); }
 
 static uint32_t rd32(const uint8_t *p) { return p[0] | (p[1] << 8) | (p[2] << 16) | ((uint32_t)p[3] << 24); }
 static uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
@@ -203,7 +213,7 @@ bool up_write(const uint8_t *v, uint8_t len)
   switch (v[0]) {
     case 0x10:   // BEGIN
       r[0] = 0x90; r[2] = len > 1 ? v[1] : 0;
-      if (flash_q_op || flash_pending || fl_busy() || vfy_active) { r[1] = 1; att_notify(r, 3); return true; }
+      if (flash_q_op || flash_pending || fl_busy() || vfy_active || flash_taken()) { r[1] = 1; att_notify(r, 3); return true; }
       if ((len != 6 && len != 7) || v[1] > 1 || rd32(v + 2) == 0 || rd32(v + 2) > 0x80000u ||
           (v[1] == 1 && (len != 7 || v[6] < 1 || v[6] > 7 || rd32(v + 2) > 0xF000u))) { r[1] = 1; att_notify(r, 3); return true; }
       memset(&u, 0, sizeof(u));
@@ -253,18 +263,18 @@ bool up_write(const uint8_t *v, uint8_t len)
       sync_diag();
       return true;
     case 0x24:   // SLOT VERIFY: read the slot back from the flash and compare its CRC with the record
-      if (up_busy() || flash_q_op || flash_pending || fl_busy() || vfy_active || len != 2 || v[1] < 1 || v[1] > 7) {
+      if (up_busy() || flash_q_op || flash_pending || fl_busy() || vfy_active || flash_taken() || len != 2 || v[1] < 1 || v[1] > 7) {
         send_slot_answer(len > 1 ? v[1] : 0, 9, 0, 0);
         return true;
       }
       vfy_active = true; vfy_slot = v[1]; vfy_off = 0xFFFFFFFFu; vfy_crc = 0;
       return true;
     case 0x20: case 0x21: case 0x22: case 0x23:
-      if (flash_q_op || flash_pending || fl_busy() || up_busy() || vfy_active) { uint8_t e[3] = { 0xA3, FLR_PARAM, 0 }; att_notify(e, 3); return true; }   // one operation at a time
+      if (flash_q_op || flash_pending || fl_busy() || up_busy() || vfy_active || flash_taken()) { uint8_t e[3] = { 0xA3, FLR_PARAM, 0 }; att_notify(e, 3); return true; }   // one operation at a time
       fl_set_range(0, FL_TEST_END);
       flash_q_op = v[0];
       flash_q_arg = (v[0] == 0x23 && len >= 3) ? rd16(v + 1) : (len >= 2 ? v[1] : 0u);
-      if ((v[0] == 0x23 && flash_q_arg > 127u) || (v[0] != 0x23 && v[0] != 0x20 && flash_q_arg > 15u)) {
+      if ((v[0] == 0x23 && flash_q_arg > 127u) || (v[0] != 0x23 && v[0] != 0x20 && flash_q_arg > 14u)) {
         flash_q_op = 0;
         uint8_t e[3] = { 0xA3, FLR_PARAM, 0 };
         att_notify(e, 3);

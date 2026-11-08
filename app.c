@@ -12,6 +12,9 @@
 #include "ble_ll.h"
 #include "ble_att.h"
 #include "ble_panel.h"
+#include "ble_slide.h"
+#include "ble_ctl.h"
+#include "ble_sys.h"
 
 volatile ble_diag_t g_diag;
 
@@ -154,6 +157,7 @@ static void wait_us(uint32_t us)
 void app_init(void)
 {
   memset((void *)&g_diag, 0, sizeof(g_diag));
+  sys_init();              // the reset cause has to be read before anything else
   g_diag.magic = DIAG_MAGIC;
   g_diag.struct_size = sizeof(g_diag);
   g_diag.end = DIAG_END;
@@ -171,7 +175,9 @@ void app_init(void)
   g_diag.rail_version = ((uint32_t)ver.major << 16) | ((uint32_t)ver.minor << 8) | ver.rev;
   ll_init(h);
   g_diag.stage = 2;
+  slide_init();            // external flash, settings, slot table, Bluetooth TX power
   panel_start();           // boot splash on the e-paper panel (non-blocking, about 30 s, advertising runs meanwhile)
+  sys_watchdog_start();    // from here on the main loop has to run: it feeds the watchdog
 }
 
 void app_process_action(void)
@@ -184,6 +190,9 @@ void app_process_action(void)
   static uint8_t was_connected;
 
   g_diag.heartbeat++;
+  sys_feed();
+  slide_poll();
+  ctl_poll();
 
   if (ll_connected()) {
     was_connected = 1;

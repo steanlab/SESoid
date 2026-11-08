@@ -26,7 +26,9 @@ FIELDS = [
     'sync1', 'sched_start', 'sched_end', 'radio_state', 'evlog_pos', 'poll_calls', 'rxpend_late', 'catchup',
     'up_state', 'up_mode', 'up_total', 'up_pages', 'up_bytes', 'up_chunks', 'up_dup', 'up_ahead', 'up_incomplete',
     'up_ooo', 'up_crc', 'fl_jedec', 'fl_sr', 'fl_op', 'fl_result', 'fl_busy_us', 'fl_blocked', 'fl_pages_ok',
-    'fl_pages_bad', 'pn_state', 'pn_err', 'pn_line', 'pn_chip', 'pn_t_ms', 'pn_refresh_ms'
+    'fl_pages_bad', 'pn_state', 'pn_err', 'pn_line', 'pn_chip', 'pn_t_ms', 'pn_refresh_ms',
+    'pn_src', 'pn_count', 'pn_crc_bad', 'sl_valid', 'sl_cfgmask', 'sl_cur', 'sl_due_s', 'sl_log_next', 'sl_saves', 'sl_tx_ddbm', 'sl_tx_status',
+    'sys_reset', 'sys_wdog'
 ]
 STAGE = {1: 'main reached', 2: 'RAIL ready', 3: 'advertising', 4: 'CONNECTED'}
 EV_BITS = {3: 'RX_PKT', 6: 'SYNC1', 8: 'FRAME_ERR', 9: 'RX_FIFO_FULL', 10: 'RX_OVERFLOW', 12: 'RX_TIMEOUT', 13: 'SCHED_RX_START',
@@ -150,6 +152,13 @@ def show(d, prev_hb=[None]):
               6: 'BUSY stays low after the 2nd reset', 7: 'init (A5): BUSY timeout', 8: 'DC/DC on: BUSY timeout', 9: 'refresh: BUSY timeout', 10: 'DC/DC off: BUSY timeout'}
         print('panel: %s (state %d) | error: %s | image line %d of 720 | chip ID 0x%04x | refresh took %d ms | total %d ms' % (
             PN.get(d['pn_state'], d['pn_state']), d['pn_state'], PE.get(d['pn_err'], d['pn_err']), d['pn_line'], d['pn_chip'], d['pn_refresh_ms'], d['pn_t_ms']))
+        PS = {0: 'none', 1: 'splash', 2: 'slot', 3: 'fill'}
+        RC = {0: 'power-on', 1: 'RESET pin', 2: 'EM4', 3: 'watchdog', 4: 'brown-out', 5: 'lockup', 6: 'software'}
+        rc = d['sys_reset']; why = ', '.join(v for b, v in RC.items() if rc >> b & 1) or ('0x%x' % rc)
+        print('slides: source %s | updates %d | CRC mismatches %d | valid slots mask 0x%02x | playlist mask 0x%02x | current slot %d | next in %d s | '
+              'settings log entry %d (%d saves) | TX power %.1f dBm (status %d) | last reset: %s | watchdog %s' % (
+              PS.get(d['pn_src'], d['pn_src']), d['pn_count'], d['pn_crc_bad'], d['sl_valid'], d['sl_cfgmask'], d['sl_cur'], d['sl_due_s'],
+              d['sl_log_next'], d['sl_saves'], d['sl_tx_ddbm'] / 10.0, d['sl_tx_status'], why, 'on' if d['sys_wdog'] else 'off'))
         print('last RAIL events (oldest first; time in us relative to the first one, "+delta" to the previous):')
         n = min(d['evlog_pos'], EVLOG_N)
         first = d['evlog_pos'] - n

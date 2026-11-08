@@ -15,6 +15,9 @@ source:
 - {path: ble_flash.c}
 - {path: ble_panel.c}
 - {path: ble_splash.c}
+- {path: ble_slide.c}
+- {path: ble_ctl.c}
+- {path: ble_sys.c}
 include:
 - path: ''
   file_list:
@@ -26,6 +29,9 @@ include:
   - {path: ble_panel.h}
   - {path: ble_splash.h}
   - {path: ble_splash_data.h}
+  - {path: ble_slide.h}
+  - {path: ble_ctl.h}
+  - {path: ble_sys.h}
 sdk: {id: gecko_sdk, version: 4.4.1}
 toolchain_settings:
 - {value: debug, option: optimize}
