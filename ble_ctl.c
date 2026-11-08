@@ -9,6 +9,7 @@
 #include "ble_ll.h"
 #include "ble_diag.h"
 #include "ble_hwtest.h"
+#include "ble_nfc.h"
 #include "rail.h"
 
 #define PACE_US 12000u            // minimum time between two notifications of a burst
@@ -22,7 +23,9 @@ static bool reboot_pending;
 static uint8_t res_op, res_status;
 static bool want_result;
 static bool want_diag, diag_sent;
-static bool want_clock, clock_sent, want_pins, want_scan;
+static bool want_clock, clock_sent, want_pins, want_scan, want_nfc, nfc_sent;
+static uint8_t nfc_left = 7;      // next NFC chip report packet (0..6), 7 = nothing pending
+static uint32_t last_nfc_tx_us;
 static uint32_t last_pins_tx_us, last_scan_tx_us;
 
 static void wr32(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24); }
@@ -30,7 +33,9 @@ static void wr32(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v
 void ctl_reset(void)
 {
   want_status = want_cfg = want_slots_req = want_result = want_diag = false;
-  want_clock = want_pins = want_scan = false;
+  want_clock = want_pins = want_scan = want_nfc = false;
+  nfc_left = 7;
+  nfc_reset();                                           // the NFC chip is switched off with the connection
   hwtest_reset();                                        // the pin monitor stops with the connection
   slots_left = 8;
   hw_left = 4;
@@ -81,12 +86,23 @@ bool ctl_write(const uint8_t *v, uint8_t len)
     case 0x3C: clock_sent = false; queue_result(0x3C, hwtest_clock_start() ? SLR_OK : SLR_PANEL_BUSY); break;
     case 0x3D: want_clock = true; break;
     case 0x3E:
+      nfc_stop();
       if ((len == 2 || len == 6) && hwtest_pins_start(v[1], len == 6 ? (uint32_t)(v[2] | (v[3] << 8) | ((uint32_t)v[4] << 16) | ((uint32_t)v[5] << 24)) : 0xFFFFFFFFu)) want_pins = true;
       else queue_result(0x3E, SLR_BAD_SLOT);
       break;
     case 0x3F:
-      if (len == 7 && v[1] == 2) queue_result(0x3F, hwtest_scan_start(v[2], (uint32_t)(v[3] | (v[4] << 8) | ((uint32_t)v[5] << 16) | ((uint32_t)v[6] << 24))) ? SLR_OK : SLR_BAD_SLOT);
-      else if (len == 11 && v[1] == 5) queue_result(0x3F, hwtest_scan_start_pwr(v[2], (uint32_t)(v[3] | (v[4] << 8) | ((uint32_t)v[5] << 16) | ((uint32_t)v[6] << 24)), (uint32_t)(v[7] | (v[8] << 8) | ((uint32_t)v[9] << 16) | ((uint32_t)v[10] << 24))) ? SLR_OK : SLR_BAD_SLOT);
+      if (len == 2 && v[1] >= 0x10 && v[1] <= 0x13) {                                   // NFC chip (ble_nfc.h)
+        if (v[1] == 0x12) { nfc_stop(); want_nfc = true; }
+        else if (v[1] == 0x13) { want_nfc = true; if (nfc_state()->mode == 1 && nfc_state()->state >= 2) nfc_left = 0; }
+        else {
+          hwtest_scan_abort(); hwtest_pins_start(PM_MODE_OFF, 0xFFFFFFFFu);              // the scanner and the monitor use the same pins
+          nfc_sent = (v[1] == 0x11);                                                     // the snapshot is sent when it ends, the live view at once
+          queue_result(0x3F, (v[1] == 0x10 ? nfc_snapshot_start() : nfc_live_start()) ? SLR_OK : SLR_BAD_SLOT);
+          want_nfc = true;
+        }
+      }
+      else if (len == 7 && v[1] == 2) { nfc_stop(); queue_result(0x3F, hwtest_scan_start(v[2], (uint32_t)(v[3] | (v[4] << 8) | ((uint32_t)v[5] << 16) | ((uint32_t)v[6] << 24))) ? SLR_OK : SLR_BAD_SLOT); }
+      else if (len == 11 && v[1] == 5) { nfc_stop(); queue_result(0x3F, hwtest_scan_start_pwr(v[2], (uint32_t)(v[3] | (v[4] << 8) | ((uint32_t)v[5] << 16) | ((uint32_t)v[6] << 24)), (uint32_t)(v[7] | (v[8] << 8) | ((uint32_t)v[9] << 16) | ((uint32_t)v[10] << 24))) ? SLR_OK : SLR_BAD_SLOT); }
       else if (len == 2 && v[1] == 3) want_scan = true;
       else if (len == 2 && v[1] == 4) { hwtest_scan_abort(); want_scan = true; }
       else { if (len == 2 && v[1] == 1) hwtest_pins_clear(); want_pins = true; }
@@ -165,6 +181,27 @@ static void send_scan(void)
   att_notify(r, 20);
 }
 
+// NFC chip report: 0xBC idx data(16) for the blocks (idx 0..5), 0xBC 6 regs_ok r0..r6 for the session registers, 0xBD status
+static void send_nfc_part(uint8_t idx)
+{
+  const nfc_t *c = nfc_state();
+  uint8_t r[18];
+  r[0] = 0xBC; r[1] = idx;
+  if (idx < NFC_BLOCKS) { memcpy(r + 2, c->blocks[idx], 16); att_notify(r, 18); }
+  else { r[2] = c->regs_ok; memcpy(r + 3, c->regs, NFC_REGS); att_notify(r, 3 + NFC_REGS); }
+}
+
+static void send_nfc_status(void)
+{
+  const nfc_t *c = nfc_state();
+  uint8_t r[14];
+  r[0] = 0xBD; r[1] = c->state; r[2] = c->mode; r[3] = c->fail;
+  r[4] = (uint8_t)((c->ns_valid ? 1u : 0u) | (c->field_now ? 2u : 0u) | (c->field_ever ? 4u : 0u));
+  r[5] = c->regs[NFC_LIVE_NS_REG]; r[6] = (uint8_t)c->events; r[7] = (uint8_t)(c->events >> 8);
+  r[8] = (uint8_t)c->live_s; r[9] = (uint8_t)(c->live_s >> 8); r[10] = (uint8_t)c->polls; r[11] = (uint8_t)(c->polls >> 8); r[12] = c->regs_ok;
+  att_notify(r, 13);
+}
+
 static void send_cfg(void)
 {
   const slide_cfg_t *c = slide_cfg();
@@ -227,6 +264,7 @@ void ctl_poll(void)
 {
   uint32_t now = RAIL_GetTime();
   hwtest_poll();
+  nfc_poll();
   if (reboot_pending && (int32_t)(now - reboot_at_us) >= 0) sys_reboot();
 
   uint8_t st, er, sr, sh;
@@ -244,6 +282,11 @@ void ctl_poll(void)
   if (want_clock && hwtest_clock()->state != 1) { send_clock(); want_clock = false; last_tx_us = now; return; }
   if (hwtest_scan_changed()) want_scan = true;
   if (hwtest_scan()->state == 1 && (uint32_t)(now - last_scan_tx_us) >= 500000u) want_scan = true;
+  if (nfc_state()->mode == 1 && nfc_state()->state >= 2 && !nfc_sent) { nfc_sent = true; nfc_left = 0; want_nfc = true; }   // the snapshot goes out by itself when it ends
+  if (nfc_changed()) want_nfc = true;
+  if (nfc_state()->state == 1 && nfc_state()->mode == 2 && (uint32_t)(now - last_nfc_tx_us) >= 1000000u) want_nfc = true;
+  if (nfc_left <= NFC_BLOCKS) { send_nfc_part(nfc_left++); last_tx_us = now; return; }
+  if (want_nfc && !(nfc_state()->state == 1 && nfc_state()->mode == 1)) { send_nfc_status(); want_nfc = false; last_nfc_tx_us = now; last_tx_us = now; return; }
   if (want_scan) { send_scan(); want_scan = false; last_scan_tx_us = now; last_tx_us = now; return; }
   if (want_pins) { send_pins(); want_pins = false; last_pins_tx_us = now; last_tx_us = now; return; }
   if (want_diag) { send_diag(); want_diag = false; last_tx_us = now; return; }

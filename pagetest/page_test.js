@@ -68,6 +68,14 @@ const MOCK = `
     else if (op === 0x3D) N(clkPkt(true));
     else if (op === 0x3E && tag.old11 && v.length !== 2) N([0xB3, 0x3E, 2]);
     else if (op === 0x3E) { tag.pmMask = v.length >= 6 ? (v[2] | v[3] << 8 | v[4] << 16 | v[5] << 24) >>> 0 : 0xFFFFFFFF; tag.pmLen = v.length; tag.pm = { mode: v[1] & 3, swd: v[1] & 0x80, level: 0, hi: 0, lo: 0, edges: 0, last: 255, el: 0 }; tag.pmBase(); N(pmPkt()); }
+    else if (op === 0x3F && v[1] >= 0x10 && v[1] <= 0x13) {
+      tag.nfcCmd = v[1];
+      if (v[1] === 0x12) N([0xBD, 2, tag.nfcMode || 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+      else {
+        if (v[1] !== 0x13) { tag.nfcMode = v[1] === 0x11 ? 2 : 1; N([0xB3, 0x3F, tag.nfcOk === false ? 2 : 0]); }
+        if (tag.nfcOk !== false) setTimeout(() => nfcSend(), 80);
+      }
+    }
     else if (op === 0x3F && (v[1] === 2 || v[1] === 5)) { tag.scanArgs = Array.from(v); N([0xB3, 0x3F, tag.scanOk === false ? 2 : 0]); if (tag.scanOk !== false) setTimeout(() => N(scanPkt(2)), 100); }
     else if (op === 0x3F && v[1] === 3) N(scanPkt(2));
     else if (op === 0x3F && v[1] === 4) N(scanPkt(3));
@@ -81,6 +89,19 @@ const MOCK = `
   tag.pmBase = () => { const m = tag.pm, W = (PMASK & tag.pmMask) >>> 0; m.level = m.mode === 2 ? W : 0; m.hi = m.level; m.lo = W & ~m.level; };
   function pmPkt() { const m = tag.pm; return [0xBA, m.mode | m.swd, m.el & 255, m.el >> 8, ...le32(m.level >>> 0), ...le32(m.hi >>> 0), ...le32(m.lo >>> 0), m.edges & 255, m.edges >> 8, m.last, 0]; }
   tag.pmPush = () => N(pmPkt());
+  function nfcSend() {
+    const blk = [
+      [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x11, 0x22, 0x33, 0x44, 0x00, 0xFF, 0xFF, 0xE1, 0x10, 0x6D, 0x0F],
+      [0x03, 0x1D, 0xD1, 0x01, 0x19, 0x55, 0x04, ...Array.from('nfc.example.com/EE285D4B').map(c => c.charCodeAt(0)).slice(0, 9)],
+      [...Array.from('nfc.example.com/EE285D4B').map(c => c.charCodeAt(0)).slice(9), 0xFE, 0, 0, 0, 0, 0, 0, 0, 0],
+      Array(16).fill(0), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16], Array(16).fill(0x5A)];
+    if (tag.nfcMode === 1) {
+      for (let i = 0; i < 6; i++) N([0xBC, i, ...blk[i]]);
+      N([0xBC, 6, 0x7F, 0x01, 0, 0, 0, 0, 0x08, tag.nfcNs === undefined ? 0x20 : tag.nfcNs]);
+    }
+    const ns = tag.nfcNs === undefined ? 0x20 : tag.nfcNs;
+    N([0xBD, tag.nfcDead ? 3 : 2, tag.nfcMode, tag.nfcDead ? 0x7F : 0, tag.nfcDead ? 0 : (tag.nfcMode === 2 ? 1 | ((ns & 1) << 1) | ((tag.nfcEver ? 1 : 0) << 2) : 0), ns, tag.nfcEvents || 0, 0, 7, 0, 35, 0, tag.nfcDead ? 0 : 0x7F]);
+  }
   function scanPkt(st) {
     const hit = tag.scanHit !== false, opt = tag.scanArgs ? tag.scanArgs[2] : 0, pw = tag.scanArgs && tag.scanArgs[1] === 5 && hit ? 11 : 255;
     return [0xBB, st | opt << 4, 6, 6, 4, hit ? 1 : 0, hit ? 24 : 0, hit ? 25 : 0, hit ? 0x55 : 0, pw, 255, 0, ...le32(((1 << 24) | (1 << 25)) >>> 0), ...le32(tag.scanHeld ? (1 << 24) >>> 0 : 0)];
@@ -289,6 +310,29 @@ const MOCK = `
   await pg.click('#bScanPwr'); await pg.waitForTimeout(500);
   ok((await pg.textContent('#scOut')).includes('ни при подаче'), 'power scan: nothing found explained');
   await pg.evaluate(() => { window.__tag.scanHit = true; });
+
+  // --- NFC chip card
+  await pg.click('#bNfcSnap'); await pg.waitForTimeout(600);
+  let no = await pg.textContent('#nfcOut');
+  ok(no.includes('Чтение чипа: готово') && no.includes('байты блокировки: FF FF') && no.includes('необратимо') && no.includes('только чтение'), 'nfc: snapshot read, lock bytes and CC explained');
+  ok(!no.includes('AA BB') && !no.includes('aa bb') && no.includes('••'), 'nfc: serial data hidden by default');
+  ok(no.includes('Ссылка в чипе: https://nfc.example.com/••••••••') && !no.includes('EE285D4B'), 'nfc: link shown with its tail hidden');
+  ok(no.includes('NC_REG=01') && no.includes('NS_REG=20') && no.includes('бит0 поле телефона = 0'), 'nfc: session registers decoded');
+  await pg.check('#nfcShow'); await pg.waitForTimeout(100);
+  no = await pg.textContent('#nfcOut');
+  ok(no.includes('AA BB CC') && no.includes('nfc.example.com/EE285D4B'), 'nfc: serial data and link tail shown on request');
+  await pg.uncheck('#nfcShow');
+  await pg.evaluate(() => { window.__tag.nfcEvents = 2; window.__tag.nfcNs = 0x21; window.__tag.nfcEver = true; });
+  await pg.click('#bNfcLive'); await pg.waitForTimeout(600);
+  no = await pg.textContent('#nfcOut');
+  ok(no.includes('Поле телефона: ЕСТЬ') && no.includes('касаний (нет→есть): 2') && no.includes('Слежение за полем'), 'nfc: live field state shown');
+  await pg.evaluate(() => { window.__tag.nfcDead = true; });
+  await pg.click('#bNfcSnap'); await pg.waitForTimeout(600);
+  ok((await pg.textContent('#nfcOut')).includes('ЧИП НЕ ОТВЕТИЛ'), 'nfc: dead chip explained');
+  await pg.evaluate(() => { window.__tag.nfcDead = false; window.__tag.nfcOk = false; });
+  await pg.click('#bNfcSnap'); await pg.waitForTimeout(500);
+  ok((await pg.textContent('#nfcOut')).includes('не приняла команду'), 'nfc: old firmware refusal explained');
+  await pg.evaluate(() => { window.__tag.nfcOk = true; });
 
   // --- tools: flash sector select has 0..14
   const secs = await pg.evaluate(() => document.querySelector('#sec').options.length);

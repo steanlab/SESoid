@@ -25,6 +25,10 @@
 //                           pins float, 1 pulled up, 2 pulled down                                        -> B3, then BB (twice a second, and at the end)
 //   3F 05 opt mask(4) pwr(4) I2C SCAN with power pins: each pin of pwr is driven high in turn (push-pull) during a whole scan of mask (2..4 pins);
 //                           stops at the first device and reports the power pin                              -> B3, then BB
+//   3F 10                   NFC CHIP SNAPSHOT (read only): power on, read the blocks and session registers, power off  -> B3, then BC x7 and BD
+//   3F 11                   NFC CHIP LIVE: power on, poll the status register 5 times a second for 2 minutes   -> B3, then BD on every change and every second
+//   3F 12                   NFC CHIP OFF                                                                     -> BD
+//   3F 13                   NFC CHIP REPORT again                                                            -> BC x7 (snapshot only) and BD
 //   3F 03                   I2C SCAN REPORT                                                              -> BB
 //   3F 04                   I2C SCAN ABORT                                                               -> BB
 // Tag -> phone:
@@ -40,6 +44,9 @@
 //                           panel diagnostics report (state 0 never run, 1 running, 2 finished), fields as in panel_diag_t
 //   B9 state flags sel ctune_xi ctune_xo fact_xi fact_xo lfxo_ms(2) cnt_lfxo(3) cnt_lfrco(3) cnt_ulfrco(3) captune
 //                           clock test report, fields as in hwtest_clock_t (ble_hwtest.h); a count is HFXO cycles per CT_DOWN_x / 2 cycles of the clock
+//   BC idx data(16)         NFC chip block idx 0..5 (blocks 00 01 02 38 3A FE, see nfc_block_addr), then BC 6 regs_ok r0..r6 = the session registers
+//   BD state mode fail flags ns events(2) live_s(2) polls(2) regs_ok
+//                           NFC chip status, fields as in nfc_t (ble_nfc.h); flags bit0 NS_REG valid, bit1 field present now, bit2 field seen
 //   BB state|opt<<4 pairs_total pairs_done stuck hits sda scl addr pwr pwr_now 0 0(spare) high(4) held(4)   (pwr, pwr_now: pin index, 0xFF none)
 //                           I2C scan report, fields as in hwtest_scan_t (state 0 never, 1 running, 2 finished, 3 aborted; pin indices as in BA; addr = 7 bit)
 //   BA mode elapsed_s(2) level(4) seen_hi(4) seen_lo(4) edges(2) last_pin 0
