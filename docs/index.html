@@ -4,6 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Gecko Slide · SES V300</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101215" media="(prefers-color-scheme: dark)">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Gecko Slide">
 <style>
   :root { --bg:#f6f7f9; --card:#fff; --fg:#1b1d21; --mut:#69707a; --line:#d9dce1; --acc:#0b57d0; --accfg:#fff; --box:#eef0f3; --ok:#1a7f37; --bad:#c62828; --warn:#a15c00; --shadow:0 1px 2px rgba(0,0,0,.06); }
   @media (prefers-color-scheme: dark) { :root { --bg:#101215; --card:#181b1f; --fg:#e8eaed; --mut:#9aa0a6; --line:#2d3238; --acc:#8ab4f8; --accfg:#0b1a33; --box:#20242a; --ok:#6fcf8a; --bad:#ff8a80; --warn:#f2b45a; --shadow:none; } }
@@ -59,7 +67,7 @@
 <header>
   <h1>Gecko Slide <small>SES V300 · e-ink 5.9″ BWRY · не badge154 · steanlab/SESoid, docs/index.html</small></h1>
   <span class="pill" id="connPill"><span class="dot"></span><span id="connTxt">не подключено</span></span>
-  <button class="p" id="bConn">Подключиться</button><button id="bDisc" disabled>Отключиться</button>
+  <button class="p" id="bConn">Подключиться</button><button id="bDisc" disabled>Отключиться</button><button id="bInstall" hidden title="Установить как приложение: откроется в своём окне и будет работать без интернета">Установить приложение</button><span class="pill" id="pwaPill" hidden title="Страница сохранена в браузере и откроется без интернета"><span class="dot"></span>работает офлайн</span>
 </header>
 <nav id="tabs">
   <button data-t="edit" class="act">Изображение</button><button data-t="slots">Слоты и слайдшоу</button><button data-t="cfg">Настройки</button><button data-t="tag">Метка</button><button data-t="tools">Инструменты</button><button data-t="logt">Журнал</button>
@@ -936,6 +944,19 @@ $('tabs').addEventListener('click', e => {
 buildControls(); buildPresets(); fillSelects(); buildCfgUi(); writeCtls(); renderSlots();
 LIB.open().then(renderSlots);
 window.__gs = { P, convert, buildFrame, frameToIdx, crc32, setSource, get lastIdx() { return lastIdx; }, get lastFrame() { return lastFrame; }, tag, LIB, handle, demoImage };
+/* ---------- PWA: установка и работа без интернета ---------- */
+(() => {
+  let ev = null;
+  window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); ev = e; $('bInstall').hidden = false; });
+  $('bInstall').onclick = async () => { if (!ev) return; ev.prompt(); try { await ev.userChoice; } catch (e) { /* ignore */ } ev = null; $('bInstall').hidden = true; };
+  window.addEventListener('appinstalled', () => { $('bInstall').hidden = true; toast('Приложение установлено'); });
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ignore */ }     // чтобы браузер не вычистил библиотеку слотов
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    const had = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.register('sw.js').then(() => navigator.serviceWorker.ready).then(() => { $('pwaPill').hidden = false; log('офлайн-режим готов (service worker)'); }).catch(e => log('service worker не запустился: ' + e.message));
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) toast('Вышла новая версия страницы: обновите вкладку'); });
+  }
+})();
 if (!navigator.bluetooth) log('Web Bluetooth недоступен в этом браузере: конвертер работает, а загрузка в метку нужна Chrome по https.');
 </script>
 </body>
