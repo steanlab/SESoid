@@ -61,6 +61,10 @@
   details { margin:8px 0; } summary { cursor:pointer; color:var(--mut); }
   .ok { color:var(--ok); } .bad { color:var(--bad); } .warn { color:var(--warn); }
   .sub { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  .pmgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(104px,1fr)); gap:6px; margin:8px 0; }
+  .pmc { border:1px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12.5px; line-height:1.35; background:var(--card); }
+  .pmc b { font-size:13px; } .pmc.own { opacity:.55; } .pmc.hi b::after { content:' ●'; color:var(--ok); } .pmc.lo b::after { content:' ○'; color:var(--mut); }
+  .pmc.chg { border-color:var(--ok); box-shadow:0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent); }
 </style>
 </head>
 <body>
@@ -187,6 +191,21 @@
     <p class="n">Если экран не обновляется (ошибка «ID чипа панели не 0x0D04»). Метка на 3 секунды отключает питание панели, включает, сбрасывает и замеряет уровни BUSY и линии данных, читает ID несколько раз (в том числе на медленной частоте). Около 5 с, связь не прерывается.</p>
     <button id="bPdiag" disabled>Запустить диагностику панели</button><button id="bPdiagGet" disabled>Показать последний отчёт</button>
     <pre id="pdiagOut" class="n" style="white-space:pre-wrap;margin:8px 0 0"></pre>
+  </div>
+  <div class="card">
+    <h2>Тест кварцев (LFXO / HFXO)</h2>
+    <p class="n">Выясняет, есть ли на плате кварц 32,768 кГц (LFXO) и сколько у него частота. Метка включает его на 1–2 с, затем сверяет LFXO, внутренний LFRCO и ULFRCO с кварцем 38,4 МГц (HFXO), на котором работает радио, и всё выключает обратно. Заодно показывает ёмкости настройки HFXO. Связь не прерывается.</p>
+    <button id="bClk" disabled>Запустить тест</button><button id="bClkGet" disabled>Показать последний отчёт</button>
+    <pre id="clkOut" class="n" style="white-space:pre-wrap;margin:8px 0 0"></pre>
+  </div>
+  <div class="card">
+    <h2>Монитор выводов (поиск NFC)</h2>
+    <p class="n">Читает свободные выводы процессора (не заняты flash, панелью и отладкой) и показывает, какие из них меняют уровень. Включите режим, поднесите телефон или NFC-карту к метке и уберите: вывод, который менялся вместе с этим, и есть линия NFC-микросхемы (обычно «детектор поля» FD). Проверьте все три режима: линия с открытым стоком видна только с подтяжкой вверх, а плавающий вход ловит ещё и наводки. Монитор сам выключается через 5 минут и при обрыве связи и возвращает выводы как были.</p>
+    <div class="row"><button id="bPm1" disabled>Плавающие входы</button><button id="bPm2" disabled>Подтяжка вверх</button><button id="bPm3" disabled>Подтяжка вниз</button><button id="bPmStop" disabled>Остановить</button><button id="bPmClr" disabled>Сбросить историю</button></div>
+    <label style="display:block;margin:6px 0"><input type="checkbox" id="pmSwd"> следить и за выводами отладки PA1–PA3 (SWD); после проверки лучше выключить</label>
+    <div id="pmStat" class="n"></div>
+    <div id="pmGrid" class="pmgrid"></div>
+    <pre id="pmNote" class="n" style="white-space:pre-wrap;margin:6px 0 0"></pre>
   </div>
   <div class="card">
     <h2>Внешняя flash</h2>
@@ -769,7 +788,7 @@ function handle(a) {
       const s = a[1]; if (s < 1 || s > 7) break;
       tag.slots[s] = { valid: !!(a[2] & 1), show: !!(a[2] & 2), inList: !!(a[2] & 4), cur: !!(a[2] & 8), total: u32(a, 3), crc: u32(a, 7) };
       renderSlots(); break; }
-    case 0xB3: toast(({ 0x32: 'Показ слота: ', 0x33: 'Следующий слайд: ', 0x38: 'Заливка: ', 0x39: 'Заставка: ', 0x3A: 'Диагностика панели: ' }[a[1]] || 'Команда: ') + (RES_TXT[a[2]] || a[2])); setTimeout(() => { if (!busy) cmd([0x30]); }, 400); break;
+    case 0xB3: toast(({ 0x32: 'Показ слота: ', 0x33: 'Следующий слайд: ', 0x38: 'Заливка: ', 0x39: 'Заставка: ', 0x3A: 'Диагностика панели: ', 0x3C: 'Тест кварцев: ', 0x3E: 'Монитор выводов: ' }[a[1]] || 'Команда: ') + (RES_TXT[a[2]] || a[2])); setTimeout(() => { if (!busy) cmd([0x30]); }, 400); break;
     case 0xB4:
       tag.cfg = { en: !!a[2], mode: a[3], interval: u16(a, 4), mask: a[6], temp: (a[7] << 24) >> 24, tx: (a[8] << 24) >> 24, txAct: ((a[9] | a[10] << 8) << 16) >> 16 };
       fillCfg(); renderSlots(); renderSlideInfo(); break;
@@ -781,6 +800,8 @@ function handle(a) {
       else toast('Экран обновлён');
       if (!busy) cmd([0x30]); break;
     case 0xB8: renderPdiag(a); break;
+    case 0xB9: renderClock(a); break;
+    case 0xBA: renderPins(a); break;
     case 0x81: log('ping-ответ: ' + hex(a.slice(1))); break;
     case 0x82: log('счётчики метки: принято ' + u32(a, 1) + ' байт, записей ' + u16(a, 5)); break;
     case 0x83: log('счётчики сброшены'); break;
@@ -811,11 +832,11 @@ async function connect() {
     await sleep(150); await cmd([0x35]); await sleep(150); await cmd([0x31]); await sleep(150); await cmd([0x30]);
   } catch (e) { log('ошибка подключения: ' + e); toast('Не удалось подключиться: ' + (e.message || e)); }
 }
-function onDisc() { log('соединение закрыто'); setConn(false); }
+function onDisc() { log('соединение закрыто'); setConn(false); if (tag.pm) { tag.pm.mode = 0; renderPins(null); } }
 function setConn(on) {
   $('connPill').classList.toggle('on', on); $('connTxt').textContent = on ? 'подключено: ' + (dev ? dev.name : '') : 'не подключено';
   $('bConn').disabled = on; $('bDisc').disabled = !on;
-  for (const id of ['bSlots', 'bNext', 'bCfg', 'bCfgGet', 'bShowNext', 'bSplash', 'bReboot', 'bHw', 'bPing', 'bStat', 'bReset', 'bRam', 'bPdiag', 'bPdiagGet', 'bFInfo', 'bFErase', 'bFProg', 'bFScan', 'bVer']) $(id).disabled = !on;
+  for (const id of ['bSlots', 'bNext', 'bCfg', 'bCfgGet', 'bShowNext', 'bSplash', 'bReboot', 'bHw', 'bPing', 'bStat', 'bReset', 'bRam', 'bPdiag', 'bPdiagGet', 'bClk', 'bClkGet', 'bPm1', 'bPm2', 'bPm3', 'bPmStop', 'bPmClr', 'bFInfo', 'bFErase', 'bFProg', 'bFScan', 'bVer']) $(id).disabled = !on;
   document.querySelectorAll('.fill').forEach(b => b.disabled = !on);
   updateUpButtons(); renderSlots();
 }
@@ -967,6 +988,95 @@ function renderPdiag(a) {
     ' | через 20 мс после включения BUSY ' + d.busyOn + ' | сброс: BUSY при RST=0 ' + d.bLow + ', через 10/100/500 мс ' + d.b10 + '/' + d.b100 + '/' + d.b500 + ', ' + (d.bMs === 0xFFFF ? 'не поднялся' : d.bMs + ' мс') +
     ' | ID ' + ids.map(h4).join(' ') + ' (третий на медленной частоте) | SDA после чтения, подтяжка вниз/вверх ' + d.sdaPd + '/' + d.sdaPu;
   log('диагностика панели: ' + out.textContent.replace(/\n+/g, ' | '));
+}
+
+/* ---- тест кварцев (ответ 0xB9) ---- */
+$('bClk').onclick = () => { $('clkOut').textContent = 'идёт тест, подождите 1–3 секунды …'; cmd([0x3C], 'тест кварцев'); };
+$('bClkGet').onclick = () => cmd([0x3D], 'отчёт');
+const CT_DOWN = { lfxo: 512, lfrco: 512, ulfrco: 16 };     // как CT_DOWN_* в ble_hwtest.h
+const HFXO_HZ = 38.4e6;
+function renderClock(a) {
+  const out = $('clkOut'), st = a[1], f = a[2], sel = a[3];
+  if (st === 0) { out.textContent = 'Тест ещё не запускался.'; return; }
+  if (st === 1) { out.textContent = 'идёт тест, подождите 1–3 секунды …'; return; }
+  const u24 = i => a[i] | a[i + 1] << 8 | a[i + 2] << 16, hx = v => '0x' + v.toString(16).toUpperCase().padStart(2, '0');
+  const sysN = { 1: 'FSRCO (20 МГц)', 2: 'HFRCODPLL', 3: 'HFXO', 4: 'CLKIN0' }, lfN = { 0: 'не выбран', 1: 'LFRCO', 2: 'LFXO', 3: 'ULFRCO' };
+  const meas = (cnt, down) => cnt ? HFXO_HZ * (down / 2) / cnt : 0;
+  const fl = meas(u24(10), CT_DOWN.lfxo), fr = meas(u24(13), CT_DOWN.lfrco), fu = meas(u24(16), CT_DOWN.ulfrco);
+  const ppm = (v, nom) => ((v / nom - 1) * 1e6);
+  const L = [];
+  L.push('Кварц 38,4 МГц (HFXO): ' + ((f & 1) ? 'работает' : 'НЕ готов') + '. Тактирование ядра: ' + (sysN[sel & 7] || (sel & 7)) + '. Ёмкости настройки сейчас XI/XO: ' + hx(a[4]) + '/' + hx(a[5]) + ', заводские в памяти кристалла: ' + hx(a[6]) + '/' + hx(a[7]) + (a[4] === a[6] && a[5] === a[7] ? ' (совпадают)' : ' (отличаются: прошивка или стек задали свои)') + '.');
+  L.push('Низкочастотный такт для сна сейчас: ' + (lfN[(sel >> 3) & 3] || '?') + ' (группа EM2/3), ' + (lfN[(sel >> 5) & 3] || '?') + ' (RTCC). Это то, что оставила начальная настройка SDK; сама эта прошивка сон пока не использует.');
+  L.push('');
+  if (f & 2) L.push('LFXO уже был включён до теста (кем-то в прошивке), использовал как есть.');
+  if (f & 4) L.push('LFXO: кварц запустился за ' + u16(a, 8) + ' мс' + (f & 16 ? '' : ', но измерить частоту не удалось') + '.');
+  if (f & 8) L.push('LFXO: детектор отказа сработал — генерации нет.');
+  if (f & 0x80) L.push('LFXO: за 2 с не запустился.');
+  if (f & 16) {
+    const d = ppm(fl, 32768), ad = Math.abs(d);
+    L.push('LFXO: ' + fl.toFixed(2) + ' Гц, отклонение от 32 768 Гц ' + (d >= 0 ? '+' : '') + d.toFixed(0) + ' ppm (при условии, что HFXO точен; его собственная погрешность 10–20 ppm входит сюда же).');
+    L.push(ad <= 100 ? '✔ Кварц 32,768 кГц есть и в норме. Его можно использовать для сна и точных интервалов.'
+      : ad <= 1000 ? '⚠ Кварц есть и работает, но частота сдвинута на ' + ad.toFixed(0) + ' ppm: вероятно, не та ёмкость нагрузки (тест брал внутренние ' + (a[19] * 0.25).toFixed(1) + ' пФ). Для сна BLE допустимо до 500 ppm.'
+      : '✖ Измеренная частота далека от 32 768 Гц (' + ad.toFixed(0) + ' ppm): это не кварц 32,768 кГц или он работает неправильно.');
+  } else if (!(f & 2)) {
+    L.push('✖ Кварца 32,768 кГц, судя по всему, нет (или он не подходит под настройки теста). Для сна тогда остаются LFRCO и ULFRCO; это не мешает работе, но интервалы во сне будут менее точными.');
+  }
+  if (f & 32) L.push('LFRCO (встроенный RC): ' + fr.toFixed(0) + ' Гц, ' + (ppm(fr, 32768) >= 0 ? '+' : '') + (ppm(fr, 32768) / 1e4).toFixed(2) + ' % от 32 768 Гц.');
+  if (f & 64) L.push('ULFRCO (встроенный, сверхмалое потребление): ' + fu.toFixed(0) + ' Гц, ' + (ppm(fu, 1000) >= 0 ? '+' : '') + (ppm(fu, 1000) / 1e4).toFixed(1) + ' % от 1000 Гц.');
+  L.push('');
+  L.push('Для справки: счёт HFXO на ' + CT_DOWN.lfxo / 2 + ' периодов LFXO = ' + u24(10) + ', LFRCO = ' + u24(13) + '; на ' + CT_DOWN.ulfrco / 2 + ' периодов ULFRCO = ' + u24(16) + ' (0 = измерить не удалось).');
+  out.textContent = L.join('\n');
+  log('тест кварцев: ' + L.filter(x => x).join(' | '));
+}
+
+/* ---- монитор выводов (ответ 0xBA) ---- */
+const PM_N = []; for (const [p, n] of [['A', 9], ['B', 5], ['C', 8], ['D', 4]]) for (let i = 0; i < n; i++) PM_N.push('P' + p + i);
+const PM_OWN = { PA0: 'flash CLK', PA4: 'flash MISO', PA5: 'flash CS', PA7: 'панель BUSY', PB0: 'flash MOSI', PC0: 'панель SDA', PC1: 'панель SCLK', PC2: 'панель CS', PC3: 'панель DC', PC4: 'панель RST', PC6: 'панель вкл.' };
+const PM_SWD = { PA1: 'SWD', PA2: 'SWD', PA3: 'SWD' };
+const PM_MODE = ['выключен', 'плавающие входы', 'подтяжка вверх', 'подтяжка вниз'];
+tag.pmHist = {};
+function pmSet(m) { cmd([0x3E, m | ($('pmSwd').checked ? 0x80 : 0)], 'монитор выводов'); }
+$('bPm1').onclick = () => pmSet(1);
+$('bPm2').onclick = () => pmSet(2);
+$('bPm3').onclick = () => pmSet(3);
+$('bPmStop').onclick = () => pmSet(0);
+$('bPmClr').onclick = () => { tag.pmHist = {}; cmd([0x3F, 1], 'монитор выводов'); };
+$('pmSwd').onchange = () => { if (tag.pm && tag.pm.mode) pmSet(tag.pm.mode); };
+function renderPins(a) {
+  if (a) {
+    const mode = a[1] & 3, swd = !!(a[1] & 0x80);
+    tag.pm = { mode, swd, el: u16(a, 2), level: u32(a, 4) >>> 0, hi: u32(a, 8) >>> 0, lo: u32(a, 12) >>> 0, edges: u16(a, 16), last: a[18] };
+    if (mode) tag.pmHist[mode] = ((tag.pm.hi & tag.pm.lo) >>> 0);
+  }
+  const m = tag.pm; if (!m) return;
+  const chg = (m.hi & m.lo) >>> 0, cells = [];
+  for (let i = 0; i < PM_N.length; i++) {
+    const nm = PM_N[i], bit = (1 << i) >>> 0;
+    let cls = 'pmc', txt = '';
+    if (PM_OWN[nm]) { cls += ' own'; txt = PM_OWN[nm]; }
+    else if (PM_SWD[nm] && !(m.swd && m.mode)) { cls += ' own'; txt = 'отладка (SWD), не трогаю'; }
+    else if (!m.mode) txt = 'не наблюдается';
+    else {
+      cls += (m.level & bit) ? ' hi' : ' lo';
+      if (chg & bit) { cls += ' chg'; txt = 'МЕНЯЛСЯ'; } else txt = (m.hi & bit) ? 'всегда 1' : 'всегда 0';
+    }
+    cells.push('<div class="' + cls + '"><b>' + nm + '</b><br>' + txt + '</div>');
+  }
+  $('pmGrid').innerHTML = cells.join('');
+  $('pmStat').textContent = 'режим: ' + PM_MODE[m.mode] + (m.mode ? '; идёт ' + m.el + ' с из 300; изменений уровня: ' + m.edges + (m.last !== 255 ? '; последний менялся ' + PM_N[m.last] : '') : '');
+  // выводы по режимам
+  const names = mask => PM_N.filter((n, i) => (mask >>> i) & 1).join(', ');
+  const L = [];
+  const modes = [1, 2, 3].filter(k => tag.pmHist[k] !== undefined);
+  for (const k of modes) L.push(PM_MODE[k] + ': менялись ' + (tag.pmHist[k] ? names(tag.pmHist[k]) : 'никакие') + '.');
+  if (modes.length) {
+    const all = modes.reduce((x, k) => (x & tag.pmHist[k]) >>> 0, 0xFFFFFFFF), up = tag.pmHist[2] || 0, fl = tag.pmHist[1] || 0, dn = tag.pmHist[3] || 0;
+    if (modes.length >= 2 && all) L.push('Менялись при всех проверенных режимах: ' + names(all) + '. Это выход микросхемы, который сам подаёт уровень: самый вероятный кандидат на линию NFC.');
+    if (tag.pmHist[2] !== undefined && ((up & ~fl & ~dn) >>> 0)) L.push('Менялись только с подтяжкой вверх: ' + names((up & ~fl & ~dn) >>> 0) + '. Типичная линия с открытым стоком (детектор поля).');
+    if (modes.length >= 2 && ((fl & ~up & ~dn) >>> 0) && tag.pmHist[1] !== undefined) L.push('Менялись только на плавающем входе: ' + names((fl & ~up & ~dn) >>> 0) + '. Скорее наводки или утечка, а не сигнал.');
+    L.push('Как проверять: включите режим, подождите 5 секунд без телефона, затем поднесите телефон к метке (или NFC-карту) и уберите. Если после этого в режиме есть «МЕНЯЛСЯ» только на одном выводе, пришлите его имя.');
+  }
+  $('pmNote').textContent = L.join('\n');
 }
 $('bFInfo').onclick = () => cmd([0x20]);
 $('bFErase').onclick = () => { log('стираю сектор ' + $('sec').value + ' ...'); cmd([0x21, +$('sec').value]); };
