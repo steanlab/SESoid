@@ -82,8 +82,8 @@ const MOCK = `
   function pmPkt() { const m = tag.pm; return [0xBA, m.mode | m.swd, m.el & 255, m.el >> 8, ...le32(m.level >>> 0), ...le32(m.hi >>> 0), ...le32(m.lo >>> 0), m.edges & 255, m.edges >> 8, m.last, 0]; }
   tag.pmPush = () => N(pmPkt());
   function scanPkt(st) {
-    const hit = tag.scanHit !== false;
-    return [0xBB, st, tag.scanArgs ? tag.scanArgs[2] : 0, 6, 6, 4, hit ? 1 : 0, hit ? 24 : 0, hit ? 25 : 0, hit ? 0x55 : 0, 0, 0, 0, 0, 0, 0, ...le32(((1 << 24) | (1 << 25)) >>> 0)];
+    const hit = tag.scanHit !== false, opt = tag.scanArgs ? tag.scanArgs[2] : 0;
+    return [0xBB, st | opt << 4, 6, 6, 4, hit ? 1 : 0, hit ? 24 : 0, hit ? 25 : 0, hit ? 0x55 : 0, 0, 0, 0, ...le32(((1 << 24) | (1 << 25)) >>> 0), ...le32(tag.scanHeld ? (1 << 24) >>> 0 : 0)];
   }
   function clkPkt(never) {
     if (never) return [0xB9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -265,11 +265,11 @@ const MOCK = `
   const sa = await pg.evaluate(() => window.__tag.scanArgs);
   ok(sa && sa.length === 7 && sa[1] === 2 && sa[2] === 1 && ((sa[3] | sa[4] << 8 | sa[5] << 16 | sa[6] << 24) >>> 0) === (((1 << 19) | (1 << 24) | (1 << 25)) >>> 0), 'scanner: command carries option and mask ' + JSON.stringify(sa));
   let so = await pg.textContent('#scOut');
-  ok(so.includes('SDA=PD2, SCL=PD3, адрес 0x55') && so.includes('NTAG I²C') && so.includes('залипших 4') && so.includes('PD2, PD3'), 'scanner: device and hint shown');
-  await pg.evaluate(() => { window.__tag.scanHit = false; });
+  ok(so.includes('SDA=PD2, SCL=PD3, адрес 0x55') && so.includes('NTAG I²C') && so.includes('залипших 4') && so.includes('PD2, PD3') && !so.includes('держится внизу'), 'scanner: device and hint shown');
+  await pg.evaluate(() => { window.__tag.scanHit = false; window.__tag.scanHeld = true; });
   await pg.click('#bScan'); await pg.waitForTimeout(500);
   so = await pg.textContent('#scOut');
-  ok(so.includes('Линии поднимаются, но на адреса'), 'scanner: nothing found explained');
+  ok(so.includes('не найдено') && so.includes('держится внизу') && so.includes('PD2'), 'scanner: nothing found, held-low pin shown');
   await pg.evaluate(() => { window.__tag.scanOk = false; });
   await pg.click('#bScan'); await pg.waitForTimeout(400);
   ok((await pg.textContent('#scOut')).includes('не приняла команду'), 'scanner: refusal explained');
