@@ -64,12 +64,33 @@ jobs:
           test "$sz" -gt 100000 || { echo "RAIL library is a Git LFS pointer, not the real file"; exit 1; }
 
           echo "=== slc ==="
-          slc configuration --sdk="$GSDK_PATH" || true
-          slc signature trust --sdk "$GSDK_PATH" || true
-          slc configuration --gcc-toolchain="$(dirname "$(dirname "$(command -v arm-none-eabi-gcc)")")/" || true
+          slc --version 2>&1 | head -3 || true
+          java -version 2>&1 | head -3 || true
+          ls /opt/silabs /opt/silabs/bin 2>/dev/null | head -30 || true
+          echo "python3: $(command -v python3) $(python3 --version 2>&1)"
+          slc configuration --sdk="$GSDK_PATH" 2>&1 | tail -1 || true
+          slc signature trust --sdk "$GSDK_PATH" 2>&1 | tail -1 || true
+          slc configuration --gcc-toolchain="$(dirname "$(dirname "$(command -v arm-none-eabi-gcc)")")/" 2>&1 | tail -1 || true
 
-          rm -rf ./out
-          slc generate -s "$GSDK_PATH" -p v300_ble_probe.slcp -o makefile -d ./out -cp
+          # The templates of the SDK are run by an embedded Python (Jython) inside slc. "did not properly register a template generator"
+          # means it could not start; try a few environment variants until one works.
+          gen_ok=0
+          try_gen() {  # $1 = label, rest = environment assignments
+            label=$1; shift
+            echo "=== slc generate, variant: $label ==="
+            rm -rf ./out
+            if env "$@" slc generate -s "$GSDK_PATH" -p v300_ble_probe.slcp -o makefile -d ./out -cp > gen_$label.log 2>&1; then
+              tail -5 gen_$label.log; gen_ok=1
+            else
+              grep -v "^  " gen_$label.log | head -15
+            fi
+          }
+          mkdir -p /tmp/h /tmp/jy
+          try_gen plain      X=1
+          [ $gen_ok = 1 ] || try_gen home       HOME=/tmp/h JAVA_TOOL_OPTIONS="-Dpython.cachedir=/tmp/jy -Djava.io.tmpdir=/tmp"
+          [ $gen_ok = 1 ] || { cp -r "$GSDK_PATH" /tmp/gsdk_copy && GSDK_PATH=/tmp/gsdk_copy; slc configuration --sdk="$GSDK_PATH" >/dev/null 2>&1; slc signature trust --sdk "$GSDK_PATH" >/dev/null 2>&1; try_gen sdkcopy HOME=/tmp/h JAVA_TOOL_OPTIONS="-Dpython.cachedir=/tmp/jy -Djava.io.tmpdir=/tmp"; }
+          [ $gen_ok = 1 ] || try_gen venv      PATH="/opt/venv/bin:$PATH" HOME=/tmp/h JAVA_TOOL_OPTIONS="-Dpython.cachedir=/tmp/jy"
+          [ $gen_ok = 1 ] || { echo "slc generate failed in every variant"; exit 1; }
           cd out
 
           # The generated makefile does not allow C define overrides; harmless, but keep the same patch as upstream.
@@ -104,3 +125,4 @@ jobs:
             ${{ env.PROJ }}/v300_ble_probe.bin
             ${{ env.PROJ }}/v300_ble_probe.elf
             ${{ env.PROJ }}/build.log
+            ${{ env.PROJ }}/gen_*.log
