@@ -30,6 +30,18 @@ jobs:
       - name: Pull the builder image
         run: docker pull ghcr.io/nabucasa/silabs-firmware-builder:latest
 
+      - name: Inspect the builder image
+        run: |
+          IMG=ghcr.io/nabucasa/silabs-firmware-builder:latest
+          docker inspect --format 'entrypoint={{json .Config.Entrypoint}} cmd={{json .Config.Cmd}} workdir={{.Config.WorkingDir}} user={{.Config.User}}' $IMG
+          docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' $IMG
+          docker run --rm --entrypoint bash $IMG -c '
+            echo "--- /opt/silabs/bin/slc"; head -c 1500 /opt/silabs/bin/slc; echo
+            echo "--- first lines of the entrypoint script(s)"; for f in /entrypoint* /usr/local/bin/entrypoint* /opt/*entrypoint* /docker-entrypoint*; do [ -f "$f" ] && { echo "## $f"; head -60 "$f"; }; done
+            echo "--- jep"; ls -la /opt/silabs/python/jep | head; ls /opt/silabs/python/lib | head -20
+            echo "--- libpython"; find /opt -name "libpython3*" 2>/dev/null | head
+          ' 2>&1 | cut -c1-300
+
       - name: Write the build script
         run: |
           cat > "$PROJ/ci_build.sh" <<'EOS'
@@ -99,11 +111,24 @@ jobs:
             slc configuration --gcc-toolchain="$(dirname "$(dirname "$(command -v arm-none-eabi-gcc)")")/" 2>&1 | tail -1 || true
             rm -rf ./out
             tag=$(echo "$GSDK_PATH" | tr '/' '_')
-            if HOME=/tmp/h slc generate -s "$GSDK_PATH" -p v300_ble_probe.slcp -o makefile -d ./out -cp > "gen$tag.log" 2>&1; then
-              tail -5 "gen$tag.log"; gen_ok=1; break
-            else
-              grep -v "^  " "gen$tag.log" | head -25 | cut -c1-300
-            fi
+            # The Python for the templates runs inside slc through JEP; try with its library directory made visible too.
+            PYHOME=/opt/silabs/python
+            for variant in plain pylib; do
+              if [ $variant = plain ]; then
+                VENV="X=1"
+              else
+                VENV="LD_LIBRARY_PATH=$PYHOME/lib:$LD_LIBRARY_PATH PYTHONHOME=$PYHOME"
+              fi
+              rm -rf ./out
+              echo "--- variant $variant"
+              if env HOME=/tmp/h $VENV slc generate -s "$GSDK_PATH" -p v300_ble_probe.slcp -o makefile -d ./out -cp > "gen${tag}_$variant.log" 2>&1; then
+                tail -5 "gen${tag}_$variant.log"; gen_ok=1; break
+              else
+                grep -v "^  " "gen${tag}_$variant.log" | grep -v "Potential jar issue" | head -12 | cut -c1-300
+                echo "($(grep -c 'Potential jar issue' "gen${tag}_$variant.log") template generator problems)"
+              fi
+            done
+            [ $gen_ok = 1 ] && break
           done
           [ $gen_ok = 1 ] || { echo "slc generate failed with every SDK"; exit 1; }
           if [ "$sz" -lt 100000 ]; then
