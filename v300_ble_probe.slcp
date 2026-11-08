@@ -1,0 +1,61 @@
+# Silicon Labs Project Configuration Tools: slcp, v0, Component selection file.
+# SES V300 (EFR32FG22C121F256GM40): stage 1 probe, BLE advertising + passive listening on RAIL.
+# Component set is derived from the OpenEPaperLink EFR32xG22 project (known to generate with GSDK 4.4.1),
+# everything application-specific removed. No bootloader: the image starts at flash address 0.
+project_name: v300_ble_probe
+label: v300_ble_probe
+description: SES V300 stage 1, check that the FG22 radio does BLE (RAIL BLE 1M PHY)
+quality: development
+source:
+- {path: main.c}
+- {path: app.c}
+sdk: {id: gecko_sdk, version: 4.4.1}
+toolchain_settings:
+- {value: debug, option: optimize}
+component:
+- {id: EFR32FG22C121F256GM40}
+- {id: device_init}
+- {id: power_manager}
+- {id: radio_config_simple_rail_singlephy}
+- instance: [inst0]
+  id: rail_util_init
+- {id: rail_util_recommended}
+- {id: sl_system}
+template_contribution:
+- {name: memory_ram_start, priority: 0, value: 536870912}
+- {name: memory_ram_size, priority: 0, value: 32768}
+- {name: memory_flash_start, priority: 0, value: 0}
+- {name: memory_flash_size, priority: 0, value: 262144}
+requires:
+- {name: a_radio_config}
+configuration:
+- {name: SL_STACK_SIZE, value: '2048'}
+- {name: SL_HEAP_SIZE, value: '2048'}
+- {name: SL_RAIL_UTIL_INIT_INIT_COMPLETE_CALLBACK_INST0_ENABLE, value: '0'}
+- {name: SL_RAIL_UTIL_INIT_RADIO_CONFIG_SUPPORT_INST0_ENABLE, value: '0'}
+- {name: SL_RAIL_UTIL_INIT_PROTOCOLS_INST0_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_INIT_PROTOCOL_INST0_DEFAULT, value: SL_RAIL_UTIL_PROTOCOL_BLE_1MBPS}
+- {name: SL_RAIL_UTIL_INIT_CALIBRATIONS_INST0_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_INIT_CALIBRATION_TEMPERATURE_NOTIFY_INST0_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_INIT_CALIBRATION_ONETIME_NOTIFY_INST0_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_INIT_TRANSITIONS_INST0_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_INIT_DATA_FORMATS_INST0_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_INIT_EVENTS_INST0_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_INIT_EVENT_RX_PACKET_RECEIVED_INST0_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_INIT_EVENT_RX_FRAME_ERROR_INST0_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_INIT_EVENT_RX_PACKET_ABORTED_INST0_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_INIT_EVENT_RX_TIMEOUT_INST0_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_INIT_EVENT_TX_PACKET_SENT_INST0_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_INIT_EVENT_TX_ABORTED_INST0_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_INIT_EVENT_TX_BLOCKED_INST0_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_INIT_EVENT_TX_STARTED_INST0_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_INIT_EVENT_RX_FIFO_OVERFLOW_INST0_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_INIT_EVENT_TX_UNDERFLOW_INST0_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_INIT_EVENT_CAL_NEEDED_INST0_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_INIT_TRANSITION_INST0_TX_SUCCESS, value: 'RAIL_RF_STATE_RX'}
+- {name: SL_RAIL_UTIL_INIT_TRANSITION_INST0_TX_ERROR, value: 'RAIL_RF_STATE_RX'}
+- {name: SL_RAIL_UTIL_INIT_TRANSITION_INST0_RX_SUCCESS, value: 'RAIL_RF_STATE_RX'}
+- {name: SL_RAIL_UTIL_INIT_TRANSITION_INST0_RX_ERROR, value: 'RAIL_RF_STATE_RX'}
+- {name: SL_RAIL_UTIL_PROTOCOL_BLE_ENABLE, value: '1'}
+- {name: SL_RAIL_UTIL_PROTOCOL_IEEE802154_2P4GHZ_ENABLE, value: '0'}
+- {name: SL_RAIL_UTIL_PTI_MODE, value: 'RAIL_PTI_MODE_DISABLED'}
