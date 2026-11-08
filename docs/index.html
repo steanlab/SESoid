@@ -788,7 +788,8 @@ function handle(a) {
       const s = a[1]; if (s < 1 || s > 7) break;
       tag.slots[s] = { valid: !!(a[2] & 1), show: !!(a[2] & 2), inList: !!(a[2] & 4), cur: !!(a[2] & 8), total: u32(a, 3), crc: u32(a, 7) };
       renderSlots(); break; }
-    case 0xB3: toast(({ 0x32: 'Показ слота: ', 0x33: 'Следующий слайд: ', 0x38: 'Заливка: ', 0x39: 'Заставка: ', 0x3A: 'Диагностика панели: ', 0x3C: 'Тест кварцев: ', 0x3E: 'Монитор выводов: ' }[a[1]] || 'Команда: ') + (RES_TXT[a[2]] || a[2])); setTimeout(() => { if (!busy) cmd([0x30]); }, 400); break;
+    case 0xB3: if (a[1] === 0x3E && a[2] !== 0) { tag.pmAck = true; $('pmStat').textContent = 'метка отклонила команду монитора (код ' + a[2] + '). Для выбора выводов нужна прошивка 1.2.'; toast('Монитор выводов: метка отклонила команду'); break; }
+      toast(({ 0x32: 'Показ слота: ', 0x33: 'Следующий слайд: ', 0x38: 'Заливка: ', 0x39: 'Заставка: ', 0x3A: 'Диагностика панели: ', 0x3C: 'Тест кварцев: ', 0x3E: 'Монитор выводов: ' }[a[1]] || 'Команда: ') + (RES_TXT[a[2]] || a[2])); setTimeout(() => { if (!busy) cmd([0x30]); }, 400); break;
     case 0xB4:
       tag.cfg = { en: !!a[2], mode: a[3], interval: u16(a, 4), mask: a[6], temp: (a[7] << 24) >> 24, tx: (a[8] << 24) >> 24, txAct: ((a[9] | a[10] << 8) << 16) >> 16 };
       fillCfg(); renderSlots(); renderSlideInfo(); break;
@@ -1036,7 +1037,13 @@ const PM_SWD = { PA1: 'SWD', PA2: 'SWD', PA3: 'SWD' };
 const PM_MODE = ['выключен', 'плавающие входы', 'подтяжка вверх', 'подтяжка вниз'];
 tag.pmHist = {};
 tag.pmSel = 0x3FFFFFF;                                   // выводы, выбранные для наблюдения (бит n = вывод n); по умолчанию все
-function pmSet(m) { const s = tag.pmSel >>> 0; cmd([0x3E, m | ($('pmSwd').checked ? 0x80 : 0), s & 255, s >>> 8 & 255, s >>> 16 & 255, s >>> 24 & 255], 'монитор выводов'); }
+function pmSet(m) {
+  const s = tag.pmSel >>> 0, b = [0x3E, m | ($('pmSwd').checked ? 0x80 : 0)];
+  if (s !== 0x3FFFFFF) b.push(s & 255, s >>> 8 & 255, s >>> 16 & 255, s >>> 24 & 255);     // команда на 2 байта работает и на прошивке 1.1; маска нужна только при выборе выводов (прошивка 1.2)
+  tag.pmAck = false; clearTimeout(tag.pmTo);
+  tag.pmTo = setTimeout(() => { if (!tag.pmAck) $('pmStat').textContent = 'метка не ответила на команду монитора. Проверьте версию прошивки в «Метка → Железо»: для выбора выводов нужна 1.2, для остального достаточно 1.1.'; }, 2500);
+  cmd(b, 'монитор выводов');
+}
 $('pmGrid').onclick = e => {
   const c = e.target.closest('.pmc'); if (!c || c.dataset.i === undefined) return;
   tag.pmSel = (tag.pmSel ^ (1 << +c.dataset.i)) >>> 0;
@@ -1050,6 +1057,7 @@ $('bPmClr').onclick = () => { tag.pmHist = {}; cmd([0x3F, 1], 'монитор в
 $('pmSwd').onchange = () => { if (tag.pm && tag.pm.mode) pmSet(tag.pm.mode); };
 function renderPins(a) {
   if (a) {
+    tag.pmAck = true;
     const mode = a[1] & 3, swd = !!(a[1] & 0x80);
     tag.pm = { mode, swd, el: u16(a, 2), level: u32(a, 4) >>> 0, hi: u32(a, 8) >>> 0, lo: u32(a, 12) >>> 0, edges: u16(a, 16), last: a[18] };
     if (mode) tag.pmHist[mode] = ((tag.pm.hi & tag.pm.lo) >>> 0);
