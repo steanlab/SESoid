@@ -26,7 +26,7 @@ FIELDS = [
     'sync1', 'sched_start', 'sched_end', 'radio_state', 'evlog_pos', 'poll_calls', 'rxpend_late', 'catchup',
     'up_state', 'up_mode', 'up_total', 'up_pages', 'up_bytes', 'up_chunks', 'up_dup', 'up_ahead', 'up_incomplete',
     'up_ooo', 'up_crc', 'fl_jedec', 'fl_sr', 'fl_op', 'fl_result', 'fl_busy_us', 'fl_blocked', 'fl_pages_ok',
-    'fl_pages_bad'
+    'fl_pages_bad', 'pn_state', 'pn_err', 'pn_line', 'pn_chip', 'pn_t_ms', 'pn_refresh_ms'
 ]
 STAGE = {1: 'main reached', 2: 'RAIL ready', 3: 'advertising', 4: 'CONNECTED'}
 EV_BITS = {3: 'RX_PKT', 6: 'SYNC1', 8: 'FRAME_ERR', 9: 'RX_FIFO_FULL', 10: 'RX_OVERFLOW', 12: 'RX_TIMEOUT', 13: 'SCHED_RX_START',
@@ -139,6 +139,17 @@ def show(d, prev_hb=[None]):
         print('flash test: op %d result %s | JEDEC %06x SR %06x | BUSY %d us | waited for radio-free time %d times | tests ok %d, failed %d' % (
             d['fl_op'], {0: 'ok', 1: 'BUSY timeout', 2: 'not blank', 3: 'no WEL', 4: 'verify differs', 5: 'bad parameter', 255: 'running'}.get(d['fl_result'], d['fl_result']),
             d['fl_jedec'], d['fl_sr'], d['fl_busy_us'], d['fl_blocked'], d['fl_pages_ok'], d['fl_pages_bad']))
+        PN = {0: 'idle/not started', 9: 'chip ID', 16: 'sending image', 17: 'DC/DC on', 18: 'REFRESH (about 19 s)', 27: 'FINISHED'}
+        for k in (1, 2, 3): PN[k] = 'power on'
+        for k in range(4, 9): PN[k] = 'reset'
+        for k in range(10, 14): PN[k] = 'reading OTP'
+        for k in (14, 15): PN[k] = 'panel init'
+        for k in range(19, 25): PN[k] = 'stopping DC/DC (about 7 s)'
+        for k in (25, 26): PN[k] = 'power off'
+        PE = {0: 'none', 1: 'BUSY stays low after reset', 2: 'chip ID is not 0x0D04', 3: 'OTP address: BUSY timeout', 4: 'OTP end: BUSY timeout', 5: 'OTP marker missing',
+              6: 'BUSY stays low after the 2nd reset', 7: 'init (A5): BUSY timeout', 8: 'DC/DC on: BUSY timeout', 9: 'refresh: BUSY timeout', 10: 'DC/DC off: BUSY timeout'}
+        print('panel: %s (state %d) | error: %s | image line %d of 720 | chip ID 0x%04x | refresh took %d ms | total %d ms' % (
+            PN.get(d['pn_state'], d['pn_state']), d['pn_state'], PE.get(d['pn_err'], d['pn_err']), d['pn_line'], d['pn_chip'], d['pn_refresh_ms'], d['pn_t_ms']))
         print('last RAIL events (oldest first; time in us relative to the first one, "+delta" to the previous):')
         n = min(d['evlog_pos'], EVLOG_N)
         first = d['evlog_pos'] - n

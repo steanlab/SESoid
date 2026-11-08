@@ -2,7 +2,7 @@
 //
 // This file: initialisation, the advertising loop (ADV_IND "V300-probe" on 37/38/39 every ~100 ms, listening 1.8 ms after each),
 // hand-over to the link layer when a CONNECT_IND for us arrives, back to advertising after a disconnect.
-// Nothing here touches the e-paper panel, the external flash or any pin.
+// After reset app_init() starts the boot splash on the e-paper panel (ble_panel.c, non-blocking); advertising runs meanwhile.
 #include <stdint.h>
 #include <string.h>
 #include "sl_rail_util_init.h"
@@ -11,6 +11,7 @@
 #include "ble_diag.h"
 #include "ble_ll.h"
 #include "ble_att.h"
+#include "ble_panel.h"
 
 volatile ble_diag_t g_diag;
 
@@ -170,6 +171,7 @@ void app_init(void)
   g_diag.rail_version = ((uint32_t)ver.major << 16) | ((uint32_t)ver.minor << 8) | ver.rev;
   ll_init(h);
   g_diag.stage = 2;
+  panel_start();           // boot splash on the e-paper panel (non-blocking, about 30 s, advertising runs meanwhile)
 }
 
 void app_process_action(void)
@@ -186,6 +188,7 @@ void app_process_action(void)
   if (ll_connected()) {
     was_connected = 1;
     ll_poll();
+    panel_poll();
     return;
   }
   uint32_t now = RAIL_GetTime();
@@ -199,6 +202,7 @@ void app_process_action(void)
   }
   if ((int32_t)(now - next_us) < 0) {
     handle_rx();
+    panel_poll();
     return;
   }
 

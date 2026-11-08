@@ -31,7 +31,8 @@
   X(knob_sched) X(conn_ms) X(end_age_ms) X(arm_dt_min) X(arm_dt_max) X(poll_gap_max) X(anchor_err_min) X(anchor_err_max) \
   X(anchor_bad) X(rx_no_tx) X(sync1) X(sched_start) X(sched_end) X(radio_state) X(evlog_pos) X(poll_calls) X(rxpend_late) X(catchup) \
   X(up_state) X(up_mode) X(up_total) X(up_pages) X(up_bytes) X(up_chunks) X(up_dup) X(up_ahead) X(up_incomplete) X(up_ooo) X(up_crc) \
-  X(fl_jedec) X(fl_sr) X(fl_op) X(fl_result) X(fl_busy_us) X(fl_blocked) X(fl_pages_ok) X(fl_pages_bad)
+  X(fl_jedec) X(fl_sr) X(fl_op) X(fl_result) X(fl_busy_us) X(fl_blocked) X(fl_pages_ok) X(fl_pages_bad) \
+  X(pn_state) X(pn_err) X(pn_line) X(pn_chip) X(pn_t_ms) X(pn_refresh_ms)
 
 typedef struct {
 #define X(n) uint32_t n;
