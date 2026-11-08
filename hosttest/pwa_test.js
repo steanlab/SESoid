@@ -1,0 +1,22 @@
+const { chromium } = require('playwright');
+(async () => {
+  const br = await chromium.launch(); const ctx = await br.newContext({ viewport: { width: 1100, height: 800 } }); const pg = await ctx.newPage();
+  const errs = []; pg.on('pageerror', e => errs.push(e.message)); pg.on('console', m => m.type() === 'error' && errs.push(m.text()));
+  const URL = 'http://127.0.0.1:8765/SESoid/'; let f = 0; const ok = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) f++; };
+  await pg.goto(URL);
+  await pg.waitForFunction(() => !document.querySelector('#pwaPill').hidden, null, { timeout: 15000 });
+  ok(true, 'service worker ready, offline pill shown');
+  const man = await pg.evaluate(async () => { const l = document.querySelector('link[rel=manifest]').href; const r = await fetch(l); const j = await r.json(); const out = { url: l, name: j.name, icons: [] }; for (const i of j.icons) { const rr = await fetch(new URL(i.src, l)); out.icons.push(i.src + ':' + rr.status); } return out; });
+  console.log(JSON.stringify(man)); ok(man.icons.every(x => x.endsWith(':200')), 'manifest and all icons reachable under /SESoid/');
+  const cached = await pg.evaluate(async () => (await (await caches.open('gecko-slide-v1')).keys()).map(r => new URL(r.url).pathname));
+  console.log(cached.join(' ')); ok(cached.length >= 8, 'app shell cached');
+  await pg.reload(); await pg.waitForTimeout(500);
+  await ctx.setOffline(true);
+  await pg.reload(); await pg.waitForTimeout(800);
+  ok((await pg.title()).includes('Gecko Slide'), 'page opens offline');
+  await pg.click('#bCalib'); await pg.waitForFunction(() => window.__gs && window.__gs.lastFrame, null, { timeout: 15000 });
+  ok(await pg.evaluate(() => window.__gs.lastFrame.length === 46080), 'converter works offline');
+  await pg.screenshot({ path: 'pwa_offline.png' });
+  ok(errs.filter(e => !/net::ERR_INTERNET_DISCONNECTED|Failed to load resource/.test(e)).length === 0, 'no errors ' + JSON.stringify(errs));
+  await br.close(); console.log(f ? 'FAILED' : 'ALL OK'); process.exit(f ? 1 : 0);
+})();
