@@ -30,15 +30,6 @@ jobs:
       - name: Pull the builder image
         run: docker pull ghcr.io/nabucasa/silabs-firmware-builder:latest
 
-      - name: Inspect the builder image
-        run: |
-          IMG=ghcr.io/nabucasa/silabs-firmware-builder:latest
-          docker run --rm --entrypoint bash $IMG -c '
-            ls -la /repo /repo/tools 2>&1 | head -40
-            echo "--- how the tool runs slc"
-            grep -rn -i "slc\|PYTHON\|LD_LIBRARY\|JAVA\|environ\|daemon\|timeout" /repo/tools/*.py 2>/dev/null | cut -c1-260 | head -120
-          ' 2>&1 | cut -c1-300
-
       - name: Write the build script
         run: |
           cat > "$PROJ/ci_build.sh" <<'EOS'
@@ -78,6 +69,7 @@ jobs:
           echo "--- /opt/silabs/sdks"; ls -la /opt/silabs/sdks 2>/dev/null | head -20
           echo "--- /opt/silabs/python"; ls /opt/silabs/python 2>/dev/null | head -20
           echo "--- /opt/silabs/slc-cli"; ls /opt/silabs/slc-cli 2>/dev/null | head -20
+          echo "--- adapter packs"; for f in /opt/silabs/python/apack.json /opt/silabs/slc-cli/apack.json /opt/silabs/zap/apack.json; do echo "## $f"; head -c 700 $f 2>/dev/null; echo; done
           echo "--- python used by slc (JEP)"
           cat /opt/silabs/python/requirements.txt 2>/dev/null | head -30
           ls /opt/silabs/python/bin 2>/dev/null | head -10
@@ -110,18 +102,20 @@ jobs:
             tag=$(echo "$GSDK_PATH" | tr '/' '_')
             # The Python for the templates runs inside slc through JEP; try with its library directory made visible too.
             PYHOME=/opt/silabs/python
-            for variant in plain pylib; do
-              if [ $variant = plain ]; then
-                VENV="X=1"
-              else
-                VENV="LD_LIBRARY_PATH=$PYHOME/lib:$LD_LIBRARY_PATH PYTHONHOME=$PYHOME"
-              fi
+            for variant in toolpath toolpath_all plain pylib; do
+              TP=""
+              case $variant in
+                toolpath)     VENV="X=1"; TP="--tool-path=/opt/silabs/python" ;;
+                toolpath_all) VENV="X=1"; TP="--tool-path=/opt/silabs/python,/opt/silabs/zap,/opt/silabs/slc-cli" ;;
+                plain)        VENV="X=1" ;;
+                pylib)        VENV="LD_LIBRARY_PATH=$PYHOME/lib:$LD_LIBRARY_PATH PYTHONHOME=$PYHOME" ;;
+              esac
               rm -rf ./out
-              echo "--- variant $variant"
-              if env HOME=/tmp/h $VENV slc generate -s "$GSDK_PATH" -p v300_ble_probe.slcp -o makefile -d ./out -cp > "gen${tag}_$variant.log" 2>&1; then
+              echo "--- variant $variant $TP"
+              if env HOME=/tmp/h $VENV slc generate $TP -s "$GSDK_PATH" -p v300_ble_probe.slcp -o makefile -d ./out -cp > "gen${tag}_$variant.log" 2>&1; then
                 tail -5 "gen${tag}_$variant.log"; gen_ok=1; break
               else
-                grep -v "^  " "gen${tag}_$variant.log" | grep -v "Potential jar issue" | head -12 | cut -c1-300
+                grep -v "^  " "gen${tag}_$variant.log" | grep -v "Potential jar issue" | head -8 | cut -c1-300
                 echo "($(grep -c 'Potential jar issue' "gen${tag}_$variant.log") template generator problems)"
               fi
             done
