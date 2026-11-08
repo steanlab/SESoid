@@ -33,13 +33,10 @@ jobs:
       - name: Inspect the builder image
         run: |
           IMG=ghcr.io/nabucasa/silabs-firmware-builder:latest
-          docker inspect --format 'entrypoint={{json .Config.Entrypoint}} cmd={{json .Config.Cmd}} workdir={{.Config.WorkingDir}} user={{.Config.User}}' $IMG
-          docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' $IMG
           docker run --rm --entrypoint bash $IMG -c '
-            echo "--- /opt/silabs/bin/slc"; head -c 1500 /opt/silabs/bin/slc; echo
-            echo "--- first lines of the entrypoint script(s)"; for f in /entrypoint* /usr/local/bin/entrypoint* /opt/*entrypoint* /docker-entrypoint*; do [ -f "$f" ] && { echo "## $f"; head -60 "$f"; }; done
-            echo "--- jep"; ls -la /opt/silabs/python/jep | head; ls /opt/silabs/python/lib | head -20
-            echo "--- libpython"; find /opt -name "libpython3*" 2>/dev/null | head
+            ls -la /repo /repo/tools 2>&1 | head -40
+            echo "--- how the tool runs slc"
+            grep -rn -i "slc\|PYTHON\|LD_LIBRARY\|JAVA\|environ\|daemon\|timeout" /repo/tools/*.py 2>/dev/null | cut -c1-260 | head -120
           ' 2>&1 | cut -c1-300
 
       - name: Write the build script
