@@ -63,6 +63,8 @@ const MOCK = `
     else if (op === 0x38) { tag.fills.push(v[1]); N([0xB3, 0x38, 0]); }
     else if (op === 0x39) N([0xB3, 0x39, 0]);
     else if (op === 0x20) N([0xA0, 0xEF, 0x40, 0x13, 0, 0, 0]);
+    else if (op === 0x3A) { N([0xB3, 0x3A, 0]); setTimeout(() => N(tag.dead ? [0xB8, 2, 1, 0, 1, 1, 0, 1, 1, 1, 1, 1, 10, 0, 0, 0, 0, 0, 0, 0] : [0xB8, 2, 0, 0, 1, 0, 0, 1, 0, 1, 1, 1, 10, 0, 0x04, 0x0D, 0x04, 0x0D, 0x04, 0x0D]), 100); }
+    else if (op === 0x3B) N([0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
   }
   function sendCfg() { const c = tag.cfg; N([0xB4, 1, c.en, c.mode, c.iv & 255, c.iv >> 8, c.mask, c.temp & 255, c.tx & 255, 60, 0]); }
   const chr = { addEventListener: (n, f) => { notify = f; }, startNotifications: async () => {}, writeValueWithResponse: async v => handle(new Uint8Array(v.buffer ? v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength) : v)), writeValueWithoutResponse: async v => handle(new Uint8Array(v.buffer ? v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength) : v)) };
@@ -173,6 +175,16 @@ const MOCK = `
   ok(await pg.evaluate(() => window.__tag.rebooted === 1), 'reboot command sent');
   await pg.screenshot({ path: path.join(OUT, 'shot_tag.png') });
 
+  // --- panel diagnostics (dead panel, then healthy)
+  await pg.click('[data-t=tools]');
+  await pg.evaluate(() => { window.__tag.dead = true; });
+  await pg.click('#bPdiag'); await pg.waitForTimeout(700);
+  let dg = await pg.textContent('#pdiagOut');
+  ok(dg.includes('0x0000') && dg.includes('плавает') && dg.includes('Сырые значения'), 'diagnostics report: dead panel explained');
+  await pg.evaluate(() => { window.__tag.dead = false; });
+  await pg.click('#bPdiag'); await pg.waitForTimeout(700);
+  dg = await pg.textContent('#pdiagOut');
+  ok(dg.includes('Панель отвечает'), 'diagnostics report: healthy panel');
   // --- tools: flash sector select has 0..14
   const secs = await pg.evaluate(() => document.querySelector('#sec').options.length);
   ok(secs === 15, 'flash test sectors 0..14');

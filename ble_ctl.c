@@ -20,12 +20,13 @@ static uint32_t reboot_at_us;
 static bool reboot_pending;
 static uint8_t res_op, res_status;
 static bool want_result;
+static bool want_diag, diag_sent;
 
 static void wr32(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v >> 8); p[2] = (uint8_t)(v >> 16); p[3] = (uint8_t)(v >> 24); }
 
 void ctl_reset(void)
 {
-  want_status = want_cfg = want_slots_req = want_result = false;
+  want_status = want_cfg = want_slots_req = want_result = want_diag = false;
   slots_left = 8;
   hw_left = 4;
 }
@@ -66,6 +67,12 @@ bool ctl_write(const uint8_t *v, uint8_t len)
     case 0x39:
       queue_result(0x39, panel_busy() ? SLR_PANEL_BUSY : (panel_show_splash() ? SLR_OK : SLR_PANEL_BUSY));
       break;
+    case 0x3A:
+      if (panel_busy()) queue_result(0x3A, SLR_PANEL_BUSY);
+      else if (panel_diag_start()) { diag_sent = false; queue_result(0x3A, SLR_OK); }
+      else queue_result(0x3A, SLR_PANEL_BUSY);
+      break;
+    case 0x3B: want_diag = true; break;
     default: break;
   }
   return true;
@@ -81,6 +88,22 @@ static void send_status(void)
   r[16] = (uint8_t)g_diag.pn_crc_bad;
   r[17] = (uint8_t)((slide_cfg()->enabled ? 1u : 0u) | (up_idle() ? 2u : 0u) | (slide_scanning() ? 4u : 0u));
   att_notify(r, 18);
+}
+
+// panel diagnostics report (see panel_diag_t in ble_panel.h)
+static void send_diag(void)
+{
+  const panel_diag_t *d = panel_diag();
+  uint8_t r[20];
+  memset(r, 0, sizeof(r));
+  r[0] = 0xB8; r[1] = d->state;
+  r[2] = d->busy_off; r[3] = d->sda_pd_off; r[4] = d->sda_pu_off; r[5] = d->busy_on; r[6] = d->sda_pd_on; r[7] = d->sda_pu_on;
+  r[8] = d->busy_rstlow; r[9] = d->busy_10; r[10] = d->busy_100; r[11] = d->busy_500;
+  r[12] = (uint8_t)d->busy_ms; r[13] = (uint8_t)(d->busy_ms >> 8);
+  r[14] = (uint8_t)d->id1; r[15] = (uint8_t)(d->id1 >> 8);
+  r[16] = (uint8_t)d->id2; r[17] = (uint8_t)(d->id2 >> 8);
+  r[18] = (uint8_t)d->id_slow; r[19] = (uint8_t)(d->id_slow >> 8);
+  att_notify(r, 20);
 }
 
 static void send_cfg(void)
@@ -154,6 +177,8 @@ void ctl_poll(void)
   }
   if ((uint32_t)(now - last_tx_us) < PACE_US) return;
 
+  if (panel_diag()->state == 2 && !diag_sent) { diag_sent = true; want_diag = true; }      // the report goes out by itself when the run ends
+  if (want_diag) { send_diag(); want_diag = false; last_tx_us = now; return; }
   if (want_result) { uint8_t r[3] = { 0xB3, res_op, res_status }; att_notify(r, 3); want_result = false; last_tx_us = now; return; }
   if (want_slots_req && !slide_scanning()) { want_slots_req = false; slots_left = 1; }
   if (slots_left <= 7) { send_slot(slots_left++); last_tx_us = now; return; }

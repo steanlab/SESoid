@@ -39,4 +39,18 @@ uint32_t panel_count(void);                          // finished updates since r
 uint32_t panel_last_ms(void);                        // duration of the last finished update
 bool panel_flash_busy(void);                         // the update still needs to read the external flash (nobody else may write it)
 
+// ---- panel diagnostics (finding out why the panel does not answer): the panel is powered off for 3 s, powered on, reset, and the pins and
+// the chip ID are examined at every step. About 5 s, non-blocking like an update (panel_busy() is true meanwhile). Levels are 0 / 1.
+typedef struct {
+  uint8_t state;                                     // 0 never run, 1 running, 2 finished
+  uint8_t busy_off, sda_pd_off, sda_pu_off;          // panel off for 3 s: BUSY level, SDA read with pull-down / with pull-up (a floating line follows the pull)
+  uint8_t busy_on;                                   // 20 ms after power on
+  uint8_t busy_rstlow, busy_10, busy_100, busy_500;  // BUSY with RST low (20 ms) and 10 / 100 / 500 ms after RST goes high
+  uint8_t sda_pd_on, sda_pu_on;                      // after the ID reads, panel on and idle: SDA with pull-down / pull-up
+  uint16_t busy_ms;                                  // ms after RST high until BUSY was seen high (0xFFFF = never within 3 s)
+  uint16_t id1, id2, id_slow;                        // chip ID (0x0D04 expected): first read, second read 50 ms later, read with a 50 us clock half period
+} panel_diag_t;
+bool panel_diag_start(void);                         // false when an update is running
+const panel_diag_t *panel_diag(void);
+
 #endif

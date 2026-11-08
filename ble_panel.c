@@ -42,7 +42,8 @@ typedef enum {
   S_IMG, S_ON, S_REFRESH,
   S_STOP_A, S_STOP_B, S_STOP_C, S_STOP_D, S_STOP_E, S_STOP_F,
   S_OFF_A, S_OFF_B,
-  S_DONE
+  S_DONE,
+  D_A, D_B, D_C, D_D, D_E, D_F, D_G, D_H, D_BW, D_I, D_J, D_K, D_L, D_M, D_END     // diagnostics, see panel_diag_start()
 } pstate_t;
 
 typedef enum { W_NONE = 0, W_TIME, W_BUSY } wait_t;
@@ -74,6 +75,8 @@ static bool inited;
 
 static uint32_t half_cycles;
 static bool use_dwt;
+static panel_diag_t pd;
+static uint32_t pd_t_rst;
 
 // ---- low level
 #ifndef DWT_CYCCNT          // (the host test hosttest/panel_host_test.cpp defines its own)
@@ -164,6 +167,31 @@ static void cmd(uint32_t c, const uint8_t *d, uint32_t n)
 }
 
 static void cmd1(uint32_t c, uint32_t v) { uint8_t b = (uint8_t)v; cmd(c, &b, 1); }
+
+// ---- diagnostics helpers
+static uint32_t cpu_mhz(void) { uint32_t m = SystemCoreClock / 1000000u; return m ? m : 38u; }
+
+// SDA as an input with pull-down (up = 0) or pull-up (up = 1), read after 50 us; leaves SDA an input (callers restore it)
+static uint32_t sda_pull(uint32_t up)
+{
+  set_mode(PORT_C, SDA_PIN, 2);
+  pc_put(SDA_PIN, up);
+  delay_cycles(50u * cpu_mhz());
+  return sda_in();
+}
+
+// the chip ID read of the update sequence (command 0x70, then 16 bits), CS released afterwards
+static uint16_t read_id(void)
+{
+  pc_clr(CS_PIN); pc_clr(DC_PIN);
+  wbyte(0x70);
+  pc_set(DC_PIN);
+  sda_input();
+  uint32_t v = (rbyte() << 8) | rbyte();
+  sda_output();
+  pc_set(CS_PIN); pc_set(DC_PIN);
+  return (uint16_t)v;
+}
 
 // ---- waits
 static void wait_ms(uint32_t ms, pstate_t next)
@@ -403,6 +431,80 @@ static void run(void)
       pc_set(ONOFF_PIN);
       wait_ms(120, S_DONE);
       break;
+
+    // ---- diagnostics: panel off 3 s, on, reset, look at BUSY / SDA / the chip ID, off
+    case D_A:
+      pc_set(ONOFF_PIN);
+      pc_clr(SCLK_PIN); pc_clr(CS_PIN); pc_clr(DC_PIN); pc_clr(RST_PIN); pc_clr(SDA_PIN);
+      set_mode(PORT_C, SCLK_PIN, 4); set_mode(PORT_C, CS_PIN, 4); set_mode(PORT_C, DC_PIN, 4);
+      set_mode(PORT_C, RST_PIN, 4); set_mode(PORT_C, ONOFF_PIN, 4); set_mode(PORT_C, SDA_PIN, 4);
+      set_mode(BUSY_PORT, BUSY_PIN, 1);
+      wait_ms(3000, D_B);
+      break;
+    case D_B:
+      pd.busy_off = busy_high() ? 1 : 0;
+      pd.sda_pd_off = (uint8_t)sda_pull(0);
+      pd.sda_pu_off = (uint8_t)sda_pull(1);
+      sda_output();
+      pc_clr(ONOFF_PIN);                         // low = panel on
+      wait_ms(20, D_C);
+      break;
+    case D_C:
+      pd.busy_on = busy_high() ? 1 : 0;
+      pc_set(DC_PIN); pc_set(RST_PIN); pc_set(CS_PIN);
+      wait_ms(10, D_D);
+      break;
+    case D_D: pc_clr(RST_PIN); wait_ms(20, D_E); break;
+    case D_E:
+      pd.busy_rstlow = busy_high() ? 1 : 0;
+      pc_set(RST_PIN);
+      pd_t_rst = RAIL_GetTime();
+      wait_ms(10, D_F);
+      break;
+    case D_F: pd.busy_10 = busy_high() ? 1 : 0; wait_ms(90, D_G); break;
+    case D_G: pd.busy_100 = busy_high() ? 1 : 0; wait_ms(400, D_H); break;
+    case D_H:
+      pd.busy_500 = busy_high() ? 1 : 0;
+      if (pd.busy_10) { pd.busy_ms = 10; st = D_I; }
+      else if (pd.busy_100) { pd.busy_ms = 100; st = D_I; }
+      else if (pd.busy_500) { pd.busy_ms = 500; st = D_I; }
+      else { t_end = RAIL_GetTime() + 2500000u; st = D_BW; }
+      break;
+    case D_BW: {
+      uint32_t now = RAIL_GetTime();
+      if (busy_high()) { uint32_t ms = (now - pd_t_rst) / 1000u; pd.busy_ms = (uint16_t)(ms > 0xFFFEu ? 0xFFFEu : ms); st = D_I; }
+      else if ((int32_t)(now - t_end) >= 0) { pd.busy_ms = 0xFFFFu; st = D_I; }
+      break;
+    }
+    case D_I: pd.id1 = read_id(); wait_ms(50, D_J); break;
+    case D_J: {
+      pd.id2 = read_id();
+      uint32_t save = half_cycles;
+      half_cycles = 50u * cpu_mhz();             // 100 us clock period: about 2.4 ms for the read
+      pd.id_slow = read_id();
+      half_cycles = save;
+      wait_ms(5, D_K);
+      break;
+    }
+    case D_K:
+      pd.sda_pd_on = (uint8_t)sda_pull(0);
+      pd.sda_pu_on = (uint8_t)sda_pull(1);
+      sda_output();
+      st = D_L;
+      break;
+    case D_L:
+      pc_clr(DC_PIN); pc_clr(RST_PIN); pc_clr(CS_PIN); pc_clr(SCLK_PIN); pc_clr(SDA_PIN);
+      wait_ms(200, D_M);
+      break;
+    case D_M:
+      pc_set(ONOFF_PIN);
+      wait_ms(120, D_END);
+      break;
+    case D_END:
+      pd.state = 2;
+      st = S_IDLE;
+      break;
+
     case S_DONE:
     case S_IDLE:
     default:
@@ -505,6 +607,24 @@ void panel_poll(void)
     g_diag.pn_count = n_done;
   }
 }
+
+bool panel_diag_start(void)
+{
+  if (st != S_IDLE && st != S_DONE) return false;
+  if (!inited) {
+    CMU->CLKEN0 |= CMU_CLKEN0_GPIO;
+    dwt_init();
+    inited = true;
+  }
+  memset(&pd, 0, sizeof pd);
+  pd.state = 1;
+  wk = W_NONE;
+  img_open = false;
+  dcdc_on = false;
+  st = D_A;
+  return true;
+}
+const panel_diag_t *panel_diag(void) { return &pd; }
 
 bool panel_busy(void) { return st != S_IDLE && st != S_DONE; }
 bool panel_done(void) { return st == S_DONE; }

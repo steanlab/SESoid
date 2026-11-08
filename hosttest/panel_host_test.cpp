@@ -55,7 +55,7 @@ GpioT g_gpio; CmuT g_cmu;
 static uint32_t clken, modeL[4], modeH[4], dout[4];
 
 // ---- panel model
-static uint64_t busy_until_us, pending_busy_us; static bool busy_forever;
+static uint64_t busy_until_us, pending_busy_us; static bool busy_forever; static bool panel_dead;   // dead: never answers (ID 0), BUSY stays high
 static int prev_rst, prev_sclk, nbits, rd_rises, have_cmd, ndata, img_active, violations;
 static uint32_t shift, last_cmd, nimg;
 static uint8_t datab[64];
@@ -67,6 +67,7 @@ static int mode_of(int port, int n) { uint32_t w = n < 8 ? modeL[port] : modeH[p
 static int powered(void) { return mode_of(2, 6) == 4 && pin(2, 6) == 0; }
 static int busy_now(void)
 {
+  if (panel_dead) return 1;
   if (!powered() || !pin(2, 4)) return 0;
   return !busy_forever && now_us() >= busy_until_us;
 }
@@ -116,6 +117,7 @@ static int sda_bit(void)
 {
   if (!have_cmd || rd_rises == 0) return 0;
   uint32_t n = (uint32_t)rd_rises - 1;
+  if (panel_dead) return 0;
   if (last_cmd == 0x70) { static const int id[16] = { 0,0,0,0,1,1,0,1, 0,0,0,0,0,1,0,0 }; return n < 16 ? id[n] : 0; }
   if (last_cmd == 0x92) { if (n < 8) return 0; uint32_t m = n - 8; return m < 112 * 8 ? (otp_model((int)(m / 8)) >> (7 - m % 8)) & 1 : 0; }
   return 0;
@@ -136,7 +138,8 @@ uint32_t sim_rd(uint32_t id)
         int bit = 0;
         if (mode_of((int)port, i) == 4) bit = pin((int)port, i);
         if (port == 0 && i == 7) bit = busy_now();
-        if (port == 2 && i == 0 && mode_of(2, 0) != 4) bit = sda_bit();
+        if (port == 2 && i == 0 && mode_of(2, 0) == 2) bit = pin(2, 0);          // input with pull: a floating line follows the pull (DOUT)
+        else if (port == 2 && i == 0 && mode_of(2, 0) != 4) bit = sda_bit();
         v |= (uint32_t)bit << i;
       }
       return v;
@@ -230,6 +233,41 @@ static int run_once(const char *name, bool connected, uint32_t free_pattern, int
   return bad;
 }
 
+// ---- panel diagnostics
+static int run_diag(const char *name, bool connected, bool dead)
+{
+  memset(modeL, 0, sizeof modeL); memset(modeH, 0, sizeof modeH); memset(dout, 0, sizeof dout);
+  cycles = 0; extra_us = 5000000; busy_forever = true; busy_until_us = 0; prev_rst = prev_sclk = 0; nbits = 0; have_cmd = 0; violations = 0; pending_busy_us = 0;
+  img_active = 0; nimg = 0; g_connected = connected; g_free_us = 0; panel_dead = dead;
+  char fn[64]; snprintf(fn, sizeof fn, "panel_cmds_diag_%s.log", name);
+  logf = fopen(fn, "w");
+  memset((void *)&g_diag, 0, sizeof g_diag);
+  if (!panel_diag_start()) { printf("[diag %s] did not start\n", name); return 1; }
+  if (panel_diag_start()) { printf("[diag %s] second start must be refused while running\n", name); return 1; }
+  uint64_t t0 = now_us(), polls = 0, maxblock = 0;
+  while ((panel_busy() || panel_diag()->state != 2) && now_us() - t0 < 30000000ull) {
+    extra_us += 20;
+    if (connected) g_free_us = (polls % 3 == 0) ? 9000 : 1500;
+    uint64_t a = now_us(); panel_poll(); uint64_t d = now_us() - a;
+    if (connected && g_free_us < STEP_FREE_US && d > 100) VIOL("a diag step of %lu us with only %u us radio-free", (unsigned long)d, g_free_us);
+    if (d > maxblock) maxblock = d;
+    polls++;
+  }
+  flush_cmd(); fclose(logf);
+  const panel_diag_t *d = panel_diag();
+  printf("[diag %s] state=%u sim=%.1f s longest step %lu us | off: busy %u sda pd/pu %u/%u | on20ms busy %u | rst low %u, +10ms %u, +100ms %u, +500ms %u, busy_ms %u | ID %04X %04X slow %04X | idle sda pd/pu %u/%u | onoff=%d violations %d\n",
+         name, d->state, (now_us() - t0) / 1e6, (unsigned long)maxblock, d->busy_off, d->sda_pd_off, d->sda_pu_off, d->busy_on, d->busy_rstlow, d->busy_10, d->busy_100, d->busy_500,
+         d->busy_ms, d->id1, d->id2, d->id_slow, d->sda_pd_on, d->sda_pu_on, pin(2, 6), violations);
+  int bad = violations + (d->state != 2) + (pin(2, 6) != 1) + (panel_busy() ? 1 : 0);
+  bad += (d->sda_pd_off != 0) + (d->sda_pu_off != 1) + (d->sda_pd_on != 0) + (d->sda_pu_on != 1) + (d->busy_ms != 10);
+  if (dead) bad += (d->id1 != 0) + (d->id2 != 0) + (d->id_slow != 0);
+  else bad += (d->id1 != 0x0D04) + (d->id2 != 0x0D04) + (d->id_slow != 0x0D04) + (d->busy_off != 0) + (d->busy_rstlow != 0) + (d->busy_10 != 1);
+  panel_dead = false;
+  // a normal update still works afterwards
+  bad += run_once("splash_after_diag", connected, 4, K_SPLASH);
+  return bad;
+}
+
 int main(void)
 {
   init_regs();
@@ -251,6 +289,9 @@ int main(void)
   bad += run_once("slot_badcrc", false, 0, K_SLOT_BADCRC);
   bad += run_once("fill_white", false, 0, K_FILL_WHITE);
   bad += run_once("slot_flash_dead", false, 0, K_SLOT_DEAD);
+  bad += run_diag("healthy", false, false);
+  bad += run_diag("healthy_conn", true, false);
+  bad += run_diag("dead", false, true);
   printf("%s\n", bad ? "FAILED" : "ALL OK");
   return bad != 0;
 }

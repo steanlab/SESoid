@@ -13,6 +13,8 @@
 //   37                      HW INFO    -> B6 x4
 //   38 code                 FILL       panel plain colour 0 black, 1 white, 2 yellow, 3 red (cleans ghost images)   -> B3
 //   39                      SPLASH     show the boot picture again                                      -> B3
+//   3A                      PANEL DIAGNOSTICS  (about 5 s: panel off 3 s, on, reset, measure BUSY / SDA / chip ID)   -> B3, later B8 by itself
+//   3B                      PANEL DIAGNOSTICS REPORT  (the last one)                                     -> B8
 // Tag -> phone:
 //   B0 pstat perr src shown step next_s(4) uptime_s(4) count(2) crc_bad flags       STATUS (pstat 0 idle 1 running 2 done 3 failed; flags bit0 auto on,
 //                           bit1 flash idle, bit2 scanning)
@@ -22,6 +24,8 @@
 //   B5                      reboot acknowledged
 //   B6 idx data...          hardware info fragments (idx 0..3), see ble_ctl.c
 //   B7 pstat perr src shown panel update finished (sent on its own)
+//   B8 state busy_off sda_pd_off sda_pu_off busy_on sda_pd_on sda_pu_on busy_rstlow busy_10 busy_100 busy_500 busy_ms(2) id1(2) id2(2) id_slow(2)
+//                           panel diagnostics report (state 0 never run, 1 running, 2 finished), fields as in panel_diag_t
 #ifndef BLE_CTL_H
 #define BLE_CTL_H
 
