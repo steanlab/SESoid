@@ -81,7 +81,7 @@
       <div class="card">
         <div class="row">
           <button class="p" id="bOpen">Открыть картинку…</button><input type="file" id="file" accept="image/*" hidden>
-          <button id="bPaste">Вставить из буфера</button><button id="bDemo">Пример</button><button id="bCalib" title="Таблица из четырёх цветов панели для калибровки: загрузите в слот и сфотографируйте">Калибровочная таблица</button><button id="bCalib2" title="Градиенты без коррекции растискивания (слева, A) и с ней (справа, B): загрузите в слот и сфотографируйте">Таблица проверки</button>
+          <button id="bPaste">Вставить из буфера</button><button id="bDemo">Пример</button><button id="bCalib" title="Таблица из четырёх цветов панели для калибровки: загрузите в слот и сфотографируйте">Калибровочная таблица</button><button id="bCalib2" title="Градиенты без коррекции растискивания (слева, A) и с ней (справа, B): загрузите в слот и сфотографируйте">Таблица проверки</button><button id="bTv" title="Испытательная таблица в телевизионном стиле: сетка, круг, диагонали, цветные полосы, градации, пакеты линий, шахматки">ТВ-таблица</button>
           <span class="n" id="srcName" style="margin:0">нет картинки: перетащите файл на предпросмотр, вставьте Ctrl+V или откройте</span>
         </div>
         <div id="pvwrap"><canvas id="pv" width="720" height="256"></canvas><div id="pvhint">Предпросмотр 720 × 256 (как будет на экране).<br>Перетащите сюда картинку. После загрузки колёсиком мыши меняется масштаб, перетаскиванием — положение.</div></div>
@@ -632,6 +632,50 @@ function calib2Canvas() {
 $('bCalib2').onclick = async () => {
   Object.assign(P, JSON.parse(JSON.stringify(PRESETS.exact.v)), { preset: 'exact', fit: 'cover', zoom: 1, panX: 0, panY: 0, rot: 0, flipH: false, flipV: false, bg: 0 });
   writeCtls(); setSource(await createImageBitmap(calib2Canvas()), 'проверка растискивания'); saveParams();
+};
+
+/* ТВ-таблица 720×256: испытательная таблица в духе телевизионных (оригинальный рисунок, без чужих знаков и надписей), строится сразу из четырёх цветов панели,
+   попиксельно. Что на ней видно:
+   · сетка 32×32 пикселя с центром в середине экрана, рамка, диагонали углов: геометрия, масштаб, не «поехал» ли кадр, нет ли обрезки по краям;
+   · круг и малый круг с четвертями W Y R K: круглость (одинаковый шаг по обеим осям);
+   · слева: полосы W Y R K, градации K→W растром 8×8, пакеты вертикальных и горизонтальных линий с шагом 2…8 пикселей (разрешение по обеим осям);
+   · справа: линейки смешения K→R, W→R, W→Y, Y→R, шахматки 1 и 2 пикселя, плашки четырёх цветов;
+   · красные угловые квадраты: видны ли углы панели (нет ли срезанных краёв). */
+function tvIdx() {
+  const idx = new Uint8Array(W * H).fill(1);
+  const set = (x, y, k) => { if (x >= 0 && x < W && y >= 0 && y < H) idx[y * W + x] = k; };
+  const rect = (x, y, w, h, k) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) set(x + i, y + j, k); };
+  const frame = (x, y, w, h, k) => { rect(x, y, w, 1, k); rect(x, y + h - 1, w, 1, k); rect(x, y, 1, h, k); rect(x + w - 1, y, 1, h, k); };
+  const B8 = BAYER8;
+  for (let k = -11; k <= 11; k++) rect(360 + 32 * k, 0, 1, H, 0);                       // сетка
+  for (let k = -4; k <= 4; k++) rect(0, Math.min(H - 1, 128 + 32 * k), W, 1, 0);
+  for (let x = 0; x < W; x++) { const y = Math.round(x * (H - 1) / (W - 1)); set(x, y, 0); set(x, H - 1 - y, 0); }   // диагонали
+  const ring = (cx, cy, r, th) => { for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy); if (Math.abs(d - r) < th) set(x, y, 0); } };
+  ring(360, 128, 118, 1.1);                                                              // большой круг
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const dx = x + 0.5 - 360, dy = y + 0.5 - 128; if (Math.hypot(dx, dy) < 52) set(x, y, dx < 0 ? (dy < 0 ? 1 : 3) : (dy < 0 ? 2 : 0)); }
+  ring(360, 128, 52, 1.1);
+  // левый блок
+  rect(18, 18, 214, 220, 1); frame(18, 18, 214, 220, 0);
+  [1, 2, 3, 0].forEach((k, i) => rect(22 + i * 51, 22, 51, 56, k));                       // полосы W Y R K
+  frame(22, 22, 204, 56, 0);
+  for (let s = 0; s < 9; s++) for (let y = 0; y < 26; y++) for (let x = 0; x < 22; x++) set(22 + s * 22 + x, 84 + y, B8[(y & 7) * 8 + (x & 7)] < s * 8 ? 1 : 0);   // градации K→W (0 — чёрный, 8 — белый)
+  frame(22, 84, 198, 26, 0);
+  const pitches = [2, 3, 4, 5, 6, 8];
+  pitches.forEach((p, i) => { const x0 = 22 + i * 34; for (let x = 0; x < 34; x++) if (x % p === 0) rect(x0 + x, 116, 1, 56, 0); frame(x0, 116, 34, 56, 0); });   // вертикальные линии
+  pitches.forEach((p, i) => { const x0 = 22 + i * 34; for (let y = 0; y < 56; y++) if (y % p === 0) rect(x0, 178 + y, 34, 1, 0); frame(x0, 178, 34, 56, 0); });   // горизонтальные линии
+  // правый блок
+  rect(488, 18, 214, 220, 1); frame(488, 18, 214, 220, 0);
+  [[0, 3], [1, 3], [1, 2], [2, 3]].forEach(([a, b], r) => { for (let s = 0; s < 9; s++) for (let y = 0; y < 20; y++) for (let x = 0; x < 22; x++) set(492 + s * 22 + x, 22 + r * 24 + y, B8[(y & 7) * 8 + (x & 7)] < s * 8 ? b : a); frame(492, 22 + r * 24, 198, 20, 0); });
+  const checker = (x0, y0, w, h, cell, k) => { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) set(x0 + x, y0 + y, ((Math.floor(x / cell) + Math.floor(y / cell)) & 1) ? 1 : k); frame(x0, y0, w, h, 0); };
+  checker(492, 124, 48, 56, 1, 0); checker(542, 124, 48, 56, 2, 0); checker(592, 124, 48, 56, 1, 3); checker(642, 124, 48, 56, 1, 2);
+  [0, 1, 2, 3].forEach((k, i) => { rect(492 + i * 50, 186, 48, 48, k); frame(492 + i * 50, 186, 48, 48, 0); });
+  rect(0, 0, W, 2, 0); rect(0, H - 2, W, 2, 0); rect(0, 0, 2, H, 0); rect(W - 2, 0, 2, H, 0);          // рамка
+  for (const [x, y] of [[2, 2], [W - 16, 2], [2, H - 16], [W - 16, H - 16]]) rect(x, y, 14, 14, 3);        // красные угловые квадраты
+  return idx;
+}
+$('bTv').onclick = async () => {
+  Object.assign(P, JSON.parse(JSON.stringify(PRESETS.exact.v)), { preset: 'exact', fit: 'cover', zoom: 1, panX: 0, panY: 0, rot: 0, flipH: false, flipV: false, bg: 0 });
+  writeCtls(); setSource(await createImageBitmap(idxToCanvas(tvIdx(), PALETTES.ideal.c)), 'ТВ-таблица'); saveParams();
 };
 
 // ---- мышь: перетаскивание и колесо
