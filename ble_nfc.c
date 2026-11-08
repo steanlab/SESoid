@@ -17,7 +17,8 @@
 #define TAP_PERIOD_US 200000u
 #define TAP_ABSENT_POLLS 2u         // a tap needs at least 2 polls (400 ms) without a field before the phone arrives
 #define TAP_RETRY_US  5000000u
-#define ACK_POLL_MAX  25u           // 25 ms: a block write takes about 4 ms
+#define ACK_POLL_MAX  100u          // 100 ms: a block write takes about 4 ms
+#define WRITE_RETRY_MAX 40u         // a refused write is tried again every 50 ms (2 s): the NFC side may hold the memory for a moment
 
 // the three pins: PC5 supply (port 2, pin 5), PD2 SDA and PD3 SCL (port 3, pins 2 and 3)
 #define PWR_P 2
@@ -87,6 +88,7 @@ static void wait_us(uint32_t us) { uint32_t t0 = RAIL_GetTime(); while ((uint32_
 
 // ---- bit-banged I2C master: a released line is an input with the internal pull-up, a low is a push-pull low, nothing is ever driven high
 static bool bus_err;
+static uint8_t wr_nak = 0xFF, wretry;       // wr_nak: index of the byte of the last write the chip did not acknowledge (0 address, 1 block, 2.. data), 0xFF none
 static uint8_t addr = ADDR;               // 7-bit address in use: ADDR, except while the address rescue looks for a chip that moved
 static void sda_rel(void) { cfg(SDA_P, SDA_N, 2, 1); }
 static void sda_low(void) { cfg(SDA_P, SDA_N, 4, 0); }
@@ -146,11 +148,12 @@ static bool read_reg(uint8_t rega, uint8_t *v) { return read_mem(0xFE, true, reg
 static bool write_block(uint8_t blk, const uint8_t *d)
 {
   bool ok;
-  bus_err = false;
+  bus_err = false; wr_nak = 0xFF;
   i2c_start();
   ok = i2c_wbyte((uint8_t)(addr << 1));
-  if (ok) ok = i2c_wbyte(blk);
-  for (int i = 0; ok && i < 16; i++) ok = i2c_wbyte(d[i]);
+  if (!ok) wr_nak = 0;
+  if (ok) { ok = i2c_wbyte(blk); if (!ok) wr_nak = 1; }
+  for (int i = 0; ok && i < 16; i++) { ok = i2c_wbyte(d[i]); if (!ok) wr_nak = (uint8_t)(2 + i); }
   i2c_stop();
   return ok && !bus_err;
 }
@@ -211,6 +214,7 @@ static bool begin(uint8_t mode)
   addr = ADDR;
   pins_save_on();
   ns = NS_PWRUP; step = 0; sub = 0; ackn = 0; nak_run = 0; live_last_s = 0;
+  wretry = 0; wr_nak = 0xFF;
   found_n = 0; rs_hit = NONE; rs_cur = 0; rs_v = 0; rs_idx = 0; rs_cnt = 0;
   fd.n = 0;                                                         // only a live run watches pins; its pins are set after this
   nf_t0 = RAIL_GetTime(); nf_next = nf_t0 + PWRUP_US;
@@ -278,14 +282,26 @@ static void job_backup(void)
   if (step >= NFC_BK_BLOCKS) finish(nf.op_res == NFC_R_OK ? 2 : 3);
 }
 
-static void fail_op(uint8_t res, uint8_t blk) { nf.op_res = res; nf.op_blk = blk; finish(3); }
+static void fail_op(uint8_t res, uint8_t blk)
+{
+  nf.op_res = res; nf.op_blk = blk;
+  if (nf.mode == NFC_M_WRITE || nf.mode == NFC_M_UNLOCK) {            // what the page needs to tell why: the byte that was refused and the status register
+    uint8_t v = 0;
+    nf.fail = wr_nak;
+    if (read_reg(NFC_LIVE_NS_REG, &v)) { nf.regs[NFC_LIVE_NS_REG] = v; nf.regs_ok |= (uint8_t)(1u << NFC_LIVE_NS_REG); nf.ns_valid = 1; nf.field_now = v & 1u; }
+  }
+  finish(3);
+}
 
 static void job_write(void)                                         // blocks 1..wn: sub 0 write, 1 wait for the chip, 2 read back
 {
   uint8_t blk = (uint8_t)(1u + step);
   if (sub == 0) {
-    if (!write_block(blk, wbuf[step])) { fail_op(NFC_R_NOACK, blk); return; }
-    sub = 1; ackn = 0;
+    if (!write_block(blk, wbuf[step])) {
+      if (++wretry < WRITE_RETRY_MAX) { nf_next = RAIL_GetTime() + 50000u; return; }
+      fail_op(NFC_R_NOACK, blk); return;
+    }
+    sub = 1; ackn = 0; wretry = 0;
   } else if (sub == 1) {
     if (ack_poll()) sub = 2; else if (++ackn >= ACK_POLL_MAX) fail_op(NFC_R_GONE, blk);
   } else {
@@ -305,7 +321,7 @@ static void job_unlock(void)
       ub0[0] = un_b0;                                               // byte 0 of block 0 sets the I2C address: it is written with the value the rescue found for 0x55
       ub0[10] = 0x00; ub0[11] = 0x00;                               // static lock bytes
       step = 1; break;
-    case 1: if (!write_block(0x00, ub0)) { fail_op(NFC_R_NOACK, 0x00); return; } step = 2; ackn = 0; break;
+    case 1: if (!write_block(0x00, ub0)) { if (++wretry < WRITE_RETRY_MAX) { nf_next = RAIL_GetTime() + 50000u; break; } fail_op(NFC_R_NOACK, 0x00); return; } step = 2; ackn = 0; wretry = 0; break;
     case 2: if (ack_poll()) step = 3; else if (++ackn >= ACK_POLL_MAX) fail_op(NFC_R_GONE, 0x00); break;
     case 3:
       if (!read_block(0x00, tmp)) { fail_op(NFC_R_GONE, 0x00); return; }
@@ -315,7 +331,7 @@ static void job_unlock(void)
       if (!read_block(0x38, ub38)) { fail_op(NFC_R_NOACK, 0x38); return; }
       ub38[8] = 0x00; ub38[9] = 0x00; ub38[10] = 0x00;
       step = 5; break;
-    case 5: if (!write_block(0x38, ub38)) { fail_op(NFC_R_NOACK, 0x38); return; } step = 6; ackn = 0; break;
+    case 5: if (!write_block(0x38, ub38)) { if (++wretry < WRITE_RETRY_MAX) { nf_next = RAIL_GetTime() + 50000u; break; } fail_op(NFC_R_NOACK, 0x38); return; } step = 6; ackn = 0; wretry = 0; break;
     case 6: if (ack_poll()) step = 7; else if (++ackn >= ACK_POLL_MAX) fail_op(NFC_R_GONE, 0x38); break;
     default:
       if (!read_block(0x38, tmp)) { fail_op(NFC_R_NOACK, 0x38); return; }

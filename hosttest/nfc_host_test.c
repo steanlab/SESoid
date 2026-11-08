@@ -25,6 +25,8 @@ static int fd_on;                            // PA8 is the FD output: low while 
 static int slave_low, sda_m = 1, scl_m = 1;
 static int ch_mode, bits, acked, phase, blk, rega, have_rega, txclk, txidx, master_ack, last_rw_read, tx_is_reg, wr_idx, wr_active;
 static uint8_t shift, wr_buf[16];
+static uint32_t locked_until;
+static int is_locked(void) { return locked_until && (int32_t)(locked_until - now_us) > 0; }                // the NFC side holds the memory: writes are refused (block byte not acknowledged) until this time
 static int psda = 1, pscl = 1, addr7 = 0x55, amode;
 static int map_addr(uint8_t v) { return amode == 0 ? v >> 1 : amode == 1 ? (v & 0x7F) : ((v * 5 + 11) & 0x7F); }   // what byte 0 of block 0 does to the I2C address: not known for the real chip
 static uint32_t busy_until;
@@ -36,7 +38,7 @@ static int powered(void)
 }
 static uint8_t tx_byte(void)
 {
-  if (tx_is_reg) { uint8_t r = (uint8_t)(rega + txidx); return r == 6 ? (uint8_t)(0x20 | (field ? 1 : 0)) : sreg[r & 7]; }
+  if (tx_is_reg) { uint8_t r = (uint8_t)(rega + txidx); return r == 6 ? (uint8_t)(0x20 | (field ? 1 : 0) | (is_locked() ? 0x40 : 0)) : sreg[r & 7]; }
   return mem[(blk + txidx / 16) & 255][txidx % 16];
 }
 static void drive_bit(void) { slave_low = !((tx_byte() >> (7 - txclk)) & 1u); }
@@ -66,7 +68,7 @@ static void chip(int sda, int scl)
     if (ch_mode == 1 && bits == 8 && !acked) {
       int ack = 0;
       if (phase == 0) { ack = (shift >> 1) == addr7 && now_us >= busy_until; last_rw_read = shift & 1; }
-      else if (phase == 1) { blk = shift; ack = (int)blk != nak_blk; have_rega = 0; }
+      else if (phase == 1) { blk = shift; ack = (int)blk != nak_blk && (last_rw_read || blk == 0xFE || !is_locked()); have_rega = 0; }
       else if (phase == 2) { rega = shift; have_rega = 1; ack = 1; }
       else { ack = 1; if (wr_idx < 16) wr_buf[wr_idx++] = shift; }
       slave_low = ack; acked = ack;
@@ -121,7 +123,7 @@ static void world(void)
   for (int i = 0; i < 8; i++) sreg[i] = (uint8_t)(0x10 + i);
   memset(wlock, 0, sizeof(wlock));
   dead = 0; field = 0; nak_blk = -1; drive_high_viol = 0; slave_low = 0; sda_m = scl_m = 1; psda = pscl = 1; ch_mode = 0; wr_active = 0;
-  addr7 = 0x55; amode = 0; busy_until = 0; writes = mem_writes = 0; fd_on = 0;
+  addr7 = 0x55; amode = 0; locked_until = 0; busy_until = 0; writes = mem_writes = 0; fd_on = 0;
 }
 static void run(uint32_t limit_us)
 {
@@ -377,6 +379,26 @@ static void test_unlock(void)
   CHECK(drive_high_viol == 0, "SDA and SCL never driven high (%d)", drive_high_viol);
 }
 
+static void test_write_lock(void)
+{
+  printf("write: the NFC side holds the memory for a moment\n");
+  world(); nfc_tap_enable(false);
+  uint8_t b[16] = { 0x03, 0x0A, 0xD1, 0x01, 0x06, 0x55, 0x04, 'a', 'b', 'c', 'd', 'e', 0xFE };
+  nfc_wbuf_set(0, b);
+  locked_until = now_us + 600000u;
+  CHECK(nfc_write_start(1), "starts");
+  run(10000000u);
+  const nfc_t *c = nfc_state();
+  CHECK(c->state == 2 && c->op_res == NFC_R_OK && memcmp(mem[1], b, 16) == 0, "written after the lock ended: state %u res %u", c->state, c->op_res);
+  printf("write: the memory stays refused\n");
+  world(); locked_until = now_us + 100000000u;
+  nfc_wbuf_set(0, b);
+  CHECK(nfc_write_start(1), "starts");
+  run(10000000u);
+  CHECK(c->state == 3 && c->op_res == NFC_R_NOACK && c->op_blk == 1 && c->fail == 1, "refused: res %u blk %u stage %u", c->op_res, c->op_blk, c->fail);
+  CHECK(c->ns_valid && (c->regs[6] & 0x40) && (c->regs_ok & 0x40), "the status register is reported with the lock bit (%02x)", c->regs[6]);
+}
+
 static void test_find_rescue(void)
 {
   printf("find\n");
@@ -440,6 +462,7 @@ int main(void)
   test_backup_write();
   test_unlock();
   test_find_rescue();
+  test_write_lock();
   printf(fails ? "%d FAILED\n" : "ALL OK\n", fails);
   return fails != 0;
 }

@@ -226,7 +226,7 @@
     <div class="row"><button id="bNfcSnap" disabled>Прочитать чип</button><button id="bNfcLive" disabled>Следить за полем (2 мин)</button><button id="bNfcStop" disabled>Выключить</button><button id="bNfcGet" disabled>Показать отчёт</button></div>
     <pre id="nfcOut" class="n" style="white-space:pre-wrap;margin:8px 0 0"></pre>
     <h3 style="margin:14px 0 4px;font-size:1rem">Копия, своя ссылка, снятие блокировки</h3>
-    <p class="n">Запись идёт со стороны процессора (I²C) и проверяется обратным чтением. Сначала сохраните копию чипа: без неё кнопки записи недоступны. Файл копии содержит серийные данные чипа, не публикуйте его.</p>
+    <p class="n">Запись идёт со стороны процессора (I²C) и проверяется обратным чтением. На время записи держите метку не ближе 30 см от телефона: пока телефон держит чип по NFC, чип может отказываться принимать запись по I²C. Сначала сохраните копию чипа: без неё кнопки записи недоступны. Файл копии содержит серийные данные чипа, не публикуйте его.</p>
     <div class="row"><button id="bNfcBk" disabled>1. Сохранить копию чипа</button><button id="bNfcDl" disabled>Скачать копию (файл)</button></div>
     <label style="display:block;margin:8px 0 2px">Ссылка для записи в чип (только латиница): <input type="text" id="nfcUrl" style="width:100%;box-sizing:border-box" spellcheck="false"></label>
     <div class="n" id="nfcUrlInfo" style="margin:0 0 6px"></div>
@@ -1272,14 +1272,26 @@ function nfcOpDone() {
   if (st.mode === 6) toast(st.state === 2 ? 'Поиск закончен.' : 'Чип не найден ни на одном адресе.');
   if (st.mode === 7) toast(st.state === 2 ? 'Операция с адресом закончена.' : 'Адрес не удалось вернуть: ' + nfcResTxt(st));
 }
+// почему запись отклонена: какой байт чип не принял и что говорит регистр состояния NS_REG
+function nfcWhy(st) {
+  if (st.mode !== 4 && st.mode !== 5) return '';
+  const L = [];
+  if (st.fail !== 0xFF && st.fail < 18) L.push(st.fail === 0 ? 'не ответил на адрес' : st.fail === 1 ? 'не принял номер блока' : 'не принял байт данных ' + (st.fail - 2));
+  if (st.ns_valid) {
+    const ns = st.ns, f = ns & 1, lk = ns >> 6 & 1;
+    L.push('NS_REG=0x' + ns.toString(16).toUpperCase().padStart(2, '0') + ': поле телефона ' + (f ? 'ЕСТЬ' : 'нет') + ', память занята со стороны NFC ' + (lk ? 'ДА' : 'нет') + ', ошибка записи EEPROM ' + (ns >> 2 & 1));
+    L.push(f || lk ? 'уберите телефон от метки (лучше дальше 30 см, NFC на телефоне на время записи можно выключить) и повторите' : 'поля и занятости нет: похоже, запись защищена настройкой чипа; пришлите эту строку');
+  } else L.push('регистр NS_REG прочитать не удалось');
+  return '; ' + L.join('; ');
+}
 function nfcResTxt(st) {
   const b = st.resBlk.toString(16).toUpperCase().padStart(2, '0');
   switch (st.res) {
     case 0: return 'без ошибок';
-    case 1: return 'чип не ответил (блок ' + b + ')';
+    case 1: return 'чип не принял запись (блок ' + b + ')' + nfcWhy(st);
     case 2: return 'чип принял запись, но при проверке чтением данные не совпали (блок ' + b + '): запись игнорируется, скорее всего из-за битов блокировки. Попробуйте «Снять блокировку записи»';
     case 3: return 'метка отказалась: чип не похож на ожидаемый (NTAG I²C plus) или запись NDEF неверна';
-    case 4: return 'чип пропал во время операции (возможно, сменился его I²C-адрес: нажмите «Найти чип по всем адресам»)';
+    case 4: return 'чип перестал отвечать во время операции (блок ' + b + ')' + nfcWhy(st) + '. Если после этого «Прочитать чип» тоже не отвечает, нажмите «Найти чип по всем адресам»';
     default: return 'код ' + st.res;
   }
 }
@@ -1417,7 +1429,7 @@ function renderNfc() {
     if (!rows.some(r => r.v.cls === 2)) L.push('  Подходящего вывода пока нет: запустите слежение, поднесите телефон на 2–3 секунды и уберите, повторите несколько раз, затем «Показать отчёт».');
   } else if (NFC.fdWant && st && st.mode === 2 && st.state >= 2) L.push('', 'Метка не прислала данных по выводам FD.');
   out.textContent = L.join('\n');
-  if (st && st.state >= 2) log('NFC-чип: ' + L.filter(x => x).join(' | '));
+  if (st && st.state >= 2 && L.some(x => x)) log('NFC-чип: ' + L.filter(x => x).join(' | '));
 }
 $('bFInfo').onclick = () => cmd([0x20]);
 $('bFErase').onclick = () => { log('стираю сектор ' + $('sec').value + ' ...'); cmd([0x21, +$('sec').value]); };

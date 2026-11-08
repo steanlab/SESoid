@@ -49,7 +49,8 @@ extern const uint8_t nfc_block_addr[NFC_BLOCKS];   // 0x00 UID / lock bytes / CC
 typedef struct {
   uint8_t  state;                  // 0 never run, 1 running, 2 finished, 3 failed (the chip never answered / the operation failed)
   uint8_t  mode;                   // NFC_M_*
-  uint8_t  fail;                   // snapshot: bit n = block n did not answer, bit 6 = a session register did not answer
+  uint8_t  fail;                   // snapshot: bit n = block n did not answer, bit 6 = a session register did not answer; write/unlock failure: index of the byte the
+                                   // chip refused (0 address, 1 block number, 2..17 data, 0xFF none; the status register is then in regs[] / ns_valid)
   uint8_t  regs_ok;                // bit n = session register n was read
   uint8_t  blocks[NFC_BLOCKS][16];
   uint8_t  regs[NFC_REGS];

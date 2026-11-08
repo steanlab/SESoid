@@ -73,7 +73,7 @@ const MOCK = `
     else if (op === 0x3F && v[1] === 0x20) { tag.wbuf = tag.wbuf || []; tag.wbuf[v[2]] = Array.from(v.slice(3, 19)); tag.wbufN = (tag.wbufN || 0) + 1; }
     else if (op === 0x3F && v[1] === 0x21) {
       tag.writeArgs = Array.from(v); tag.nfcMode = 4; N([0xB3, 0x3F, v.length === 4 && v[3] === 0xA5 ? 0 : 1]); tag.nfcRes = [0, 0];
-      if (tag.wp) tag.nfcRes = [2, 1]; else for (let i = 0; i < v[2]; i++) tag.chip[1 + i] = tag.wbuf[i];
+      if (tag.lockNak) { tag.nfcRes = [1, 1]; tag.nfcFail = 1; tag.nfcNsValid = true; tag.nfcNs = 0x41; } else if (tag.wp) tag.nfcRes = [2, 1]; else for (let i = 0; i < v[2]; i++) tag.chip[1 + i] = tag.wbuf[i];
       setTimeout(() => nfcSend(), 80);
     }
     else if (op === 0x3F && v[1] === 0x30) { tag.nfcMode = 6; N([0xB3, 0x3F, 0]); setTimeout(() => N([0xBD, tag.nochip ? 3 : 2, 6, tag.chipAddr === 0x55 ? 0 : 0x31, 0, 0, 0, 0, 0, 0, 0, 0, 0, tag.nochip ? 1 : 0, tag.nochip ? 0 : tag.chipAddr, tag.nochip ? 0 : 1]), 80); }
@@ -123,7 +123,7 @@ const MOCK = `
       for (let i = 0; i < 26; i++) if (m >> i & 1) N(i === 8 ? [0xBE, i, ...le32(900), ...le32(100), ...le32(2), ...le32(1500)] : [0xBE, i, ...le32(0), ...le32(1000), ...le32(0), ...le32(1500)]);
     }
     const nr = tag.nfcRes || [0, 0], fdn = tag.nfcMode === 2 && tag.fdArgs && tag.fdArgs.length === 6 ? 9 : 0;
-    N([0xBD, tag.nfcDead ? 3 : (tag.nfcMode >= 4 && nr[0] ? 3 : 2), tag.nfcMode, tag.nfcDead ? 0x7F : 0, tag.nfcDead ? 0 : (tag.nfcMode === 2 ? 1 | ((ns & 1) << 1) | ((tag.nfcEver ? 1 : 0) << 2) : 0), ns, tag.nfcEvents || 0, 0, 7, 0, 35, 0, tag.nfcDead ? 0 : 0x7F, tag.nfcMode >= 4 ? nr[0] : 0, tag.nfcMode >= 4 ? nr[1] : 0, fdn]);
+    N([0xBD, tag.nfcDead ? 3 : (tag.nfcMode >= 4 && nr[0] ? 3 : 2), tag.nfcMode, tag.nfcDead ? 0x7F : (tag.nfcMode >= 4 ? (tag.nfcFail || 0) : 0), tag.nfcDead ? 0 : (tag.nfcMode === 2 ? 1 | ((ns & 1) << 1) | ((tag.nfcEver ? 1 : 0) << 2) : (tag.nfcMode >= 4 && tag.nfcNsValid ? 1 | ((ns & 1) << 1) : 0)), ns, tag.nfcEvents || 0, 0, 7, 0, 35, 0, tag.nfcDead ? 0 : 0x7F, tag.nfcMode >= 4 ? nr[0] : 0, tag.nfcMode >= 4 ? nr[1] : 0, fdn]);
   }
   function scanPkt(st) {
     const hit = tag.scanHit !== false, opt = tag.scanArgs ? tag.scanArgs[2] : 0, pw = tag.scanArgs && tag.scanArgs[1] === 5 && hit ? 11 : 255;
@@ -403,6 +403,11 @@ const MOCK = `
   await pg.fill('#nfcUrl', 'https://' + 'a'.repeat(120)); await pg.waitForTimeout(100);
   ok(await pg.evaluate(() => document.getElementById('bNfcWr').disabled) && (await pg.textContent('#nfcUrlInfo')).includes('слишком длинная'), 'nfc write: too long refused');
   await pg.fill('#nfcUrl', 'https://example.org/app/'); await pg.waitForTimeout(100);
+  await pg.evaluate(() => { window.__tag.lockNak = true; });
+  await pg.click('#bNfcWr'); await pg.waitForTimeout(700);
+  const wt = await pg.textContent('#nfcOut2');
+  ok(wt.includes('не принял номер блока') && wt.includes('NS_REG=0x41') && wt.includes('память занята со стороны NFC ДА') && wt.includes('уберите телефон'), 'nfc write: refused write explained with NS_REG and the phone hint');
+  await pg.evaluate(() => { window.__tag.lockNak = false; window.__tag.nfcNsValid = false; window.__tag.nfcNs = undefined; window.__tag.nfcFail = 0; });
   await pg.evaluate(() => { window.__tag.wp = true; });
   await pg.click('#bNfcWr'); await pg.waitForTimeout(700);
   const wa = await pg.evaluate(() => window.__tag.writeArgs);
