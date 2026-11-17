@@ -71,7 +71,7 @@
 <header>
   <h1>Gecko Slide <small>SES V300 · e-ink 5.9″ BWRY · не badge154 · steanlab/SESoid, docs/index.html</small></h1>
   <span class="pill" id="connPill"><span class="dot"></span><span id="connTxt">не подключено</span></span>
-  <button class="p" id="bConn">Подключиться</button><button id="bDisc" disabled>Отключиться</button><button id="bInstall" hidden title="Установить как приложение: откроется в своём окне и будет работать без интернета">Установить приложение</button><span class="pill" id="pwaPill" hidden title="Страница сохранена в браузере и откроется без интернета"><span class="dot"></span>работает офлайн</span>
+  <button id="bLang" title="Language / Язык">EN</button><button class="p" id="bConn">Подключиться</button><button id="bDisc" disabled>Отключиться</button><button id="bInstall" hidden title="Установить как приложение: откроется в своём окне и будет работать без интернета">Установить приложение</button><span class="pill" id="pwaPill" hidden title="Страница сохранена в браузере и откроется без интернета"><span class="dot"></span>работает офлайн</span>
 </header>
 <nav id="tabs">
   <button data-t="edit" class="act">Изображение</button><button data-t="slots">Слоты и слайдшоу</button><button data-t="cfg">Настройки</button><button data-t="tag">Метка</button><button data-t="tools">Инструменты</button><button data-t="logt">Журнал</button>
@@ -259,6 +259,751 @@
 
 <script>
 'use strict';
+
+/* ===== i18n: Russian is the source language, English comes from these tables (switch in the header, remembered in the browser) ===== */
+const EN_JS = new Map([
+  ['Идеальная (максимальная насыщенность)','Ideal (maximum saturation)'],
+  ['Реальная панель (по калибровочному снимку)','Real panel (from the calibration photo)'],
+  ['Своя','Custom'],
+  ['Нет (ближайший цвет)','None (nearest colour)'],
+  ['Флойд — Стейнберг','Floyd–Steinberg'],
+  ['Джарвис — Джудис — Нинке','Jarvis–Judice–Ninke'],
+  ['Штуки','Stucki'],
+  ['Беркс','Burkes'],
+  ['Аткинсон (мягкий, светлые тона)','Atkinson (soft, light tones)'],
+  ['Упорядоченный Байер 4×4','Ordered Bayer 4×4'],
+  ['Упорядоченный Байер 8×8','Ordered Bayer 8×8'],
+  ['Шум (интерлейс-градиент)','Noise (interleaved gradient)'],
+  ['Насыщенно','Vivid'],
+  ['Максимально яркие цвета: идеальная палитра, сильная насыщенность и контраст, диффузия ошибки. Хорошо для рисунков, постеров, логотипов и фото с яркими цветами.','Brightest colours: ideal palette, strong saturation and contrast, error diffusion. Good for drawings, posters, logos and photos with bright colours.'],
+  ['Фото','Photo'],
+  ['Нейтральная передача тонов: палитра, близкая к панели, мягкая насыщенность, диффузия Флойда — Стейнберга.','Neutral tones: a palette close to the panel, soft saturation, Floyd–Steinberg diffusion.'],
+  ['Графика / текст','Graphics / text'],
+  ['Чёткие края и ровные заливки: без размытия цветов, ближайший цвет без дизеринга, высокая насыщенность.','Sharp edges and flat fills: no colour blending, nearest colour without dithering, high saturation.'],
+  ['Как есть','As is'],
+  ['Без обработки: картинка, уже состоящая из четырёх цветов панели, переносится пиксель в пиксель (для калибровочной таблицы и готовых 4-цветных рисунков).','No processing: a picture that already consists of the four panel colours is transferred pixel for pixel (for the calibration chart and ready-made 4-colour artwork).'],
+  ['Чёрно-белое','Black and white'],
+  ['Только чёрный и белый (жёлтый и красный выключены): самое чёткое изображение и самое быстрое обновление восприятием.','Black and white only (yellow and red switched off): the sharpest image and the cleanest-looking update.'],
+  ['Ретро-растр','Retro halftone'],
+  ['Упорядоченный дизеринг Байера: регулярный узор, как в старых играх; не «ползёт» при мелких изменениях картинки.','Ordered Bayer dithering: a regular pattern like old games; does not "crawl" when the picture changes slightly.'],
+  ['Вписывание','Fit'],
+  ['Заполнить (обрезать лишнее)','Fill (crop the excess)'],
+  ['Вписать целиком (поля)','Fit whole picture (margins)'],
+  ['Растянуть','Stretch'],
+  ['Цвет полей','Margin colour'],
+  ['Чёрный','Black'],
+  ['Белый','White'],
+  ['Жёлтый','Yellow'],
+  ['Красный','Red'],
+  ['Масштаб','Zoom'],
+  ['Шлейф (FPC)','Flex cable (FPC)'],
+  ['слева (как у заставки)','on the left (as on the splash)'],
+  ['справа','on the right'],
+  ['Насыщенность','Saturation'],
+  ['Контраст','Contrast'],
+  ['Яркость','Brightness'],
+  ['Гамма','Gamma'],
+  ['Резкость','Sharpness'],
+  ['Авто-уровни','Auto levels'],
+  ['растянуть тона по гистограмме','stretch the tones to the histogram'],
+  ['Палитра','Palette'],
+  ['Выбор цвета','Colour matching'],
+  ['Лаб (как видит глаз)','Lab (as the eye sees it)'],
+  ['RGB в линейном свете','RGB in linear light'],
+  ['Алгоритм','Algorithm'],
+  ['Сила','Strength'],
+  ['Растискивание','Dot gain'],
+  ['Змейкой','Serpentine'],
+  ['менять направление строк (меньше полос)','alternate the row direction (fewer streaks)'],
+  ['Цвета панели','Panel colours'],
+  ['показывать цвета, как на реальной панели','show the colours as on the real panel'],
+  ['Масштаб экрана','Screen scale'],
+  ['По ширине окна','Fit to window width'],
+  ['Настройки изменены вручную.','Settings were changed by hand.'],
+  ['использовать цвет','use colour'],
+  ['Нужно оставить хотя бы два цвета','At least two colours must stay on'],
+  ['картинка','picture'],
+  ['загружена картинка ','picture loaded: '],
+  ['Не удалось открыть картинку: ','Could not open the picture: '],
+  ['чёрный','black'],
+  ['белый','white'],
+  ['жёлтый','yellow'],
+  ['красный','red'],
+  ['<span>расчёт ','<span>calculation '],
+  [' мс</span>',' ms</span>'],
+  ['кадр ','frame '],
+  [' Б, CRC ',' B, CRC '],
+  ['ошибка конвертера: ','converter error: '],
+  ['4 цвета BWRY','4 colours BWRY'],
+  ['калибровка','calibration'],
+  ['проверка растискивания','dot-gain check'],
+  ['ТВ-таблица','TV test chart'],
+  ['В буфере нет картинки','There is no picture in the clipboard'],
+  ['Браузер не дал прочитать буфер: нажмите Ctrl+V на странице','The browser did not allow reading the clipboard: press Ctrl+V on the page'],
+  ['пример','example'],
+  ['библиотека: IndexedDB недоступна, картинки помню только до закрытия страницы','library: IndexedDB is unavailable, pictures are remembered only until the page is closed'],
+  ['библиотека: не удалось записать: ','library: could not save: '],
+  ['ошибка разбора ','parse error '],
+  ['команда','command'],
+  ['Ошибка связи: ','Communication error: '],
+  ['не запускалось','never run'],
+  ['идёт обновление','updating'],
+  ['готово','done'],
+  ['ошибка','error'],
+  ['нет','no'],
+  ['BUSY панели не поднялся после сброса','panel BUSY did not rise after reset'],
+  ['ID чипа панели не 0x0D04','panel chip ID is not 0x0D04'],
+  ['OTP: таймаут','OTP: timeout'],
+  ['OTP: таймаут в конце','OTP: timeout at the end'],
+  ['нет метки в OTP','no mark in OTP'],
+  ['BUSY после второго сброса','BUSY after the second reset'],
+  ['инициализация: таймаут','initialisation: timeout'],
+  ['DC/DC: таймаут','DC/DC: timeout'],
+  ['обновление: таймаут','refresh: timeout'],
+  ['отключение DC/DC: таймаут','DC/DC off: timeout'],
+  ['flash не отвечает при выводе слайда','flash does not respond while a slide is being sent'],
+  ['заставка','splash'],
+  ['слот','slot'],
+  ['заливка','fill'],
+  ['запущено (около 30 с)','started (about 30 s)'],
+  ['экран ещё обновляется','the screen is still updating'],
+  ['в слоте нет кадра 720×256','no 720×256 frame in the slot'],
+  ['flash занята (загрузка или тест)','flash busy (upload or test)'],
+  ['ожидание','waiting'],
+  ['включение и сброс панели','panel power-on and reset'],
+  ['идентификатор панели','panel identification'],
+  ['чтение OTP','reading OTP'],
+  ['инициализация','initialisation'],
+  ['передача изображения','sending the image'],
+  ['включение DC/DC','DC/DC on'],
+  ['смена изображения (≈ 19 с)','image change (≈ 19 s)'],
+  ['остановка DC/DC','DC/DC stop'],
+  ['выключение','power off'],
+  ['метка не приняла команду (код ','the tag did not accept the command (code '],
+  ['): нужна прошивка 1.7 или новее, либо неверные параметры.','): firmware 1.7 or newer is needed, or the parameters are wrong.'],
+  ['метка не приняла команду сканера: нужно от 2 до 6 свободных выводов (при подаче питания 2–4 вывода сканирования и хотя бы один отдельный вывод питания) и прошивка 1.5 или новее.','the tag did not accept the scanner command: 2 to 6 free pins are needed (with power supply: 2–4 scan pins and at least one separate power pin) and firmware 1.5 or newer.'],
+  ['Сканер I²C: метка отклонила команду','I²C scanner: the tag rejected the command'],
+  ['метка отклонила команду монитора (код ','the tag rejected the monitor command (code '],
+  ['). Для выбора выводов нужна прошивка 1.2.','). Choosing pins needs firmware 1.2.'],
+  ['Монитор выводов: метка отклонила команду','Pin monitor: the tag rejected the command'],
+  ['Показ слота: ','Show slot: '],
+  ['Следующий слайд: ','Next slide: '],
+  ['Заливка: ','Fill: '],
+  ['Заставка: ','Splash: '],
+  ['Диагностика панели: ','Panel diagnostics: '],
+  ['Тест кварцев: ','Crystal test: '],
+  ['Монитор выводов: ','Pin monitor: '],
+  ['Сканер I²C / NFC-чип: ','I²C scanner / NFC chip: '],
+  ['Команда: ','Command: '],
+  ['Метка перезагружается; подключитесь заново через несколько секунд','The tag is rebooting; reconnect in a few seconds'],
+  ['экран: обновление закончено — ','screen: update finished — '],
+  ['успешно','success'],
+  ['ОШИБКА ','ERROR '],
+  [', источник: ',', source: '],
+  ['Ошибка обновления экрана: ','Screen update error: '],
+  ['Экран обновлён','Screen updated'],
+  ['ping-ответ: ','ping reply: '],
+  ['счётчики метки: принято ','tag counters: received '],
+  [' байт, записей ',' bytes, writes '],
+  ['счётчики сброшены','counters reset'],
+  [' (ожидается ef 40 13), SR1=',' (expected ef 40 13), SR1='],
+  ['BUSY не снялся за 3 с','BUSY did not clear within 3 s'],
+  ['сектор не пуст после стирания','sector is not blank after the erase'],
+  ['бит записи (WEL) не установился','write enable bit (WEL) did not set'],
+  ['данные не совпали при чтении','data did not match on read-back'],
+  ['неверные параметры или flash занята','wrong parameters or flash busy'],
+  ['стирание: ','erase: '],
+  ['запись страницы: ','page write: '],
+  [' мс; не FF/расхождений: ',' ms; not FF / mismatches: '],
+  ['чтение: результат ','read: result '],
+  [', байт не равных FF: ',', bytes not equal to FF: '],
+  ['flash совпадает с записью (CRC верный)','flash matches the record (CRC correct)'],
+  ['в слоте нет действительной записи','there is no valid record in the slot'],
+  ['CRC flash НЕ совпал с записью','flash CRC does NOT match the record'],
+  ['занято/ошибка ','busy/error '],
+  ['слот ','slot '],
+  [' байт, CRC при чтении ',' bytes, CRC on read '],
+  ['уведомление ','notification '],
+  ['Этот браузер не поддерживает Web Bluetooth: нужен Chrome (компьютер или Android) по https','This browser does not support Web Bluetooth: Chrome (desktop or Android) over https is required'],
+  ['подключаюсь к ','connecting to '],
+  ['ошибка подключения: ','connection error: '],
+  ['Не удалось подключиться: ','Could not connect: '],
+  ['соединение закрыто','connection closed'],
+  ['подключено: ','connected: '],
+  ['не подключено','not connected'],
+  [' ч ',' h '],
+  [' д ',' d '],
+  [' мин ',' min '],
+  [' с',' s'],
+  ['Показано','Shown'],
+  ['заливка ','fill '],
+  ['чёрная','black'],
+  ['белая','white'],
+  ['жёлтая','yellow'],
+  ['красная','red'],
+  ['Ошибка панели','Panel error'],
+  ['Обновлений с запуска','Updates since start'],
+  ['Расхождений CRC слота','Slot CRC mismatches'],
+  ['До автосмены','Until the next change'],
+  ['Работает','Running'],
+  ['Экран обновляется (','The screen is updating ('],
+  ['Следующая смена через ','Next change in '],
+  ['Автосмена выключена. ','Automatic change is off. '],
+  ['Показано: ','Shown: '],
+  ['включение питания','power-on'],
+  ['сброс по выводу RESET','reset by the RESET pin'],
+  ['выход из EM4','wake-up from EM4'],
+  ['сторожевой таймер','watchdog'],
+  ['просадка питания','brown-out'],
+  ['зависание ядра','core lock-up'],
+  ['программный сброс','software reset'],
+  ['ошибка питания DECOUPLE','DECOUPLE supply error'],
+  ['не определён','unknown'],
+  ['Прошивка','Firmware'],
+  ['Причина последнего сброса','Cause of the last reset'],
+  ['Слово PART','PART word'],
+  ['нажмите, чтобы показать','click to show'],
+  ['Уникальный ID (EUI-64)','Unique ID (EUI-64)'],
+  ['Память чипа','Chip memory'],
+  [' КБ flash, ',' KB flash, '],
+  [' КБ ОЗУ',' KB RAM'],
+  ['Внешняя flash (JEDEC)','External flash (JEDEC)'],
+  ['ещё не читалась (кнопка «Идентификатор» в Инструментах)','not read yet (the "Identifier" button in Tools)'],
+  [' — Winbond, 4 Мбит (512 КиБ)',' — Winbond, 4 Mbit (512 KiB)'],
+  ['Панель','Panel'],
+  ['ID чипа 0x','chip ID 0x'],
+  [', обновлений ',', updates '],
+  [', расхождений CRC ',', CRC mismatches '],
+  ['Последнее обновление панели','Last panel update'],
+  [' с на смену картинки',' s per picture change'],
+  ['Интервал соединения','Connection interval'],
+  [' мс',' ms'],
+  ['Соединений с запуска','Connections since start'],
+  ['Уровень сигнала (последний)','Signal level (last)'],
+  [' дБм',' dBm'],
+  ['Мощность передатчика','Transmitter power'],
+  ['Сторожевой таймер','Watchdog'],
+  ['включён (8 с)','on (8 s)'],
+  ['выключен','off'],
+  ['Журнал настроек (счётчик записей)','Settings log (entry counter)'],
+  ['нет данных с метки','no data from the tag'],
+  ['пусто','empty'],
+  ['запись ','record '],
+  [' Б, не кадр',' B, not a frame'],
+  ['совпадает с запомненным','matches the remembered one'],
+  ['в метке другое','the tag holds another'],
+  ['в метке чужое','the tag holds a foreign one'],
+  ['показан','shown'],
+  ['<span>Слот ','<span>Slot '],
+  ['в метке другая картинка, запомненная здесь не совпадает','the tag holds another picture, it does not match the one remembered here'],
+  ['картинка загружена не с этой страницы','the picture was not uploaded from this page'],
+  [' в слайдшоу',' in the slideshow'],
+  ['Показать','Show'],
+  ['показ','show'],
+  ['Загрузить сюда','Upload here'],
+  ['Слот ','Slot '],
+  [' выбран для загрузки',' selected for upload'],
+  ['Проверить','Verify'],
+  ['проверка','verification'],
+  ['Забыть','Forget'],
+  ['Забыть запомненную картинку слота ','Forget the remembered picture of slot '],
+  ['? В метке она останется.','? It stays in the tag.'],
+  ['следующий','next'],
+  ['Перезагрузить метку? Соединение прервётся, на экране снова появится заставка (около 30 с).','Reboot the tag? The connection will drop and the splash will appear on the screen again (about 30 s).'],
+  ['перезагрузка','reboot'],
+  [' мин',' min'],
+  [' ч',' h'],
+  [' (сутки)',' (a day)'],
+  ['другой…','other…'],
+  ['фактически ','actual '],
+  ['нужна прошивка 1.7 или новее','firmware 1.7 or newer is needed'],
+  ['касаний с запуска метки: ','taps since the tag started: '],
+  ['. Метка опрашивает NFC-чип 5 раз в секунду; расход батареи пока не оптимизирован (сон добавим позже).','. The tag polls the NFC chip 5 times a second; battery use is not optimised yet (sleep will be added later).'],
+  ['настройки','settings'],
+  ['Настройки отправлены в метку','Settings sent to the tag'],
+  ['идёт диагностика, подождите около 5 секунд …','diagnostics running, wait about 5 seconds …'],
+  ['диагностика','diagnostics'],
+  ['отчёт','report'],
+  ['Диагностика ещё не запускалась.','Diagnostics has not been run yet.'],
+  ['✔ Панель отвечает: ID прочитан правильно на всех трёх попытках, в том числе на медленной частоте. Теперь пробуйте обычное обновление.','✔ The panel responds: the ID was read correctly on all three attempts, including the slow clock. Now try a normal update.'],
+  ['⚠ ID прочитан правильно не на всех попытках (','⚠ The ID was not read correctly on every attempt ('],
+  ['): ответ нестабильный. Подозрение на плохой контакт шлейфа или нехватку питания.','): the answer is unstable. Suspect a poor flex-cable contact or insufficient supply.'],
+  ['✖ ID читается как 0x0000 на всех попытках, включая медленную частоту: панель не ведёт линию данных.','✖ The ID reads as 0x0000 on all attempts, including the slow clock: the panel does not drive the data line.'],
+  ['✖ ID читается как 0xFFFF: линия подтянута вверх, панель молчит.','✖ The ID reads as 0xFFFF: the line is pulled high, the panel is silent.'],
+  ['✖ Неожиданный ответ ID: ','✖ Unexpected ID answer: '],
+  [' (ожидается 0x0D04).',' (0x0D04 expected).'],
+  ['Линия данных в простое свободна: это нормально, панель держит её только пока отвечает. Сама по себе она ничего не доказывает.','The data line is free when idle: that is normal, the panel holds it only while it answers. On its own this proves nothing.'],
+  ['Линия данных прижата к нулю даже с подтяжкой вверх: замыкание на землю или панель/её контроллер держит линию внизу.','The data line is held at zero even with the pull-up: short to ground, or the panel/its controller holds the line low.'],
+  ['Линия данных прижата к единице даже с подтяжкой вниз: замыкание на питание или панель держит линию вверху.','The data line is held at one even with the pull-down: short to supply, or the panel holds the line high.'],
+  ['Но BUSY реагирует на питание и сброс (низкий при выключенной панели, высокий после сброса): логика панели жива и сброс до неё доходит. Значит, молчит именно канал данных: панель не получает команду 0x70 или её ответ не доходит до метки. Подозрение: линии SDA, SCLK, CS или DC (обрыв, плохой контакт, пайка).','But BUSY reacts to power and reset (low with the panel off, high after reset): the panel logic is alive and the reset reaches it. So it is the data channel that is silent: the panel does not receive command 0x70 or its answer does not reach the tag. Suspect the SDA, SCLK, CS or DC lines (break, poor contact, soldering).'],
+  ['✖ BUSY не поднялся за 3 с после сброса: контроллер панели не просыпается.','✖ BUSY did not rise within 3 s after reset: the panel controller does not wake up.'],
+  ['BUSY поднялся через ','BUSY rose '],
+  [' мс после сброса',' ms after reset'],
+  [' (но он высокий и при выключенной панели, так что по нему о панели судить нельзя: линия подтянута на плате)',' (but it is high also with the panel off, so BUSY says nothing about the panel: the line is pulled up on the board)'],
+  ['BUSY высокий всегда (и при выключенном питании панели, и при сбросе): вероятно, подтяжка на плате; контроллер панели его не меняет.','BUSY is always high (with the panel power off and during reset): probably a pull-up on the board; the panel controller does not change it.'],
+  ['\n\nСырые значения: питание панели выключено 3 с: BUSY ','\n\nRaw values: panel power off for 3 s: BUSY '],
+  [', SDA с подтяжкой вниз/вверх ',', SDA with pull-down/up '],
+  [' | через 20 мс после включения BUSY ',' | 20 ms after power-on BUSY '],
+  [' | сброс: BUSY при RST=0 ',' | reset: BUSY at RST=0 '],
+  [', через 10/100/500 мс ',', after 10/100/500 ms '],
+  ['не поднялся','did not rise'],
+  [' (третий на медленной частоте) | SDA после чтения, подтяжка вниз/вверх ',' (the third at the slow clock) | SDA after the read, pull-down/up '],
+  ['диагностика панели: ','panel diagnostics: '],
+  ['идёт тест, подождите 1–3 секунды …','test running, wait 1–3 seconds …'],
+  ['тест кварцев','crystal test'],
+  ['Тест ещё не запускался.','The test has not been run yet.'],
+  ['FSRCO (20 МГц)','FSRCO (20 MHz)'],
+  ['не выбран','not selected'],
+  ['Кварц 38,4 МГц (HFXO): ','38.4 MHz crystal (HFXO): '],
+  ['работает','working'],
+  ['НЕ готов','NOT ready'],
+  ['. Тактирование ядра: ','. Core clock: '],
+  ['. Ёмкости настройки сейчас XI/XO: ','. Tuning capacitances now XI/XO: '],
+  [', заводские в памяти кристалла: ',', factory values in the chip memory: '],
+  [' (совпадают)',' (they match)'],
+  [' (отличаются: прошивка или стек задали свои)',' (they differ: the firmware or the stack set its own)'],
+  ['Низкочастотный такт для сна сейчас: ','Low-frequency clock for sleep now: '],
+  [' (группа EM2/3), ',' (EM2/3 group), '],
+  [' (RTCC). Это то, что оставила начальная настройка SDK; сама эта прошивка сон пока не использует.',' (RTCC). This is what the initial SDK setup left; this firmware does not use sleep yet.'],
+  ['LFXO уже был включён до теста (кем-то в прошивке), использовал как есть.','LFXO was already on before the test (someone in the firmware), used as is.'],
+  ['LFXO: кварц запустился за ','LFXO: the crystal started in '],
+  [', но измерить частоту не удалось',', but the frequency could not be measured'],
+  ['LFXO: детектор отказа сработал — генерации нет.','LFXO: the failure detector fired — no oscillation.'],
+  ['LFXO: за 2 с не запустился.','LFXO: did not start within 2 s.'],
+  [' Гц, отклонение от 32 768 Гц ',' Hz, deviation from 32,768 Hz '],
+  [' ppm (при условии, что HFXO точен; его собственная погрешность 10–20 ppm входит сюда же).',' ppm (assuming the HFXO is accurate; its own error of 10–20 ppm is included here).'],
+  ['✔ Кварц 32,768 кГц есть и в норме. Его можно использовать для сна и точных интервалов.','✔ A 32.768 kHz crystal is present and in order. It can be used for sleep and precise intervals.'],
+  ['⚠ Кварц есть и работает, но частота сдвинута на ','⚠ The crystal is present and running, but its frequency is off by '],
+  [' ppm: вероятно, не та ёмкость нагрузки (тест брал внутренние ',' ppm: probably the wrong load capacitance (the test used the internal '],
+  [' пФ). Для сна BLE допустимо до 500 ppm.',' pF). Up to 500 ppm is acceptable for BLE sleep.'],
+  ['✖ Измеренная частота далека от 32 768 Гц (','✖ The measured frequency is far from 32,768 Hz ('],
+  [' ppm): это не кварц 32,768 кГц или он работает неправильно.',' ppm): this is not a 32.768 kHz crystal or it works incorrectly.'],
+  ['✖ Кварца 32,768 кГц, судя по всему, нет (или он не подходит под настройки теста). Для сна тогда остаются LFRCO и ULFRCO; это не мешает работе, но интервалы во сне будут менее точными.','✖ There seems to be no 32.768 kHz crystal (or it does not suit the test settings). Then LFRCO and ULFRCO remain for sleep; this does not hinder operation, but the intervals during sleep will be less precise.'],
+  ['LFRCO (встроенный RC): ','LFRCO (built-in RC): '],
+  [' Гц, ',' Hz, '],
+  [' % от 32 768 Гц.',' % of 32,768 Hz.'],
+  ['ULFRCO (встроенный, сверхмалое потребление): ','ULFRCO (built-in, ultra-low power): '],
+  [' % от 1000 Гц.',' % of 1000 Hz.'],
+  ['Для справки: счёт HFXO на ','For reference: HFXO count over '],
+  [' периодов LFXO = ',' LFXO periods = '],
+  ['; на ','; over '],
+  [' периодов ULFRCO = ',' ULFRCO periods = '],
+  [' (0 = измерить не удалось).',' (0 = could not be measured).'],
+  ['тест кварцев: ','crystal test: '],
+  ['панель BUSY','panel BUSY'],
+  ['панель SDA','panel SDA'],
+  ['панель SCLK','panel SCLK'],
+  ['панель CS','panel CS'],
+  ['панель DC','panel DC'],
+  ['панель RST','panel RST'],
+  ['панель вкл.','panel on'],
+  ['плавающие входы','floating inputs'],
+  ['подтяжка вверх','pull-up'],
+  ['подтяжка вниз','pull-down'],
+  ['метка не ответила на команду монитора. Проверьте версию прошивки в «Метка → Железо»: для выбора выводов нужна 1.2, для остального достаточно 1.1.','the tag did not answer the monitor command. Check the firmware version in "Tag → Hardware": choosing pins needs 1.2, 1.1 is enough for the rest.'],
+  ['монитор выводов','pin monitor'],
+  ['отладка (SWD), не трогаю','debug (SWD), not touched'],
+  ['исключён, не трогаю','excluded, not touched'],
+  ['не наблюдается','not observed'],
+  ['МЕНЯЛСЯ','CHANGED'],
+  ['всегда 1','always 1'],
+  ['всегда 0','always 0'],
+  ['режим: ','mode: '],
+  ['; идёт ','; running '],
+  [' с из 300; изменений уровня: ',' s of 300; level changes: '],
+  ['; последний менялся ','; last changed '],
+  [': менялись ',': changed '],
+  ['никакие','none'],
+  ['Менялись при всех проверенных режимах: ','Changed in all the modes checked: '],
+  ['. Это выход микросхемы, который сам подаёт уровень: самый вероятный кандидат на линию NFC.','. This is a chip output that drives the level itself: the most likely candidate for the NFC line.'],
+  [' — выводы отладки (SWD). Они двигаются, когда подключён программатор или идёт обмен по SWD; это не NFC. Для чистой проверки отключите программатор и снимите галочку SWD.',' — debug pins (SWD). They move when a programmer is connected or SWD traffic runs; this is not NFC. For a clean check, disconnect the programmer and clear the SWD checkbox.'],
+  ['Менялись только с подтяжкой вверх: ','Changed only with the pull-up: '],
+  ['. Типичная линия с открытым стоком (детектор поля).','. A typical open-drain line (field detector).'],
+  ['Менялись только на плавающем входе: ','Changed only on a floating input: '],
+  ['. Скорее наводки или утечка, а не сигнал.','. Most likely pick-up or leakage, not a signal.'],
+  ['Как проверять: включите режим, подождите 5 секунд без телефона, затем поднесите телефон к метке (или NFC-карту) и уберите. Если после этого в режиме есть «МЕНЯЛСЯ» только на одном выводе, пришлите его имя.','How to check: switch the mode on, wait 5 seconds without a phone, then bring a phone (or an NFC card) to the tag and take it away. If after that "CHANGED" appears on a single pin in the mode, send its name.'],
+  ['Выберите от 2 до 6 выводов','Choose 2 to 6 pins'],
+  ['идёт сканирование: ','scan running: '],
+  [' пар, около ',' pairs, about '],
+  [' с и больше, если линии залипают …',' s and more if the lines stick …'],
+  ['сканер I²C','I²C scanner'],
+  ['Для подачи питания выберите 2–4 вывода сканирования','For power supply choose 2–4 scan pins'],
+  ['Отметьте хотя бы один вывод питания (не из сканируемых)','Mark at least one power pin (not among the scanned ones)'],
+  ['идёт сканирование с подачей «1»: ','scan with "1" applied is running: '],
+  [' выводов питания, примерно ',' power pins, about '],
+  [' с …',' s …'],
+  ['похоже на NXP NTAG I²C (NT3H…)','looks like NXP NTAG I²C (NT3H…)'],
+  ['похоже на ST25DV (0x53 память пользователя, 0x57 системная)','looks like ST25DV (0x53 user memory, 0x57 system)'],
+  ['адрес EEPROM / NFC-памяти','EEPROM / NFC memory address'],
+  ['неизвестное устройство','unknown device'],
+  ['плавающие','floating'],
+  ['Сканер ещё не запускался.','The scanner has not been run yet.'],
+  ['идёт: проверено пар ','running: pairs checked '],
+  [' из ',' of '],
+  [', залипших ',', stuck '],
+  [', найдено устройств ',', devices found '],
+  ['; сейчас «1» подана на ','; "1" is now applied to '],
+  ['прервано','aborted'],
+  [' (остальные выводы: ',' (other pins: '],
+  ['): пар ','): pairs '],
+  ['✔ найдено: SDA=','✔ found: SDA='],
+  [', адрес 0x',', address 0x'],
+  [' (7 бит); ',' (7 bit); '],
+  ['★ Чип ответил, когда на ','★ The chip answered while "1" was applied to '],
+  [' была подана «1»: это, скорее всего, его питание (VCC). Запишите этот результат.',' : this is most likely its supply (VCC). Write down this result.'],
+  ['Всего устройств: ','Devices in total: '],
+  [' (показано первое).',' (the first is shown).'],
+  ['При отпускании поднимались в «1»: ','Rose to "1" when released: '],
+  ['Линия данных «отвечала» на все адреса подряд (это не устройство, а вывод, который держится внизу или поднимается очень медленно): ','The data line "answered" at every address in a row (this is not a device but a pin that stays low or rises very slowly): '],
+  ['. Запишите эти выводы.','. Write down these pins.'],
+  ['✖ Чип не отозвался ни при подаче «1» на один из отмеченных выводов питания. Значит, питание чипа идёт не с этих выводов (или I²C там не подключён).','✖ The chip did not respond with "1" applied to any of the marked power pins. So the chip is not powered from these pins (or I²C is not connected there).'],
+  ['✖ Ни одна пара не поднялась в «1»: линии удерживаются внизу, то есть чип не запитан достаточно. Запустите с другой настройкой остальных выводов (подтяжка вверх, подтяжка вниз) или кнопкой «Сканировать с подачей «1»».','✖ No pair rose to "1": the lines are held low, so the chip is not sufficiently powered. Run with another setting of the other pins (pull-up, pull-down) or with the "Scan with "1" applied" button.'],
+  ['Устройства на адресах 0x08–0x77 не найдено. Попробуйте другую настройку остальных выводов или другую комбинацию выводов.','No device found at addresses 0x08–0x77. Try another setting of the other pins or another combination of pins.'],
+  ['сканер I²C: ','I²C scanner: '],
+  ['00 (серийные данные, блокировка, CC)','00 (serial data, lock bytes, CC)'],
+  ['01 (начало области NDEF)','01 (start of the NDEF area)'],
+  ['02 (продолжение NDEF)','02 (NDEF continued)'],
+  ['38 (динамическая блокировка, по даташиту)','38 (dynamic lock, per the datasheet)'],
+  ['3A (конфигурация)','3A (configuration)'],
+  ['FE (рабочие регистры)','FE (session registers)'],
+  ['метка включает чип и читает его, это занимает около секунды …','the tag powers the chip and reads it, this takes about a second …'],
+  ['NFC-чип','NFC chip'],
+  ['метка включает чип …','the tag powers the chip …'],
+  ['запись NDEF не ссылка: ','the NDEF record is not a link: '],
+  ['(код ','(code '],
+  ['мало данных (нужны и «с полем», и «без поля»; подносите и убирайте телефон)','not enough data (both "with field" and "without field" are needed; bring the phone and take it away)'],
+  ['с полем внизу ','low with the field '],
+  [', без поля вверху ',', high without the field '],
+  ['★ ПОХОЖЕ НА FD: ','★ LOOKS LIKE FD: '],
+  ['зависит от поля, но не как ожидалось: ','depends on the field, but not as expected: '],
+  ['всё время вверху (на поле не реагирует)','always high (does not react to the field)'],
+  ['всё время внизу (удерживается снаружи)','always low (held from outside)'],
+  ['на поле не реагирует: ','does not react to the field: '],
+  ['Копия чипа сохранена в странице. Скачайте её в файл.','The chip copy is saved in the page. Download it as a file.'],
+  ['Копия прочитана не полностью, повторите.','The copy was not read completely, repeat.'],
+  ['Ссылка записана и проверена чтением.','The link is written and verified by reading back.'],
+  ['Запись не удалась: ','Writing failed: '],
+  ['Блокировка снята и проверена чтением.','The lock is cleared and verified by reading back.'],
+  ['Снятие блокировки не удалось: ','Clearing the lock failed: '],
+  ['Поиск закончен.','Search finished.'],
+  ['Чип не найден ни на одном адресе.','The chip was not found at any address.'],
+  ['Операция с адресом закончена.','The address operation finished.'],
+  ['Адрес не удалось вернуть: ','Could not restore the address: '],
+  ['не ответил на адрес','did not answer to the address'],
+  ['не принял номер блока','did not accept the block number'],
+  ['не принял байт данных ','did not accept data byte '],
+  [': поле телефона ',': phone field '],
+  ['ЕСТЬ','PRESENT'],
+  [', память занята со стороны NFC ',', memory busy from the NFC side '],
+  ['ДА','YES'],
+  [', ошибка записи EEPROM ',', EEPROM write error '],
+  ['уберите телефон от метки (лучше дальше 30 см, NFC на телефоне на время записи можно выключить) и повторите','move the phone away from the tag (better beyond 30 cm; NFC on the phone can be switched off during the write) and repeat'],
+  ['поля и занятости нет: похоже, запись защищена настройкой чипа; пришлите эту строку','no field and no busy flag: the write seems to be protected by the chip configuration; send this line'],
+  ['регистр NS_REG прочитать не удалось','the NS_REG register could not be read'],
+  ['без ошибок','no errors'],
+  ['чип не принял запись (блок ','the chip did not accept the write (block '],
+  ['чип принял запись, но при проверке чтением данные не совпали (блок ','the chip accepted the write, but the data did not match on read-back (block '],
+  ['): запись игнорируется, скорее всего из-за битов блокировки. Попробуйте «Снять блокировку записи»','): the write is ignored, most likely because of the lock bits. Try "Clear write lock"'],
+  ['метка отказалась: чип не похож на ожидаемый (NTAG I²C plus) или запись NDEF неверна','the tag refused: the chip does not look like the expected one (NTAG I²C plus) or the NDEF record is wrong'],
+  ['чип перестал отвечать во время операции (блок ','the chip stopped answering during the operation (block '],
+  ['. Если после этого «Прочитать чип» тоже не отвечает, нажмите «Найти чип по всем адресам»','. If after this "Read chip" does not answer either, press "Find the chip at all addresses"'],
+  ['код ','code '],
+  ['в чип запишется ','the chip will receive '],
+  [' байт (',' bytes ('],
+  [' блоков из 7 доступных).',' blocks of 7 available).'],
+  ['введите ссылку','enter a link'],
+  ['только латинские буквы, цифры и знаки без пробелов','Latin letters, digits and signs without spaces only'],
+  ['ссылка должна начинаться с http:// или https://','the link must start with http:// or https://'],
+  ['слишком длинная: после https:// остаётся не больше ','too long: after https:// no more than '],
+  [' знаков',' characters remain'],
+  ['метка записывает ','the tag is writing '],
+  [' блок(а) и проверяет чтением …',' block(s) and verifying by reading back …'],
+  ['метка читает все 59 блоков чипа …','the tag is reading all 59 blocks of the chip …'],
+  ['копия чипа','chip copy'],
+  ['Файл содержит серийные данные чипа: храните у себя, не публикуйте.','The file contains the chip\'s serial data: keep it to yourself, do not publish it.'],
+  ['метка снимает биты блокировки и проверяет чтением …','the tag is clearing the lock bits and verifying by reading back …'],
+  ['снятие блокировки','clearing the lock'],
+  ['метка проверяет адреса 0x00–0x7F (около 0,2 с) …','the tag is checking addresses 0x00–0x7F (about 0.2 s) …'],
+  ['поиск чипа','chip search'],
+  ['метка ищет чип и подбирает значение; это может занять до нескольких секунд, не отключайтесь …','the tag is looking for the chip and trying values; this may take up to several seconds, do not disconnect …'],
+  ['возврат адреса','address restore'],
+  ['Копия чипа: прочитано блоков ','Chip copy: blocks read '],
+  [' из 59',' of 59'],
+  [' — полная.',' — complete.'],
+  ['Копирование','Copying'],
+  ['Запись ссылки','Writing the link'],
+  ['Снятие блокировки','Clearing the lock'],
+  ['Поиск чипа','Chip search'],
+  ['Возврат адреса','Address restore'],
+  ['Чип отвечает на адресе ','The chip answers at address '],
+  [' и ',' and '],
+  [' (всего ',' ( '],
+  [' адресов)',' addresses in total)'],
+  [': это обычный адрес, всё в порядке.',': this is the usual address, all is in order.'],
+  ['. Это не 0x55: нажмите «Вернуть адрес 0x55».','. This is not 0x55: press "Restore address 0x55".'],
+  ['Поиск: на адресах 0x00–0x7F никто не ответил. Проверьте, что включено питание чипа (вывод PC5) и что подключена линия I²C (PD2, PD3); сделайте «Прочитать чип».','Search: nobody answered at addresses 0x00–0x7F. Check that the chip power is on (pin PC5) and that the I²C lines (PD2, PD3) are connected; do "Read chip".'],
+  ['Чип уже на адресе 0x55, ничего не записано.','The chip is already at address 0x55, nothing was written.'],
+  ['Возврат адреса: чип снова на 0x55. Нулевой байт блока 0 = ','Address restore: the chip is at 0x55 again. Byte 0 of block 0 = '],
+  [' (запомнено для «Снять блокировку»); попыток: ',' (remembered for "Clear the lock"); attempts: '],
+  ['. Проверьте обычным «Прочитать чип».','. Check with the usual "Read chip".'],
+  ['выполнено и проверено','done and verified'],
+  ['ОШИБКА — ','ERROR — '],
+  ['идёт …','running …'],
+  ['ЧИП НЕ ОТВЕТИЛ','THE CHIP DID NOT ANSWER'],
+  ['Слежение за полем: ','Field watch: '],
+  [' (осталось ',' ( '],
+  [' с)',' s left)'],
+  ['Поле телефона: ','Phone field: '],
+  ['ещё не прочитано','not read yet'],
+  ['; касаний (нет→есть): ','; taps (no→yes): '],
+  ['; опросов: ','; polls: '],
+  ['; видели поле хоть раз: ','; field seen at least once: '],
+  ['да','yes'],
+  ['Регистр NS_REG = 0x','Register NS_REG = 0x'],
+  [' (бит 0 = поле, по даташиту).',' (bit 0 = field, per the datasheet).'],
+  ['✖ Чип перестал отвечать. Если он не отвечал и сразу, прошивка не включила питание PC5 или линия I²C занята: сделайте «Выключить» и повторите.','✖ The chip stopped answering. If it did not answer from the start either, the firmware did not switch the PC5 supply on or the I²C line is busy: press "Switch off" and repeat.'],
+  ['Чтение чипа: ','Chip read: '],
+  [': ни один блок не прочитан',': no block was read'],
+  ['Не ответили блоки: ','Blocks that did not answer: '],
+  ['Не прочитаны некоторые рабочие регистры (маска прочитанных: 0x','Some session registers were not read (mask of those read: 0x'],
+  ['Блок 00: ','Block 00: '],
+  ['  • байты блокировки: ','  • lock bytes: '],
+  [' → часть страниц закрыта от записи по NFC необратимо (с телефона), по даташиту через I²C её можно снять',' → part of the pages is closed to NFC writes irreversibly (from the phone); per the datasheet it can be cleared over I²C'],
+  [' → записи по NFC не закрыты',' → NFC writes are not closed'],
+  ['; область NDEF ','; NDEF area '],
+  [' байт; доступ ',' bytes; access '],
+  ['только чтение (по NFC)','read only (over NFC)'],
+  ['чтение и запись','read and write'],
+  ['; нестандартный заголовок','; non-standard header'],
+  ['Ссылка в чипе: ','Link in the chip: '],
+  ['не разобрана','not parsed'],
+  ['; блок 01: ','; block 01: '],
+  ['Блок ','Block '],
+  ['Рабочие регистры: ','Session registers: '],
+  ['  • NS_REG по даташиту: бит0 поле телефона = ','  • NS_REG per the datasheet: bit0 phone field = '],
+  [', бит1 запись в EEPROM идёт = ',', bit1 EEPROM write in progress = '],
+  [', бит2 ошибка записи = ',', bit2 write error = '],
+  [', бит7 NDEF прочитан = ',', bit7 NDEF read = '],
+  ['. Если это не совпадёт с поведением, пришлите байты как есть.','. If this does not match the behaviour, send the bytes as they are.'],
+  ['Поиск вывода FD (по одному на каждый свободный вывод):','Search for the FD pin (one per each free pin):'],
+  ['  Подходящего вывода пока нет: запустите слежение, поднесите телефон на 2–3 секунды и уберите, повторите несколько раз, затем «Показать отчёт».','  No suitable pin yet: start the watch, hold a phone near for 2–3 seconds and take it away, repeat several times, then "Show report".'],
+  ['Метка не прислала данных по выводам FD.','The tag did not send data on the FD pins.'],
+  ['NFC-чип: ','NFC chip: '],
+  ['стираю сектор ','erasing sector '],
+  ['записываю страницу в сектор ','writing a page to sector '],
+  ['читаю слот ','reading slot '],
+  [' из flash ...',' from flash ...'],
+  ['Журнал скопирован','Log copied'],
+  ['Не удалось скопировать','Could not copy'],
+  ['во flash помещается не больше 61 440 байт','no more than 61,440 bytes fit into the flash'],
+  ['BEGIN: во flash, слот ','BEGIN: to flash, slot '],
+  [' (метка сначала стирает слот) ...',' (the tag erases the slot first) ...'],
+  ['BEGIN: в ОЗУ','BEGIN: to RAM'],
+  ['метка не ответила на BEGIN','the tag did not answer BEGIN'],
+  ['метка занята (идёт вывод слайда с flash или другая операция), повторю через 4 с','the tag is busy (a slide is being sent from flash, or another operation), I will retry in 4 s'],
+  ['остановлено','stopped'],
+  ['метка не приняла BEGIN: ','the tag did not accept BEGIN: '],
+  [' (стирание не удалось)',' (erase failed)'],
+  ['слот стёрт, начинаю передачу','slot erased, starting the transfer'],
+  ['нет ответа 20 с','no answer for 20 s'],
+  ['метка ждёт страницу ','the tag is waiting for page '],
+  ['ошибка хранения на странице ','storage error on page '],
+  ['нет ответа на END','no answer to END'],
+  ['ГОТОВО: контрольная сумма совпала. ','DONE: the checksum matched. '],
+  ['ОШИБКА: контрольная сумма не совпала. ','ERROR: the checksum did not match. '],
+  [' байт за ',' bytes in '],
+  [' с = ',' s = '],
+  [' КБ/с; повторов ',' KB/s; retries '],
+  ['запись завершена, проверяю чтением обратно ...','write finished, verifying by reading back ...'],
+  ['нет ответа на проверку слота','no answer to the slot check'],
+  [' Проверка чтением из flash: ОШИБКА (код ',' Check by reading from flash: ERROR (code '],
+  [' Проверка чтением из flash: CRC совпал.',' Check by reading from flash: CRC matched.'],
+  [' загружен',' uploaded'],
+  ['Загрузка не удалась','Upload failed'],
+  ['загрузка прервана: ','upload aborted: '],
+  ['Прервано: ','Aborted: '],
+  ['ОШИБКА: сумма не совпала. ','ERROR: the sum did not match. '],
+  ['Приложение установлено','App installed'],
+  ['офлайн-режим готов (service worker)','offline mode ready (service worker)'],
+  ['service worker не запустился: ','service worker did not start: '],
+  ['Вышла новая версия страницы: обновите вкладку','A new version of the page is out: refresh the tab'],
+  ['Web Bluetooth недоступен в этом браузере: конвертер работает, а загрузка в метку нужна Chrome по https.','Web Bluetooth is unavailable in this browser: the converter works, but uploading to the tag needs Chrome over https.'],
+]);
+const EN_HTML = new Map([
+  ["Установить как приложение: откроется в своём окне и будет работать без интернета","Install as an app: it opens in its own window and works without the internet"],
+  ["Страница сохранена в браузере и откроется без интернета","The page is saved in the browser and opens without the internet"],
+  ["Таблица из четырёх цветов панели для калибровки: загрузите в слот и сфотографируйте","A chart of the four panel colours for calibration: upload it to a slot and photograph it"],
+  ["Градиенты без коррекции растискивания (слева, A) и с ней (справа, B): загрузите в слот и сфотографируйте","Gradients without dot-gain correction (left, A) and with it (right, B): upload to a slot and photograph"],
+  ["Испытательная таблица в телевизионном стиле: сетка, круг, диагонали, цветные полосы, градации, пакеты линий, шахматки","A TV-style test chart: grid, circle, diagonals, colour bars, gray steps, line bursts, checkerboards"],
+  ["SES V300 · e-ink 5.9″ BWRY · не badge154 · steanlab/SESoid, docs/index.html","SES V300 · e-ink 5.9″ BWRY · not badge154 · steanlab/SESoid, docs/index.html"],
+  ["не подключено","not connected"],
+  ["Подключиться","Connect"],
+  ["Отключиться","Disconnect"],
+  ["Установить приложение","Install app"],
+  ["работает офлайн","works offline"],
+  ["Изображение","Image"],
+  ["Слоты и слайдшоу","Slots and slideshow"],
+  ["Настройки","Settings"],
+  ["Метка","Tag"],
+  ["Инструменты","Tools"],
+  ["Журнал","Log"],
+  ["Открыть картинку…","Open picture…"],
+  ["Вставить из буфера","Paste from clipboard"],
+  ["Пример","Example"],
+  ["Калибровочная таблица","Calibration chart"],
+  ["Таблица проверки","Check chart"],
+  ["ТВ-таблица","TV chart"],
+  ["нет картинки: перетащите файл на предпросмотр, вставьте Ctrl+V или откройте","no picture: drop a file on the preview, paste with Ctrl+V or open one"],
+  ["Предпросмотр 720 × 256 (как будет на экране).","Preview 720 × 256 (as it will look on the screen)."],
+  ["Перетащите сюда картинку. После загрузки колёсиком мыши меняется масштаб, перетаскиванием — положение.","Drop a picture here. After loading, the mouse wheel changes the zoom and dragging moves the picture."],
+  ["Скачать PNG","Download PNG"],
+  ["Скачать кадр (.bin)","Download frame (.bin)"],
+  ["Загрузка в метку","Upload to the tag"],
+  ["Слот","Slot"],
+  ["показать на экране после загрузки","show on the screen after upload"],
+  ["включить в слайдшоу","include in the slideshow"],
+  ["Загрузить кадр в метку","Upload frame to the tag"],
+  ["Остановить","Stop"],
+  ["Метка стирает слот (около 1 с), принимает 46 080 байт (≈ 22 с), сверяет контрольную сумму и читает слот обратно из своей flash. Подключение нужно только на это время.","The tag erases the slot (about 1 s), receives 46,080 bytes (≈ 22 s), verifies the checksum and reads the slot back from its own flash. The connection is needed only for this time."],
+  ["Режим","Mode"],
+  ["Кадрирование","Framing"],
+  ["Зеркало ↔","Mirror ↔"],
+  ["Зеркало ↕","Mirror ↕"],
+  ["Сбросить вид","Reset view"],
+  ["Тон и цвет","Tone and colour"],
+  ["Палитра панели","Panel palette"],
+  ["Дизеринг","Dithering"],
+  ["Просмотр","View"],
+  ["Обновить список с метки","Refresh list from the tag"],
+  ["Показать следующий сейчас","Show the next one now"],
+  ["Семь слотов во внешней flash метки (слот n лежит по адресу n × 0x10000). Картинки на странице запоминаются в браузере (IndexedDB): по контрольной сумме видно, совпадает ли запомненная картинка с тем, что лежит в метке. Галочка «в слайдшоу» сохраняется в метке сама.","Seven slots in the tag's external flash (slot n lies at address n × 0x10000). Pictures on the page are remembered in the browser (IndexedDB): the checksum shows whether the remembered picture matches what lies in the tag. The \"in slideshow\" tick is saved in the tag itself."],
+  ["Слайдшоу и радио","Slideshow and radio"],
+  ["Автосмена","Auto change"],
+  ["менять слайды сами","change slides automatically"],
+  ["Порядок","Order"],
+  ["по кругу (1 → 2 → 3 …)","in a circle (1 → 2 → 3 …)"],
+  ["случайно","random"],
+  ["Интервал","Interval"],
+  ["мин","min"],
+  ["Температура панели","Panel temperature"],
+  ["от неё метка выбирает режим обновления панели","the tag chooses the panel update mode from it"],
+  ["Мощность Bluetooth","Bluetooth power"],
+  ["NFC-касание","NFC tap"],
+  ["касание телефоном листает слайд","a phone tap flips the slide"],
+  ["Применить и сохранить в метке","Apply and save in the tag"],
+  ["Прочитать из метки","Read from the tag"],
+  ["Интервал отсчитывается от конца предыдущего обновления экрана, а само обновление длится около 30 с, поэтому разумный минимум — 1–2 минуты. Настройки хранятся во flash метки (журнал на 16 записей: стирание примерно раз в 16 сохранений) и переживают перезагрузку. Слабая мощность (−10 дБм и ниже) экономит батарею, но связь обрывается при удалении; изменение вступает в силу сразу, поэтому если соединение пропало — подойдите ближе.","The interval is counted from the end of the previous screen update, and the update itself takes about 30 s, so a sensible minimum is 1–2 minutes. The settings are kept in the tag's flash (a log of 16 entries: an erase about once per 16 saves) and survive a reboot. Low power (−10 dBm and below) saves the battery, but the link drops with distance; the change takes effect at once, so if the connection is lost, move closer."],
+  ["Экран","Screen"],
+  ["Управление","Control"],
+  ["Следующий слайд","Next slide"],
+  ["Заставка","Splash"],
+  ["Заливка (чистит остаточные изображения):","Fill (cleans ghost images):"],
+  ["Чёрный","Black"],
+  ["Белый","White"],
+  ["Жёлтый","Yellow"],
+  ["Красный","Red"],
+  ["Обновление экрана длится около 30 с и мигает; во время него метка остаётся на связи.","A screen update takes about 30 s and flashes; the tag stays connected during it."],
+  ["Перезагрузить метку","Reboot the tag"],
+  ["Железо метки","Tag hardware"],
+  ["Прочитать","Read"],
+  ["уникальный ID виден только здесь, на экране; не публикуйте его и не кладите в репозиторий","the unique ID is visible only here, on the screen; do not publish it or put it into a repository"],
+  ["нажмите «Прочитать»","press \"Read\""],
+  ["Связь","Link"],
+  ["Счётчики метки","Tag counters"],
+  ["Сброс счётчиков","Reset counters"],
+  ["Проверка загрузки в ОЗУ метки","Test of upload to the tag RAM"],
+  ["Данные только считаются и сверяются по контрольной сумме, во flash ничего не пишется.","The data is only counted and checked by checksum; nothing is written to flash."],
+  ["Размер","Size"],
+  ["2 КБ","2 KB"],
+  ["10 КБ","10 KB"],
+  ["46 080 Б (кадр)","46,080 B (frame)"],
+  ["90 КБ","90 KB"],
+  ["Отправить в ОЗУ","Send to RAM"],
+  ["Диагностика панели","Panel diagnostics"],
+  ["Если экран не обновляется (ошибка «ID чипа панели не 0x0D04»). Метка на 3 секунды отключает питание панели, включает, сбрасывает и замеряет уровни BUSY и линии данных, читает ID несколько раз (в том числе на медленной частоте). Около 5 с, связь не прерывается.","If the screen does not update (error \"panel chip ID is not 0x0D04\"). The tag switches the panel power off for 3 seconds, switches it on, resets it and measures the BUSY level and the data line, reads the ID several times (including at a slow clock). About 5 s, the connection is not interrupted."],
+  ["Запустить диагностику панели","Run panel diagnostics"],
+  ["Показать последний отчёт","Show the last report"],
+  ["Тест кварцев (LFXO / HFXO)","Crystal test (LFXO / HFXO)"],
+  ["Выясняет, есть ли на плате кварц 32,768 кГц (LFXO) и сколько у него частота. Метка включает его на 1–2 с, затем сверяет LFXO, внутренний LFRCO и ULFRCO с кварцем 38,4 МГц (HFXO), на котором работает радио, и всё выключает обратно. Заодно показывает ёмкости настройки HFXO. Связь не прерывается.","Finds out whether there is a 32.768 kHz crystal (LFXO) on the board and what its frequency is. The tag switches it on for 1–2 s, then compares LFXO, the internal LFRCO and ULFRCO with the 38.4 MHz crystal (HFXO) that the radio runs on, and switches everything back off. It also shows the HFXO tuning capacitances. The connection is not interrupted."],
+  ["Запустить тест","Run the test"],
+  ["Монитор выводов (поиск NFC)","Pin monitor (NFC search)"],
+  ["Читает свободные выводы процессора (не заняты flash, панелью и отладкой) и показывает, какие из них меняют уровень. Включите режим, поднесите телефон или NFC-карту к метке и уберите: вывод, который менялся вместе с этим, и есть линия NFC-микросхемы (обычно «детектор поля» FD). Нажатие на вывод в сетке исключает его из наблюдения (он остаётся как был), так можно подтягивать вверх только один вывод. Проверьте все три режима: линия с открытым стоком видна только с подтяжкой вверх, а плавающий вход ловит ещё и наводки. Монитор сам выключается через 5 минут и при обрыве связи и возвращает выводы как были.","Reads the free processor pins (not used by flash, the panel and debugging) and shows which of them change level. Switch a mode on, bring a phone or an NFC card to the tag and take it away: the pin that changed together with this is the line of the NFC chip (usually the \"field detector\" FD). Clicking a pin in the grid excludes it from observation (it stays as it was), so only one pin can be pulled up. Check all three modes: an open-drain line is visible only with the pull-up, while a floating input also picks up interference. The monitor switches itself off after 5 minutes and when the link drops, and puts the pins back as they were."],
+  ["Плавающие входы","Floating inputs"],
+  ["Подтяжка вверх","Pull-up"],
+  ["Подтяжка вниз","Pull-down"],
+  ["Сбросить историю","Clear history"],
+  ["следить и за выводами отладки PA1–PA3 (SWD); после проверки лучше выключить","also watch the debug pins PA1–PA3 (SWD); better switch off after the check"],
+  ["Сканер I²C (поиск NFC-микросхемы)","I²C scanner (NFC chip search)"],
+  ["Ищет на выбранных свободных выводах устройство I²C (так подключаются многие NFC-микросхемы). Метка перебирает все пары выводов в роли SDA и SCL и опрашивает адреса 0x08–0x77. Ничего не подаётся в «1» жёстко: отпущенная линия просто подтягивается вверх, «0» ставится только чтобы сигналить. Если линия после отпускания не поднялась (чип без питания держит её внизу), пара пропускается как «залипшая». Монитор выводов при запуске сканера останавливается. Сначала запустите с «плавающие», затем «подтяжка вверх» и «подтяжка вниз» для третьего вывода: так мы проверим, не питается ли чип через него.","Looks for an I²C device (many NFC chips connect this way) on the selected free pins. The tag tries all pairs of pins as SDA and SCL and polls addresses 0x08–0x77. Nothing is driven hard to \"1\": a released line is simply pulled up, and \"0\" is set only to signal. If a line does not rise after being released (an unpowered chip holds it low), the pair is skipped as \"stuck\". The pin monitor stops when the scanner starts. First run with \"floating\", then \"pull-up\" and \"pull-down\" for the third pin: this checks whether the chip is powered through it."],
+  ["Остальные выбранные выводы (не SDA и не SCL)","The other selected pins (not SDA and not SCL)"],
+  ["плавающие","floating"],
+  ["подтяжка вверх","pull-up"],
+  ["подтяжка вниз","pull-down"],
+  ["Подача питания на чип.","Power supply to the chip."],
+  ["Если чип питается через вывод процессора (VCC), он молчит, пока на этот вывод не подана «1». Кнопка ниже по очереди подаёт «1» на каждый отмеченный вывод питания и после каждого ищет чип на выбранных выше выводах (для этого выберите там 2–4 вывода, обычно PC5, PD2, PD3). Подача «1» безопасна только на тех выводах, которые вы проверяли монитором: они читались «1» с подтяжкой вверх и «0» с подтяжкой вниз. На выбранные выше выводы сканирования питание не подаётся.","If the chip is powered from a processor pin (VCC), it is silent until \"1\" is applied to that pin. The button below applies \"1\" to each marked power pin in turn and after each one looks for the chip on the pins selected above (for this select 2–4 pins there, usually PC5, PD2, PD3). Applying \"1\" is safe only on pins that you checked with the monitor: they read \"1\" with a pull-up and \"0\" with a pull-down. No power is applied to the scan pins selected above."],
+  ["Сканировать","Scan"],
+  ["Сканировать с подачей «1»","Scan with \"1\" applied"],
+  ["Прервать","Abort"],
+  ["Показать отчёт","Show report"],
+  ["NFC-чип (прошивка 1.6, только чтение)","NFC chip (firmware 1.6, read only)"],
+  ["Чип питается от вывода PC5, линии I²C: SDA на PD2, SCL на PD3, адрес 0x55. Кнопки ничего в чип не записывают: метка включает питание, читает блоки памяти и служебные регистры и выключает питание. «Следить за полем» опрашивает чип 5 раз в секунду (две минуты): поднесите телефон с включённым NFC, и строка «Поле телефона» должна смениться на «ЕСТЬ». Серийные данные чипа и конец ссылки по умолчанию скрыты.","The chip is powered from pin PC5, I²C lines: SDA on PD2, SCL on PD3, address 0x55. The buttons write nothing to the chip: the tag switches the power on, reads the memory blocks and the session registers and switches the power off. \"Watch the field\" polls the chip 5 times a second (two minutes): bring a phone with NFC on, and the \"Phone field\" line should change to \"PRESENT\". The chip's serial data and the end of the link are hidden by default."],
+  ["показывать серийные данные (не публиковать)","show serial data (do not publish)"],
+  ["при слежении искать вывод FD (на девяти свободных выводах включится подтяжка вверх; в поле телефон надо подносить и убирать)","when watching, look for the FD pin (the pull-up is switched on on nine free pins; the phone has to be brought and taken away)"],
+  ["Прочитать чип","Read chip"],
+  ["Следить за полем (2 мин)","Watch the field (2 min)"],
+  ["Выключить","Switch off"],
+  ["Копия, своя ссылка, снятие блокировки","Copy, your own link, clearing the lock"],
+  ["Запись идёт со стороны процессора (I²C) и проверяется обратным чтением. На время записи держите метку не ближе 30 см от телефона: пока телефон держит чип по NFC, чип может отказываться принимать запись по I²C. Сначала сохраните копию чипа: без неё кнопки записи недоступны. Файл копии содержит серийные данные чипа, не публикуйте его.","Writing is done from the processor side (I²C) and verified by reading back. While writing, keep the tag no closer than 30 cm from the phone: while the phone holds the chip over NFC, the chip may refuse to accept a write over I²C. First save a copy of the chip: without it the write buttons are unavailable. The copy file contains the chip's serial data, do not publish it."],
+  ["1. Сохранить копию чипа","1. Save a copy of the chip"],
+  ["Скачать копию (файл)","Download the copy (file)"],
+  ["Ссылка для записи в чип (только латиница):","Link to write into the chip (Latin letters only):"],
+  ["понимаю: ссылка в чипе будет заменена, копия сохранена","I understand: the link in the chip will be replaced, the copy is saved"],
+  ["2. Записать ссылку","2. Write the link"],
+  ["Вернуть исходную ссылку из копии","Restore the original link from the copy"],
+  ["Адрес чипа на шине I²C","Chip address on the I²C bus"],
+  ["Запись в нулевой байт блока 0 меняет I²C-адрес чипа (по описанию NXP, чтение этого байта всегда даёт 04). Если после неудачной операции чип «пропал» (чтение пишет, что чип не ответил), нажмите «Найти»: метка проверит все адреса 0x00–0x7F. Если чип нашёлся не на 0x55, «Вернуть адрес 0x55» подбирает значение нулевого байта, пока чип не вернётся (до 260 записей блока 0, обычно намного меньше). Найденное значение нужно для «Снять блокировку».","Writing to byte 0 of block 0 changes the chip's I²C address (per NXP's description, reading this byte always gives 04). If after a failed operation the chip \"disappeared\" (the read says the chip did not answer), press \"Find\": the tag checks all addresses 0x00–0x7F. If the chip was found not at 0x55, \"Restore address 0x55\" tries values of byte 0 until the chip comes back (up to 260 writes of block 0, usually far fewer). The value found is needed for \"Clear the lock\"."],
+  ["Найти чип по всем адресам","Find the chip at all addresses"],
+  ["понимаю: метка будет записывать нулевой блок чипа (остальные байты блока записываются как прочитаны)","I understand: the tag will write block 0 of the chip (the other bytes of the block are written as read)"],
+  ["Вернуть адрес 0x55","Restore address 0x55"],
+  ["понимаю: будут записаны служебные блоки 00 и 38 чипа (байты блокировки сбрасываются в 0); доступно после «Вернуть адрес 0x55»","I understand: service blocks 00 and 38 of the chip will be written (the lock bytes are reset to 0); available after \"Restore address 0x55\""],
+  ["3. Снять блокировку записи (нужно, только если ссылка не записалась)","3. Clear the write lock (needed only if the link was not written)"],
+  ["Внешняя flash","External flash"],
+  ["Сектор 15 (0x0F000) занят настройками, поэтому тесты стирания и записи работают с секторами 0–14.","Sector 15 (0x0F000) is taken by the settings, so the erase and write tests work with sectors 0–14."],
+  ["Идентификатор","Identifier"],
+  ["сектор","sector"],
+  ["Стереть","Erase"],
+  ["Записать страницу","Write a page"],
+  ["Прочитать (сколько не FF)","Read (how many are not FF)"],
+  ["Проверить слот","Verify slot"],
+  ["Проверить чтением","Verify by reading"],
+  ["Очистить","Clear"],
+  ["Скопировать","Copy"],
+]);
+let lang = 'ru';
+try { lang = localStorage.getItem('gs.lang') || ''; } catch (e) { /* storage may be unavailable */ }
+if (lang !== 'ru' && lang !== 'en') lang = /^ru|^be|^uk/i.test(navigator.language || '') ? 'ru' : 'en';
+const TT = s => { if (lang !== 'en') return s; const v = EN_JS.get(s); return v === undefined ? s : v; };
+const LAST = {};
+const i18nOrig = new WeakMap();
+function i18nNode(n) {
+  if (n.nodeType === 3) {
+    let o = i18nOrig.get(n);
+    if (o === undefined) { if (!/[А-Яа-яЁё]/.test(n.nodeValue)) return; o = n.nodeValue; i18nOrig.set(n, o); }
+    if (lang !== 'en') { n.nodeValue = o; return; }
+    const k = o.replace(/\s+/g, ' ').trim(), v = EN_HTML.get(k);
+    if (v !== undefined) n.nodeValue = o.match(/^\s*/)[0] + v + o.match(/\s*$/)[0];
+  } else if (n.nodeType === 1) {
+    if (n.tagName === 'SCRIPT' || n.tagName === 'STYLE') return;
+    for (const a of ['title', 'placeholder', 'aria-label']) {
+      if (!n.hasAttribute(a)) continue;
+      let o = i18nOrig.get(n); if (!o) { o = {}; i18nOrig.set(n, o); }
+      if (o[a] === undefined) { if (!/[А-Яа-яЁё]/.test(n.getAttribute(a))) continue; o[a] = n.getAttribute(a); }
+      const v = lang === 'en' ? EN_HTML.get(o[a].replace(/\s+/g, ' ').trim()) : o[a];
+      if (v !== undefined) n.setAttribute(a, v);
+    }
+    for (const c of n.childNodes) i18nNode(c);
+  }
+}
 /* ===================================================================================================================
    Gecko Slide · SES V300 (не badge154). Репозиторий steanlab/SESoid, файл docs/index.html.
    Разделы: утилиты · конвертер (4 цвета BWRY) · библиотека (IndexedDB) · Bluetooth · интерфейс · загрузка
@@ -362,11 +1107,11 @@ function buildControls() {
     const root = $(box); root.textContent = '';
     for (const c of list) {
       const d = document.createElement('div'); d.className = 'ctl' + (c.t === 'rng' ? '' : ' sel');
-      const lab = document.createElement('span'); lab.textContent = c.l; d.appendChild(lab);
+      const lab = document.createElement('span'); lab.textContent = TT(c.l); d.appendChild(lab);
       let el, out = null;
       if (c.t === 'rng') { el = document.createElement('input'); el.type = 'range'; el.min = c.min; el.max = c.max; el.step = c.step; out = document.createElement('output'); }
-      else if (c.t === 'sel') { el = document.createElement('select'); for (const [v, t] of Object.entries(c.o)) { const o = document.createElement('option'); o.value = v; o.textContent = t; el.appendChild(o); } }
-      else { const w = document.createElement('label'); el = document.createElement('input'); el.type = 'checkbox'; w.appendChild(el); w.appendChild(document.createTextNode(' ' + c.txt)); d.appendChild(w); }
+      else if (c.t === 'sel') { el = document.createElement('select'); for (const [v, t] of Object.entries(c.o)) { const o = document.createElement('option'); o.value = v; o.textContent = TT(t); el.appendChild(o); } }
+      else { const w = document.createElement('label'); el = document.createElement('input'); el.type = 'checkbox'; w.appendChild(el); w.appendChild(document.createTextNode(' ' + TT(c.txt))); d.appendChild(w); }
       if (c.t !== 'chk') d.appendChild(el);
       if (out) d.appendChild(out);
       el.addEventListener('input', () => { readCtl(c, el, out); P.preset = ''; markPreset(); schedule(); saveParams(); });
@@ -391,11 +1136,11 @@ function writeCtls() {
 }
 function markPreset() {
   for (const b of $('presets').children) b.classList.toggle('p', b.dataset.k === P.preset);
-  $('presetNote').textContent = P.preset && PRESETS[P.preset] ? PRESETS[P.preset].note : 'Настройки изменены вручную.';
+  $('presetNote').textContent = P.preset && PRESETS[P.preset] ? TT(PRESETS[P.preset].note) : TT('Настройки изменены вручную.');
 }
 function buildPresets() {
   const r = $('presets'); r.textContent = '';
-  for (const [k, p] of Object.entries(PRESETS)) { const b = document.createElement('button'); b.textContent = p.label; b.dataset.k = k; b.onclick = () => { Object.assign(P, JSON.parse(JSON.stringify(p.v)), { preset: k }); writeCtls(); schedule(); saveParams(); }; r.appendChild(b); }
+  for (const [k, p] of Object.entries(PRESETS)) { const b = document.createElement('button'); b.textContent = TT(p.label); b.dataset.k = k; b.onclick = () => { Object.assign(P, JSON.parse(JSON.stringify(p.v)), { preset: k }); writeCtls(); schedule(); saveParams(); }; r.appendChild(b); }
 }
 function curPalette() {
   if (P.pal === 'custom') return P.cust;
@@ -403,12 +1148,12 @@ function curPalette() {
 }
 function drawPalSw() {
   const r = $('palsw'); r.textContent = '';
-  const names = ['Чёрный', 'Белый', 'Жёлтый', 'Красный'];
+  const names = [TT('Чёрный'), TT('Белый'), TT('Жёлтый'), TT('Красный')];
   const pal = curPalette();
   for (let i = 0; i < 4; i++) {
     const w = document.createElement('label'); w.className = 'sub';
-    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = P.en[i]; cb.title = 'использовать цвет';
-    cb.onchange = () => { P.en[i] = cb.checked; if (P.en.filter(Boolean).length < 2) { P.en[i] = true; cb.checked = true; toast('Нужно оставить хотя бы два цвета'); } P.preset = ''; markPreset(); schedule(); saveParams(); };
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = P.en[i]; cb.title = TT('использовать цвет');
+    cb.onchange = () => { P.en[i] = cb.checked; if (P.en.filter(Boolean).length < 2) { P.en[i] = true; cb.checked = true; toast(TT('Нужно оставить хотя бы два цвета')); } P.preset = ''; markPreset(); schedule(); saveParams(); };
     const col = document.createElement('input'); col.type = 'color'; col.value = '#' + pal[i].map(x => x.toString(16).padStart(2, '0')).join('');
     col.onchange = () => { P.cust = P.pal === 'custom' ? P.cust : pal.map(c => c.slice()); P.pal = 'custom'; P.cust[i] = [1, 3, 5].map(o => parseInt(col.value.substr(o, 2), 16)); ctlEls.pal.el.value = 'custom'; P.preset = ''; markPreset(); drawPalSw(); schedule(); saveParams(); };
     w.appendChild(cb); w.appendChild(col); w.appendChild(document.createTextNode(names[i])); r.appendChild(w);
@@ -422,7 +1167,7 @@ const base = document.createElement('canvas'); base.width = W; base.height = H; 
 let src = null, srcName = '', lastIdx = null, lastFrame = null, convBusy = false, convAgain = false, stats = null;
 
 function setSource(img, name) {
-  src = img; srcName = name || 'картинка';
+  src = img; srcName = name || TT('картинка');
   P.zoom = 1; P.panX = 0; P.panY = 0; P.rot = 0; P.flipH = false; P.flipV = false; ctlEls.zoom.el.value = 1; ctlEls.zoom.out.textContent = '1.00×';
   $('srcName').textContent = srcName + ' · ' + (img.width || img.naturalWidth) + '×' + (img.height || img.naturalHeight);
   $('pvhint').style.display = 'none';
@@ -430,8 +1175,8 @@ function setSource(img, name) {
 }
 async function loadFile(f) {
   if (!f) return;
-  try { const bmp = await createImageBitmap(f); setSource(bmp, f.name); log('загружена картинка ' + f.name + ' (' + bmp.width + '×' + bmp.height + ')'); }
-  catch (e) { toast('Не удалось открыть картинку: ' + e.message); }
+  try { const bmp = await createImageBitmap(f); setSource(bmp, f.name); log(TT('загружена картинка ') + f.name + ' (' + bmp.width + '×' + bmp.height + ')'); }
+  catch (e) { toast(TT('Не удалось открыть картинку: ') + e.message); }
 }
 function renderBase() {
   const bgc = PALETTES.ideal.c[P.bg];
@@ -598,12 +1343,12 @@ async function convert() {
     drawOut(idx);
     const cnt = [0, 0, 0, 0]; for (let i = 0; i < idx.length; i++) cnt[idx[i]]++;
     stats = { cnt, ms: performance.now() - t0 };
-    const pal = curPalette(), nm = ['чёрный', 'белый', 'жёлтый', 'красный'];
-    $('stat').innerHTML = cnt.map((c, i) => '<span><span class="sw" style="background:rgb(' + pal[i].join(',') + ')"></span>' + nm[i] + ' ' + (100 * c / idx.length).toFixed(1) + '%</span>').join('') + '<span>расчёт ' + stats.ms.toFixed(0) + ' мс</span>';
-    $('cvInfo').textContent = 'кадр ' + FRAME + ' Б, CRC ' + h8(crc32(lastFrame));
+    const pal = curPalette(), nm = [TT('чёрный'), TT('белый'), TT('жёлтый'), TT('красный')];
+    $('stat').innerHTML = cnt.map((c, i) => '<span><span class="sw" style="background:rgb(' + pal[i].join(',') + ')"></span>' + nm[i] + ' ' + (100 * c / idx.length).toFixed(1) + '%</span>').join('') + TT('<span>расчёт ') + stats.ms.toFixed(0) + TT(' мс</span>');
+    $('cvInfo').textContent = TT('кадр ') + FRAME + TT(' Б, CRC ') + h8(crc32(lastFrame));
     for (const id of ['bPng', 'bBin']) $(id).disabled = !src;
     updateUpButtons();
-  } catch (e) { log('ошибка конвертера: ' + e.message); }
+  } catch (e) { log(TT('ошибка конвертера: ') + e.message); }
   convBusy = false;
   if (convAgain) { convAgain = false; schedule(); }
 }
@@ -613,7 +1358,7 @@ function demoImage() {                                    // пример для
   const g = x.createLinearGradient(0, 0, 1440, 512); g.addColorStop(0, '#0a1f6b'); g.addColorStop(.45, '#c4308b'); g.addColorStop(.75, '#ff7a1a'); g.addColorStop(1, '#ffe14d'); x.fillStyle = g; x.fillRect(0, 0, 1440, 512);
   const cols = ['#e53935', '#fdd835', '#43a047', '#1e88e5', '#ffffff', '#000000'];
   for (let i = 0; i < 6; i++) { const rg = x.createRadialGradient(200 + i * 220, 250, 10, 220 + i * 220, 270, 110); rg.addColorStop(0, '#fff'); rg.addColorStop(.35, cols[i]); rg.addColorStop(1, 'rgba(0,0,0,.55)'); x.fillStyle = rg; x.beginPath(); x.arc(220 + i * 220, 270, 100, 0, 7); x.fill(); }
-  x.fillStyle = '#fff'; x.font = 'bold 120px sans-serif'; x.textAlign = 'center'; x.fillText('GECKO SLIDE', 720, 110); x.fillStyle = '#000'; x.font = 'bold 54px sans-serif'; x.fillText('4 цвета BWRY', 720, 480);
+  x.fillStyle = '#fff'; x.font = 'bold 120px sans-serif'; x.textAlign = 'center'; x.fillText('GECKO SLIDE', 720, 110); x.fillStyle = '#000'; x.font = 'bold 54px sans-serif'; x.fillText(TT('4 цвета BWRY'), 720, 480);
   return c;
 }
 
@@ -654,7 +1399,7 @@ function calibCanvas() {
 }
 $('bCalib').onclick = async () => {
   Object.assign(P, JSON.parse(JSON.stringify(PRESETS.exact.v)), { preset: 'exact', fit: 'cover', zoom: 1, panX: 0, panY: 0, rot: 0, flipH: false, flipV: false, bg: 0 });
-  writeCtls(); setSource(await createImageBitmap(calibCanvas()), 'калибровка'); saveParams();
+  writeCtls(); setSource(await createImageBitmap(calibCanvas()), TT('калибровка')); saveParams();
 };
 
 /* Таблица проверки растискивания: градиенты, обработанные дизерингом Флойда — Стейнберга на идеальной палитре.
@@ -684,7 +1429,7 @@ function calib2Canvas() {
 }
 $('bCalib2').onclick = async () => {
   Object.assign(P, JSON.parse(JSON.stringify(PRESETS.exact.v)), { preset: 'exact', fit: 'cover', zoom: 1, panX: 0, panY: 0, rot: 0, flipH: false, flipV: false, bg: 0 });
-  writeCtls(); setSource(await createImageBitmap(calib2Canvas()), 'проверка растискивания'); saveParams();
+  writeCtls(); setSource(await createImageBitmap(calib2Canvas()), TT('проверка растискивания')); saveParams();
 };
 
 /* ТВ-таблица 720×256: испытательная таблица в духе телевизионных (оригинальный рисунок, без чужих знаков и надписей), строится сразу из четырёх цветов панели,
@@ -728,7 +1473,7 @@ function tvIdx() {
 }
 $('bTv').onclick = async () => {
   Object.assign(P, JSON.parse(JSON.stringify(PRESETS.exact.v)), { preset: 'exact', fit: 'cover', zoom: 1, panX: 0, panY: 0, rot: 0, flipH: false, flipV: false, bg: 0 });
-  writeCtls(); setSource(await createImageBitmap(idxToCanvas(tvIdx(), PALETTES.ideal.c)), 'ТВ-таблица'); saveParams();
+  writeCtls(); setSource(await createImageBitmap(idxToCanvas(tvIdx(), PALETTES.ideal.c)), TT('ТВ-таблица')); saveParams();
 };
 
 // ---- мышь: перетаскивание и колесо
@@ -748,10 +1493,10 @@ $('bTv').onclick = async () => {
 $('bOpen').onclick = () => $('file').click();
 $('file').onchange = e => { loadFile(e.target.files[0]); e.target.value = ''; };
 $('bPaste').onclick = async () => {
-  try { const items = await navigator.clipboard.read(); for (const it of items) { const t = it.types.find(x => x.startsWith('image/')); if (t) { loadFile(await it.getType(t)); return; } } toast('В буфере нет картинки'); }
-  catch (e) { toast('Браузер не дал прочитать буфер: нажмите Ctrl+V на странице'); }
+  try { const items = await navigator.clipboard.read(); for (const it of items) { const t = it.types.find(x => x.startsWith('image/')); if (t) { loadFile(await it.getType(t)); return; } } toast(TT('В буфере нет картинки')); }
+  catch (e) { toast(TT('Браузер не дал прочитать буфер: нажмите Ctrl+V на странице')); }
 };
-$('bDemo').onclick = async () => setSource(await createImageBitmap(demoImage()), 'пример');
+$('bDemo').onclick = async () => setSource(await createImageBitmap(demoImage()), TT('пример'));
 $('bRotL').onclick = () => { P.rot = (P.rot + 270) % 360; schedule(); };
 $('bRotR').onclick = () => { P.rot = (P.rot + 90) % 360; schedule(); };
 $('bFlipH').onclick = () => { P.flipH = !P.flipH; schedule(); };
@@ -767,12 +1512,12 @@ const LIB = {
   db: null, mem: new Map(),
   async open() {
     try { this.db = await new Promise((res, rej) => { const r = indexedDB.open('gecko-slide', 1); r.onupgradeneeded = () => r.result.createObjectStore('slots', { keyPath: 'slot' }); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
-    catch (e) { this.db = null; log('библиотека: IndexedDB недоступна, картинки помню только до закрытия страницы'); }
+    catch (e) { this.db = null; log(TT('библиотека: IndexedDB недоступна, картинки помню только до закрытия страницы')); }
     for (let s = 1; s <= 7; s++) { const r = await this.get(s); if (r) this.mem.set(s, r); }
   },
   tx(mode, fn) { return new Promise((res, rej) => { const t = this.db.transaction('slots', mode), r = fn(t.objectStore('slots')); t.oncomplete = () => res(r && r.result); t.onerror = () => rej(t.error); }); },
   async get(s) { if (!this.db) return this.mem.get(s) || null; try { return (await this.tx('readonly', st => st.get(s))) || null; } catch (e) { return null; } },
-  async put(rec) { this.mem.set(rec.slot, rec); if (this.db) try { await this.tx('readwrite', st => st.put(rec)); } catch (e) { log('библиотека: не удалось записать: ' + e); } },
+  async put(rec) { this.mem.set(rec.slot, rec); if (this.db) try { await this.tx('readwrite', st => st.put(rec)); } catch (e) { log(TT('библиотека: не удалось записать: ') + e); } },
   async del(s) { this.mem.delete(s); if (this.db) try { await this.tx('readwrite', st => st.delete(s)); } catch (e) { /* ignore */ } }
 };
 
@@ -788,7 +1533,7 @@ function onNotify(e) {
   const v = e.target.value, a = new Uint8Array(v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength));
   queue.push(a); if (queue.length > 300) queue.shift();
   if (waiter) { const w = waiter; waiter = null; w(); }
-  try { handle(a); } catch (er) { log('ошибка разбора ' + hex(a) + ': ' + er.message); }
+  try { handle(a); } catch (er) { log(TT('ошибка разбора ') + hex(a) + ': ' + er.message); }
 }
 function wait(ms) { return new Promise(res => { const t = setTimeout(() => { waiter = null; res(false); }, ms); waiter = () => { clearTimeout(t); res(true); }; }); }
 async function expect(pred, ms) {
@@ -804,16 +1549,17 @@ async function sendRetry(arr, resp) {
   for (let i = 0; i < 5; i++) { try { await send(arr, resp); return; } catch (e) { await sleep(20 * (i + 1)); } }
   await send(arr, resp);
 }
-const cmd = (arr, what) => sendRetry(arr, true).catch(e => { log((what || 'команда') + ': ' + e.message); toast('Ошибка связи: ' + e.message); });
+const cmd = (arr, what) => sendRetry(arr, true).catch(e => { log((what || TT('команда')) + ': ' + e.message); toast(TT('Ошибка связи: ') + e.message); });
 
 const PN_STATE = ['не запускалось', 'идёт обновление', 'готово', 'ошибка'];
 const PN_ERR = { 0: 'нет', 1: 'BUSY панели не поднялся после сброса', 2: 'ID чипа панели не 0x0D04', 3: 'OTP: таймаут', 4: 'OTP: таймаут в конце', 5: 'нет метки в OTP', 6: 'BUSY после второго сброса', 7: 'инициализация: таймаут', 8: 'DC/DC: таймаут', 9: 'обновление: таймаут', 10: 'отключение DC/DC: таймаут', 11: 'flash не отвечает при выводе слайда' };
 const PN_SRC = ['—', 'заставка', 'слот', 'заливка'];
 const RES_TXT = ['запущено (около 30 с)', 'экран ещё обновляется', 'в слоте нет кадра 720×256', 'flash занята (загрузка или тест)'];
 const STEP_PCT = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 25, 28, 55, 78, 80, 82, 84, 86, 90, 95, 100, 100];
-const STEP_TXT = s => s === 0 ? 'ожидание' : s <= 8 ? 'включение и сброс панели' : s === 9 ? 'идентификатор панели' : s <= 13 ? 'чтение OTP' : s <= 15 ? 'инициализация' : s === 16 ? 'передача изображения' : s === 17 ? 'включение DC/DC' : s === 18 ? 'смена изображения (≈ 19 с)' : s <= 24 ? 'остановка DC/DC' : s <= 26 ? 'выключение' : 'готово';
+const STEP_TXT = s => s === 0 ? TT('ожидание') : s <= 8 ? TT('включение и сброс панели') : s === 9 ? TT('идентификатор панели') : s <= 13 ? TT('чтение OTP') : s <= 15 ? TT('инициализация') : s === 16 ? TT('передача изображения') : s === 17 ? TT('включение DC/DC') : s === 18 ? TT('смена изображения (≈ 19 с)') : s <= 24 ? TT('остановка DC/DC') : s <= 26 ? TT('выключение') : TT('готово');
 
 function handle(a) {
+  LAST[a[0]] = a;
   switch (a[0]) {
     case 0xB0: {
       tag.st = { pst: a[1], perr: a[2], src: a[3], shown: a[4], step: a[5], nextS: u32(a, 6), upS: u32(a, 10), count: u16(a, 14), crcBad: a[16], auto: !!(a[17] & 1), flashIdle: !!(a[17] & 2), scanning: !!(a[17] & 4) };
@@ -822,19 +1568,19 @@ function handle(a) {
       const s = a[1]; if (s < 1 || s > 7) break;
       tag.slots[s] = { valid: !!(a[2] & 1), show: !!(a[2] & 2), inList: !!(a[2] & 4), cur: !!(a[2] & 8), total: u32(a, 3), crc: u32(a, 7) };
       renderSlots(); break; }
-    case 0xB3: if (a[1] === 0x3F && a[2] !== 0 && nfcPending) { nfcPending = false; const wasOp = !!NFC.op; NFC.bkBusy = false; NFC.op = null; nfcButtons(); const t = 'метка не приняла команду (код ' + a[2] + '): нужна прошивка 1.7 или новее, либо неверные параметры.'; $(wasOp || NFC.bk.length ? 'nfcOut2' : 'nfcOut').textContent = t; break; }
-      if (a[1] === 0x3F && a[2] !== 0) { $('scOut').textContent = 'метка не приняла команду сканера: нужно от 2 до 6 свободных выводов (при подаче питания 2–4 вывода сканирования и хотя бы один отдельный вывод питания) и прошивка 1.5 или новее.'; toast('Сканер I²C: метка отклонила команду'); break; }
-      if (a[1] === 0x3E && a[2] !== 0) { tag.pmAck = true; $('pmStat').textContent = 'метка отклонила команду монитора (код ' + a[2] + '). Для выбора выводов нужна прошивка 1.2.'; toast('Монитор выводов: метка отклонила команду'); break; }
-      toast(({ 0x32: 'Показ слота: ', 0x33: 'Следующий слайд: ', 0x38: 'Заливка: ', 0x39: 'Заставка: ', 0x3A: 'Диагностика панели: ', 0x3C: 'Тест кварцев: ', 0x3E: 'Монитор выводов: ', 0x3F: 'Сканер I²C / NFC-чип: ' }[a[1]] || 'Команда: ') + (RES_TXT[a[2]] || a[2])); setTimeout(() => { if (!busy) cmd([0x30]); }, 400); break;
+    case 0xB3: if (a[1] === 0x3F && a[2] !== 0 && nfcPending) { nfcPending = false; const wasOp = !!NFC.op; NFC.bkBusy = false; NFC.op = null; nfcButtons(); const t = TT('метка не приняла команду (код ') + a[2] + TT('): нужна прошивка 1.7 или новее, либо неверные параметры.'); $(wasOp || NFC.bk.length ? 'nfcOut2' : 'nfcOut').textContent = t; break; }
+      if (a[1] === 0x3F && a[2] !== 0) { $('scOut').textContent = TT('метка не приняла команду сканера: нужно от 2 до 6 свободных выводов (при подаче питания 2–4 вывода сканирования и хотя бы один отдельный вывод питания) и прошивка 1.5 или новее.'); toast(TT('Сканер I²C: метка отклонила команду')); break; }
+      if (a[1] === 0x3E && a[2] !== 0) { tag.pmAck = true; $('pmStat').textContent = TT('метка отклонила команду монитора (код ') + a[2] + TT('). Для выбора выводов нужна прошивка 1.2.'); toast(TT('Монитор выводов: метка отклонила команду')); break; }
+      toast(({ 0x32: TT('Показ слота: '), 0x33: TT('Следующий слайд: '), 0x38: TT('Заливка: '), 0x39: TT('Заставка: '), 0x3A: TT('Диагностика панели: '), 0x3C: TT('Тест кварцев: '), 0x3E: TT('Монитор выводов: '), 0x3F: TT('Сканер I²C / NFC-чип: ') }[a[1]] || TT('Команда: ')) + (TT(RES_TXT[a[2]]) || a[2])); setTimeout(() => { if (!busy) cmd([0x30]); }, 400); break;
     case 0xB4:
       tag.cfg = { en: !!a[2], mode: a[3], interval: u16(a, 4), mask: a[6], temp: (a[7] << 24) >> 24, tx: (a[8] << 24) >> 24, txAct: ((a[9] | a[10] << 8) << 16) >> 16, nfc: a.length > 11 ? !!a[11] : undefined, taps: a.length > 12 ? a[12] : 0 };
       fillCfg(); renderSlots(); renderSlideInfo(); break;
-    case 0xB5: toast('Метка перезагружается; подключитесь заново через несколько секунд'); break;
+    case 0xB5: toast(TT('Метка перезагружается; подключитесь заново через несколько секунд')); break;
     case 0xB6: tag.hw[a[1]] = a; renderHw(); break;
     case 0xB7:
-      log('экран: обновление закончено — ' + (a[1] === 2 ? 'успешно' : 'ОШИБКА ' + (PN_ERR[a[2]] || a[2])) + ', источник: ' + PN_SRC[a[3]] + (a[3] === 2 ? ' ' + a[4] : ''));
-      if (a[1] === 3) toast('Ошибка обновления экрана: ' + (PN_ERR[a[2]] || a[2]));
-      else toast('Экран обновлён');
+      log(TT('экран: обновление закончено — ') + (a[1] === 2 ? TT('успешно') : TT('ОШИБКА ') + (TT(PN_ERR[a[2]]) || a[2])) + TT(', источник: ') + TT(PN_SRC[a[3]]) + (a[3] === 2 ? ' ' + a[4] : ''));
+      if (a[1] === 3) toast(TT('Ошибка обновления экрана: ') + (TT(PN_ERR[a[2]]) || a[2]));
+      else toast(TT('Экран обновлён'));
       if (!busy) cmd([0x30]); break;
     case 0xB8: renderPdiag(a); break;
     case 0xB9: renderClock(a); break;
@@ -844,39 +1590,39 @@ function handle(a) {
     case 0xBD: nfcStatus(a); break;
     case 0xBE: nfcFdPart(a); break;
     case 0xBF: nfcBkPart(a); break;
-    case 0x81: log('ping-ответ: ' + hex(a.slice(1))); break;
-    case 0x82: log('счётчики метки: принято ' + u32(a, 1) + ' байт, записей ' + u16(a, 5)); break;
-    case 0x83: log('счётчики сброшены'); break;
-    case 0xA0: log('flash: JEDEC ' + hex(a.slice(1, 4)) + ' (ожидается ef 40 13), SR1=' + a[4].toString(16) + ' SR2=' + a[5].toString(16) + ' SR3=' + a[6].toString(16)); break;
+    case 0x81: log(TT('ping-ответ: ') + hex(a.slice(1))); break;
+    case 0x82: log(TT('счётчики метки: принято ') + u32(a, 1) + TT(' байт, записей ') + u16(a, 5)); break;
+    case 0x83: log(TT('счётчики сброшены')); break;
+    case 0xA0: log('flash: JEDEC ' + hex(a.slice(1, 4)) + TT(' (ожидается ef 40 13), SR1=') + a[4].toString(16) + ' SR2=' + a[5].toString(16) + ' SR3=' + a[6].toString(16)); break;
     case 0xA1: case 0xA2: {
-      const names = ['успешно', 'BUSY не снялся за 3 с', 'сектор не пуст после стирания', 'бит записи (WEL) не установился', 'данные не совпали при чтении', 'неверные параметры или flash занята'];
-      if (!busy) log((a[0] === 0xA1 ? 'стирание: ' : 'запись страницы: ') + (names[a[1]] || a[1]) + '; BUSY ' + (u32(a, 2) / 1000).toFixed(1) + ' мс; не FF/расхождений: ' + u16(a, 9)); break; }
-    case 0xA3: if (!busy) log('чтение: результат ' + a[1] + ', байт не равных FF: ' + (a.length >= 6 ? u32(a, 2) : '-')); break;
+      const names = [TT('успешно'), TT('BUSY не снялся за 3 с'), TT('сектор не пуст после стирания'), TT('бит записи (WEL) не установился'), TT('данные не совпали при чтении'), TT('неверные параметры или flash занята')];
+      if (!busy) log((a[0] === 0xA1 ? TT('стирание: ') : TT('запись страницы: ')) + (names[a[1]] || a[1]) + '; BUSY ' + (u32(a, 2) / 1000).toFixed(1) + TT(' мс; не FF/расхождений: ') + u16(a, 9)); break; }
+    case 0xA3: if (!busy) log(TT('чтение: результат ') + a[1] + TT(', байт не равных FF: ') + (a.length >= 6 ? u32(a, 2) : '-')); break;
     case 0xA4: {
-      const st = ['flash совпадает с записью (CRC верный)', 'в слоте нет действительной записи', 'CRC flash НЕ совпал с записью'][a[2]] || ('занято/ошибка ' + a[2]);
-      log('слот ' + a[1] + ': ' + st + '; ' + u32(a, 3) + ' байт, CRC при чтении ' + h8(u32(a, 7)));
+      const st = [TT('flash совпадает с записью (CRC верный)'), TT('в слоте нет действительной записи'), TT('CRC flash НЕ совпал с записью')][a[2]] || (TT('занято/ошибка ') + a[2]);
+      log(TT('слот ') + a[1] + ': ' + st + '; ' + u32(a, 3) + TT(' байт, CRC при чтении ') + h8(u32(a, 7)));
       tag.verify = { slot: a[1], status: a[2] }; if (!busy) { renderSlots(); cmd([0x31]); } break; }
-    default: if (!busy) log('уведомление ' + hex(a));
+    default: if (!busy) log(TT('уведомление ') + hex(a));
   }
 }
 
 async function connect() {
-  if (!navigator.bluetooth) { toast('Этот браузер не поддерживает Web Bluetooth: нужен Chrome (компьютер или Android) по https'); return; }
+  if (!navigator.bluetooth) { toast(TT('Этот браузер не поддерживает Web Bluetooth: нужен Chrome (компьютер или Android) по https')); return; }
   try {
     dev = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: 'V300' }], optionalServices: [SVC] });
     dev.addEventListener('gattserverdisconnected', onDisc);
-    log('подключаюсь к ' + dev.name + ' ...');
+    log(TT('подключаюсь к ') + dev.name + ' ...');
     const srv = await dev.gatt.connect(), svc = await srv.getPrimaryService(SVC);
     rx = await svc.getCharacteristic(RXC); tx = await svc.getCharacteristic(TXC);
     tx.addEventListener('characteristicvaluechanged', onNotify);
     await tx.startNotifications();
-    setConn(true); log('готово');
+    setConn(true); log(TT('готово'));
     await sleep(150); await cmd([0x35]); await sleep(150); await cmd([0x31]); await sleep(150); await cmd([0x30]);
-  } catch (e) { log('ошибка подключения: ' + e); toast('Не удалось подключиться: ' + (e.message || e)); }
+  } catch (e) { log(TT('ошибка подключения: ') + e); toast(TT('Не удалось подключиться: ') + (e.message || e)); }
 }
-function onDisc() { log('соединение закрыто'); setConn(false); if (tag.pm) { tag.pm.mode = 0; renderPins(null); } }
+function onDisc() { log(TT('соединение закрыто')); setConn(false); if (tag.pm) { tag.pm.mode = 0; renderPins(null); } }
 function setConn(on) {
-  $('connPill').classList.toggle('on', on); $('connTxt').textContent = on ? 'подключено: ' + (dev ? dev.name : '') : 'не подключено';
+  $('connPill').classList.toggle('on', on); $('connTxt').textContent = on ? TT('подключено: ') + (dev ? dev.name : '') : TT('не подключено');
   $('bConn').disabled = on; $('bDisc').disabled = !on;
   for (const id of ['bSlots', 'bNext', 'bCfg', 'bCfgGet', 'bShowNext', 'bSplash', 'bReboot', 'bHw', 'bPing', 'bStat', 'bReset', 'bRam', 'bPdiag', 'bPdiagGet', 'bClk', 'bClkGet', 'bPm1', 'bPm2', 'bPm3', 'bPmStop', 'bPmClr', 'bScan', 'bScanPwr', 'bScanStop', 'bScanGet', 'bNfcSnap', 'bNfcLive', 'bNfcStop', 'bNfcGet', 'bNfcBk', 'bNfcWr', 'bNfcRestore', 'bNfcUnlock', 'bNfcFind', 'bNfcRescue', 'bFInfo', 'bFErase', 'bFProg', 'bFScan', 'bVer']) $(id).disabled = !on;
   nfcButtons();
@@ -889,40 +1635,40 @@ setInterval(() => { if (connected() && !busy && document.visibilityState === 'vi
 setInterval(() => { if (tag.st) { renderSlideInfo(); renderTagCountdown(); } }, 1000);
 
 /* ---------- отображение состояния метки ---------- */
-const fmtT = s => s === 0xFFFFFFFF ? '—' : (s >= 3600 ? Math.floor(s / 3600) + ' ч ' : '') + String(Math.floor(s % 3600 / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
-const fmtUp = s => (s >= 86400 ? Math.floor(s / 86400) + ' д ' : '') + (s >= 3600 ? Math.floor(s % 86400 / 3600) + ' ч ' : '') + Math.floor(s % 3600 / 60) + ' мин ' + s % 60 + ' с';
+const fmtT = s => s === 0xFFFFFFFF ? '—' : (s >= 3600 ? Math.floor(s / 3600) + TT(' ч ') : '') + String(Math.floor(s % 3600 / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
+const fmtUp = s => (s >= 86400 ? Math.floor(s / 86400) + TT(' д ') : '') + (s >= 3600 ? Math.floor(s % 86400 / 3600) + TT(' ч ') : '') + Math.floor(s % 3600 / 60) + TT(' мин ') + s % 60 + TT(' с');
 function nextLeft() { if (!tag.st || tag.st.nextS === 0xFFFFFFFF || !tag.st.auto) return 0xFFFFFFFF; return Math.max(0, tag.st.nextS - Math.floor((performance.now() - tag.statusAt) / 1000)); }
 function renderTagCountdown() { const e = $('kvNext'); if (e) e.textContent = fmtT(nextLeft()); }
 function renderTag() {
   const s = tag.st; if (!s) return;
-  $('pnState').innerHTML = (s.pst === 1 ? '⏳ ' : s.pst === 3 ? '⚠️ ' : s.pst === 2 ? '✔️ ' : '') + PN_STATE[s.pst] + (s.pst === 1 ? ': ' + STEP_TXT(s.step) : '');
+  $('pnState').innerHTML = (s.pst === 1 ? '⏳ ' : s.pst === 3 ? '⚠️ ' : s.pst === 2 ? '✔️ ' : '') + TT(PN_STATE[s.pst]) + (s.pst === 1 ? ': ' + STEP_TXT(s.step) : '');
   $('pnBar').style.width = (s.pst === 1 ? STEP_PCT[Math.min(s.step, 27)] : s.pst === 0 ? 0 : 100) + '%';
   $('pnKv').innerHTML = '';
-  const rows = [['Показано', s.src === 2 ? 'слот ' + s.shown : s.src === 3 ? 'заливка ' + ['чёрная', 'белая', 'жёлтая', 'красная'][s.shown & 3] : PN_SRC[s.src]], ['Ошибка панели', s.perr ? PN_ERR[s.perr] || s.perr : 'нет'],
-    ['Обновлений с запуска', s.count], ['Расхождений CRC слота', s.crcBad], ['До автосмены', '<span id="kvNext">' + fmtT(nextLeft()) + '</span>'], ['Работает', fmtUp(s.upS)]];
+  const rows = [[TT('Показано'), s.src === 2 ? TT('слот ') + s.shown : s.src === 3 ? TT('заливка ') + [TT('чёрная'), TT('белая'), TT('жёлтая'), TT('красная')][s.shown & 3] : TT(PN_SRC[s.src])], [TT('Ошибка панели'), s.perr ? TT(PN_ERR[s.perr]) || s.perr : TT('нет')],
+    [TT('Обновлений с запуска'), s.count], [TT('Расхождений CRC слота'), s.crcBad], [TT('До автосмены'), '<span id="kvNext">' + fmtT(nextLeft()) + '</span>'], [TT('Работает'), fmtUp(s.upS)]];
   for (const [k, v] of rows) { const a = document.createElement('div'), b = document.createElement('div'); a.textContent = k; b.innerHTML = v; $('pnKv').append(a, b); }
 }
 function renderSlideInfo() {
   const s = tag.st, c = tag.cfg; if (!s) { $('slideInfo').textContent = ''; return; }
-  $('slideInfo').textContent = (s.pst === 1 ? 'Экран обновляется (' + STEP_TXT(s.step) + '). ' : '') + (c && c.en ? 'Следующая смена через ' + fmtT(nextLeft()) + '. ' : 'Автосмена выключена. ') + 'Показано: ' + (s.src === 2 ? 'слот ' + s.shown : PN_SRC[s.src]) + '.';
+  $('slideInfo').textContent = (s.pst === 1 ? TT('Экран обновляется (') + STEP_TXT(s.step) + '). ' : '') + (c && c.en ? TT('Следующая смена через ') + fmtT(nextLeft()) + '. ' : TT('Автосмена выключена. ')) + TT('Показано: ') + (s.src === 2 ? TT('слот ') + s.shown : TT(PN_SRC[s.src])) + '.';
 }
 const RST_BITS = [[0, 'включение питания'], [1, 'сброс по выводу RESET'], [2, 'выход из EM4'], [3, 'сторожевой таймер'], [4, 'просадка питания'], [5, 'зависание ядра'], [6, 'программный сброс'], [7, 'ошибка питания DECOUPLE']];
 function renderHw() {
   const h = tag.hw, kv = $('hwKv'); kv.textContent = '';
   const add = (k, v, cls) => { const a = document.createElement('div'), b = document.createElement('div'); a.textContent = k; if (v instanceof Node) b.appendChild(v); else b.textContent = v; if (cls) b.className = cls; kv.append(a, b); };
-  if (h[0]) { const rc = u32(h[0], 4), why = RST_BITS.filter(([b]) => rc >> b & 1).map(x => x[1]).join(', ') || (rc ? '0x' + rc.toString(16) : 'не определён');
-    add('Прошивка', 'v' + h[0][2] + '.' + h[0][3] + ' (Gecko Slide)'); add('Причина последнего сброса', why); add('Работает', fmtUp(u32(h[0], 8))); add('Слово PART', '0x' + h8(u32(h[0], 12))); }
-  if (h[1]) { const id = hex(h[1].slice(2, 10)).replace(/ /g, ''), sp = document.createElement('span'); sp.textContent = id; sp.className = 'blur'; sp.title = 'нажмите, чтобы показать'; sp.onclick = () => sp.classList.toggle('show');
-    add('Уникальный ID (EUI-64)', sp); add('Память чипа', u16(h[1], 10) + ' КБ flash, ' + u16(h[1], 12) + ' КБ ОЗУ'); }
-  if (h[2]) { const j = hex(h[2].slice(2, 5)); add('Внешняя flash (JEDEC)', j === '00 00 00' ? 'ещё не читалась (кнопка «Идентификатор» в Инструментах)' : j + (j === 'ef 40 13' ? ' — Winbond, 4 Мбит (512 КиБ)' : ''));
-    add('Панель', 'ID чипа 0x' + u16(h[2], 5).toString(16).padStart(4, '0') + (u16(h[2], 5) === 0x0D04 ? ' (PDi BWRY Medium)' : '') + ', обновлений ' + u16(h[2], 12) + ', расхождений CRC ' + h[2][14]); add('Последнее обновление панели', u32(h[2], 8) ? (u32(h[2], 8) / 1000).toFixed(1) + ' с на смену картинки' : '—'); }
-  if (h[3]) { add('Интервал соединения', (u32(h[3], 2) / 1000).toFixed(1) + ' мс'); add('Соединений с запуска', u16(h[3], 6)); add('Уровень сигнала (последний)', ((h[3][8] << 24) >> 24) + ' дБм'); add('Мощность передатчика', ((((h[3][9] | h[3][10] << 8) << 16) >> 16) / 10).toFixed(1) + ' дБм'); add('Сторожевой таймер', h[3][11] ? 'включён (8 с)' : 'выключен'); add('Журнал настроек (счётчик записей)', h[3][12]); }
+  if (h[0]) { const rc = u32(h[0], 4), why = RST_BITS.filter(([b]) => rc >> b & 1).map(x => TT(x[1])).join(', ') || (rc ? '0x' + rc.toString(16) : TT('не определён'));
+    add(TT('Прошивка'), 'v' + h[0][2] + '.' + h[0][3] + ' (Gecko Slide)'); add(TT('Причина последнего сброса'), why); add(TT('Работает'), fmtUp(u32(h[0], 8))); add(TT('Слово PART'), '0x' + h8(u32(h[0], 12))); }
+  if (h[1]) { const id = hex(h[1].slice(2, 10)).replace(/ /g, ''), sp = document.createElement('span'); sp.textContent = id; sp.className = 'blur'; sp.title = TT('нажмите, чтобы показать'); sp.onclick = () => sp.classList.toggle('show');
+    add(TT('Уникальный ID (EUI-64)'), sp); add(TT('Память чипа'), u16(h[1], 10) + TT(' КБ flash, ') + u16(h[1], 12) + TT(' КБ ОЗУ')); }
+  if (h[2]) { const j = hex(h[2].slice(2, 5)); add(TT('Внешняя flash (JEDEC)'), j === '00 00 00' ? TT('ещё не читалась (кнопка «Идентификатор» в Инструментах)') : j + (j === 'ef 40 13' ? TT(' — Winbond, 4 Мбит (512 КиБ)') : ''));
+    add(TT('Панель'), TT('ID чипа 0x') + u16(h[2], 5).toString(16).padStart(4, '0') + (u16(h[2], 5) === 0x0D04 ? ' (PDi BWRY Medium)' : '') + TT(', обновлений ') + u16(h[2], 12) + TT(', расхождений CRC ') + h[2][14]); add(TT('Последнее обновление панели'), u32(h[2], 8) ? (u32(h[2], 8) / 1000).toFixed(1) + TT(' с на смену картинки') : '—'); }
+  if (h[3]) { add(TT('Интервал соединения'), (u32(h[3], 2) / 1000).toFixed(1) + TT(' мс')); add(TT('Соединений с запуска'), u16(h[3], 6)); add(TT('Уровень сигнала (последний)'), ((h[3][8] << 24) >> 24) + TT(' дБм')); add(TT('Мощность передатчика'), ((((h[3][9] | h[3][10] << 8) << 16) >> 16) / 10).toFixed(1) + TT(' дБм')); add(TT('Сторожевой таймер'), h[3][11] ? TT('включён (8 с)') : TT('выключен')); add(TT('Журнал настроек (счётчик записей)'), h[3][12]); }
 }
 
 /* ---------- слоты ---------- */
 function fillSelects() {
   const up = $('upSlot'), v = $('vSlot'); up.textContent = ''; v.textContent = '';
-  for (let s = 1; s <= 7; s++) { up.add(new Option('слот ' + s, s)); v.add(new Option(s, s)); }
+  for (let s = 1; s <= 7; s++) { up.add(new Option(TT('слот ') + s, s)); v.add(new Option(s, s)); }
   up.value = String(lsGet('gs.slot', 1));
   up.onchange = () => lsSet('gs.slot', +up.value);
   for (let i = 0; i < 15; i++) $('sec').add(new Option(i + '  (0x' + (i * 4096).toString(16).padStart(5, '0') + ')', i));
@@ -935,24 +1681,24 @@ function renderSlots() {
     const t = tag.slots[s], rec = LIB.mem.get(s), card = document.createElement('div'); card.className = 'slot' + (t && t.cur ? ' cur' : '');
     const match = t && t.show && rec && rec.crc === t.crc && rec.total === t.total;
     const badges = [];
-    if (!t) badges.push(['нет данных с метки', '']); else if (!t.valid) badges.push(['пусто', '']); else if (!t.show) badges.push(['запись ' + t.total + ' Б, не кадр', 'warn']); else badges.push([match ? 'совпадает с запомненным' : (rec ? 'в метке другое' : 'в метке чужое'), match ? 'ok' : 'warn']);
-    if (t && t.cur) badges.push(['показан', 'ok']);
-    const hd = document.createElement('div'); hd.className = 'hd'; hd.innerHTML = '<span>Слот ' + s + '</span><span></span>';
+    if (!t) badges.push([TT('нет данных с метки'), '']); else if (!t.valid) badges.push([TT('пусто'), '']); else if (!t.show) badges.push([TT('запись ') + t.total + TT(' Б, не кадр'), 'warn']); else badges.push([match ? TT('совпадает с запомненным') : (rec ? TT('в метке другое') : TT('в метке чужое')), match ? 'ok' : 'warn']);
+    if (t && t.cur) badges.push([TT('показан'), 'ok']);
+    const hd = document.createElement('div'); hd.className = 'hd'; hd.innerHTML = TT('<span>Слот ') + s + '</span><span></span>';
     for (const [x, c] of badges) { const b = document.createElement('span'); b.className = 'badge ' + c; b.textContent = x; hd.lastChild.appendChild(b); hd.lastChild.appendChild(document.createTextNode(' ')); }
     card.appendChild(hd);
     if (rec && rec.thumb && (match || !t || !t.show)) { const im = document.createElement('img'); im.src = rec.thumb; im.style.cssText = 'width:100%;aspect-ratio:720/256;border-radius:6px;background:#000;image-rendering:pixelated;display:block'; card.appendChild(im); }
-    else { const e = document.createElement('div'); e.className = 'empty'; e.textContent = t && t.show ? (rec ? 'в метке другая картинка, запомненная здесь не совпадает' : 'картинка загружена не с этой страницы') : 'пусто'; card.appendChild(e); }
-    const meta = document.createElement('div'); meta.className = 'n'; meta.textContent = (rec ? rec.name + ' · ' : '') + (t && t.valid ? t.total + ' Б, CRC ' + h8(t.crc) : ''); card.appendChild(meta);
+    else { const e = document.createElement('div'); e.className = 'empty'; e.textContent = t && t.show ? (rec ? TT('в метке другая картинка, запомненная здесь не совпадает') : TT('картинка загружена не с этой страницы')) : TT('пусто'); card.appendChild(e); }
+    const meta = document.createElement('div'); meta.className = 'n'; meta.textContent = (rec ? rec.name + ' · ' : '') + (t && t.valid ? t.total + TT(' Б, CRC ') + h8(t.crc) : ''); card.appendChild(meta);
     const row = document.createElement('div'); row.className = 'row';
     const lab = document.createElement('label'), cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!(t && t.inList); cb.disabled = !connected() || !t || !t.show;
-    cb.onchange = () => { const m = (tag.cfg ? tag.cfg.mask : 0xFE); setMask(s, cb.checked); }; lab.append(cb, ' в слайдшоу'); row.appendChild(lab); card.appendChild(row);
+    cb.onchange = () => { const m = (tag.cfg ? tag.cfg.mask : 0xFE); setMask(s, cb.checked); }; lab.append(cb, TT(' в слайдшоу')); row.appendChild(lab); card.appendChild(row);
     const r2 = document.createElement('div'); r2.className = 'row';
     const mk = (txt, fn, dis, cls) => { const b = document.createElement('button'); b.textContent = txt; b.disabled = dis; if (cls) b.className = cls; b.onclick = fn; r2.appendChild(b); };
-    mk('Показать', () => cmd([0x32, s], 'показ'), !connected() || !t || !t.show);
-    mk('Загрузить сюда', () => { $('upSlot').value = s; lsSet('gs.slot', s); document.querySelector('[data-t=edit]').click(); toast('Слот ' + s + ' выбран для загрузки'); }, false);
-    mk('Проверить', () => cmd([0x24, s], 'проверка'), !connected() || !t || !t.valid);
+    mk(TT('Показать'), () => cmd([0x32, s], TT('показ')), !connected() || !t || !t.show);
+    mk(TT('Загрузить сюда'), () => { $('upSlot').value = s; lsSet('gs.slot', s); document.querySelector('[data-t=edit]').click(); toast(TT('Слот ') + s + TT(' выбран для загрузки')); }, false);
+    mk(TT('Проверить'), () => cmd([0x24, s], TT('проверка')), !connected() || !t || !t.valid);
     mk('PNG', () => rec && downloadRec(rec), !rec);
-    mk('Забыть', async () => { if (rec && confirm('Забыть запомненную картинку слота ' + s + '? В метке она останется.')) { await LIB.del(s); renderSlots(); } }, !rec, 'd');
+    mk(TT('Забыть'), async () => { if (rec && confirm(TT('Забыть запомненную картинку слота ') + s + TT('? В метке она останется.'))) { await LIB.del(s); renderSlots(); } }, !rec, 'd');
     card.appendChild(r2); g.appendChild(card);
   }
 }
@@ -967,113 +1713,114 @@ function downloadRec(rec) {
   cv.toBlob(b => download(b, 'slot-' + rec.slot + '.png'));
 }
 $('bSlots').onclick = () => cmd([0x31]);
-$('bNext').onclick = () => cmd([0x33], 'следующий');
-$('bShowNext').onclick = () => cmd([0x33], 'следующий');
-$('bSplash').onclick = () => cmd([0x39], 'заставка');
-document.querySelectorAll('.fill').forEach(b => b.onclick = () => cmd([0x38, +b.dataset.c], 'заливка'));
-$('bReboot').onclick = () => { if (confirm('Перезагрузить метку? Соединение прервётся, на экране снова появится заставка (около 30 с).')) cmd([0x36, 0xA5], 'перезагрузка'); };
+$('bNext').onclick = () => cmd([0x33], TT('следующий'));
+$('bShowNext').onclick = () => cmd([0x33], TT('следующий'));
+$('bSplash').onclick = () => cmd([0x39], TT('заставка'));
+document.querySelectorAll('.fill').forEach(b => b.onclick = () => cmd([0x38, +b.dataset.c], TT('заливка')));
+$('bReboot').onclick = () => { if (confirm(TT('Перезагрузить метку? Соединение прервётся, на экране снова появится заставка (около 30 с).'))) cmd([0x36, 0xA5], TT('перезагрузка')); };
 $('bHw').onclick = async () => { tag.hw = {}; renderHw(); await cmd([0x37], 'hw'); };
 
 /* ---------- настройки ---------- */
 const INTERVALS = [1, 2, 5, 10, 15, 30, 60, 120, 180, 360, 720, 1440];
 const TXS = [-20, -15, -10, -5, 0, 3, 6, 10];
 function buildCfgUi() {
-  const si = $('cInt'); for (const m of INTERVALS) si.add(new Option(m < 60 ? m + ' мин' : m % 60 ? m + ' мин' : (m / 60) + ' ч' + (m === 1440 ? ' (сутки)' : ''), m)); si.add(new Option('другой…', 'c'));
+  $('cInt').textContent = ''; $('cTx').textContent = '';
+  const si = $('cInt'); for (const m of INTERVALS) si.add(new Option(m < 60 ? m + TT(' мин') : m % 60 ? m + TT(' мин') : (m / 60) + TT(' ч') + (m === 1440 ? TT(' (сутки)') : ''), m)); si.add(new Option(TT('другой…'), 'c'));
   si.onchange = () => { $('cIntCustomWrap').hidden = si.value !== 'c'; };
-  const st = $('cTx'); for (const d of TXS) st.add(new Option((d > 0 ? '+' : '') + d + ' дБм', d));
+  const st = $('cTx'); for (const d of TXS) st.add(new Option((d > 0 ? '+' : '') + d + TT(' дБм'), d));
 }
 function fillCfg() {
   const c = tag.cfg; if (!c) return;
   $('cEn').checked = c.en; $('cMode').value = c.mode; $('cTemp').value = c.temp;
   const si = $('cInt'); if (INTERVALS.includes(c.interval)) { si.value = c.interval; $('cIntCustomWrap').hidden = true; } else { si.value = 'c'; $('cIntCustomWrap').hidden = false; $('cIntCustom').value = c.interval; }
-  const st = $('cTx'); if (!TXS.includes(c.tx)) st.add(new Option(c.tx + ' дБм', c.tx)); st.value = c.tx;
-  $('cTxAct').textContent = 'фактически ' + (c.txAct / 10).toFixed(1) + ' дБм';
+  const st = $('cTx'); if (!TXS.includes(c.tx)) st.add(new Option(c.tx + TT(' дБм'), c.tx)); st.value = c.tx;
+  $('cTxAct').textContent = TT('фактически ') + (c.txAct / 10).toFixed(1) + TT(' дБм');
   $('cNfc').disabled = c.nfc === undefined; $('cNfc').checked = !!c.nfc;
-  $('cNfcInfo').textContent = c.nfc === undefined ? 'нужна прошивка 1.7 или новее' : 'касаний с запуска метки: ' + c.taps + '. Метка опрашивает NFC-чип 5 раз в секунду; расход батареи пока не оптимизирован (сон добавим позже).';
+  $('cNfcInfo').textContent = c.nfc === undefined ? TT('нужна прошивка 1.7 или новее') : TT('касаний с запуска метки: ') + c.taps + TT('. Метка опрашивает NFC-чип 5 раз в секунду; расход батареи пока не оптимизирован (сон добавим позже).');
 }
 function sendCfgObj(c) {
   const arr = [0x34, c.en ? 1 : 0, c.mode, c.interval & 255, c.interval >> 8, c.mask & 0xFE, c.temp & 255, c.tx & 255];
   if (c.nfc !== undefined) arr.push(c.nfc ? 1 : 0);                            // 9-й байт понимает прошивка 1.7+
-  return cmd(arr, 'настройки');
+  return cmd(arr, TT('настройки'));
 }
 function sendCfg() {                                      // значения из формы (кнопка «Применить»)
   const c = tag.cfg || { mask: 0xFE };
   const inter = $('cInt').value === 'c' ? clamp(+$('cIntCustom').value || 60, 1, 1440) : +$('cInt').value;
   return sendCfgObj({ en: $('cEn').checked, mode: +$('cMode').value, interval: inter, mask: c.mask, temp: clamp(+$('cTemp').value || 0, -20, 60), tx: +$('cTx').value, nfc: c.nfc === undefined ? undefined : $('cNfc').checked });
 }
-$('bCfg').onclick = async () => { await sendCfg(); toast('Настройки отправлены в метку'); };
+$('bCfg').onclick = async () => { await sendCfg(); toast(TT('Настройки отправлены в метку')); };
 $('bCfgGet').onclick = () => cmd([0x35]);
 
 /* ---------- инструменты ---------- */
 $('bPing').onclick = () => cmd([1, 0x11, 0x22, 0x33]);
 $('bStat').onclick = () => cmd([2]);
 $('bReset').onclick = () => cmd([3]);
-$('bPdiag').onclick = () => { $('pdiagOut').textContent = 'идёт диагностика, подождите около 5 секунд …'; cmd([0x3A], 'диагностика'); };
-$('bPdiagGet').onclick = () => cmd([0x3B], 'отчёт');
+$('bPdiag').onclick = () => { $('pdiagOut').textContent = TT('идёт диагностика, подождите около 5 секунд …'); cmd([0x3A], TT('диагностика')); };
+$('bPdiagGet').onclick = () => cmd([0x3B], TT('отчёт'));
 function renderPdiag(a) {
   const st = a[1], out = $('pdiagOut');
-  if (st === 0) { out.textContent = 'Диагностика ещё не запускалась.'; return; }
-  if (st === 1) { out.textContent = 'идёт диагностика, подождите около 5 секунд …'; return; }
+  if (st === 0) { out.textContent = TT('Диагностика ещё не запускалась.'); return; }
+  if (st === 1) { out.textContent = TT('идёт диагностика, подождите около 5 секунд …'); return; }
   const h4 = v => '0x' + v.toString(16).toUpperCase().padStart(4, '0');
   const d = { busyOff: a[2], sdaPdOff: a[3], sdaPuOff: a[4], busyOn: a[5], sdaPd: a[6], sdaPu: a[7], bLow: a[8], b10: a[9], b100: a[10], b500: a[11], bMs: u16(a, 12), id1: u16(a, 14), id2: u16(a, 16), idS: u16(a, 18) };
   const ids = [d.id1, d.id2, d.idS], L = [];
-  if (ids.every(v => v === 0x0D04)) L.push('✔ Панель отвечает: ID прочитан правильно на всех трёх попытках, в том числе на медленной частоте. Теперь пробуйте обычное обновление.');
-  else if (ids.some(v => v === 0x0D04)) L.push('⚠ ID прочитан правильно не на всех попытках (' + ids.map(h4).join(', ') + '): ответ нестабильный. Подозрение на плохой контакт шлейфа или нехватку питания.');
-  else if (ids.every(v => v === 0)) L.push('✖ ID читается как 0x0000 на всех попытках, включая медленную частоту: панель не ведёт линию данных.');
-  else if (ids.every(v => v === 0xFFFF)) L.push('✖ ID читается как 0xFFFF: линия подтянута вверх, панель молчит.');
-  else L.push('✖ Неожиданный ответ ID: ' + ids.map(h4).join(', ') + ' (ожидается 0x0D04).');
+  if (ids.every(v => v === 0x0D04)) L.push(TT('✔ Панель отвечает: ID прочитан правильно на всех трёх попытках, в том числе на медленной частоте. Теперь пробуйте обычное обновление.'));
+  else if (ids.some(v => v === 0x0D04)) L.push(TT('⚠ ID прочитан правильно не на всех попытках (') + ids.map(h4).join(', ') + TT('): ответ нестабильный. Подозрение на плохой контакт шлейфа или нехватку питания.'));
+  else if (ids.every(v => v === 0)) L.push(TT('✖ ID читается как 0x0000 на всех попытках, включая медленную частоту: панель не ведёт линию данных.'));
+  else if (ids.every(v => v === 0xFFFF)) L.push(TT('✖ ID читается как 0xFFFF: линия подтянута вверх, панель молчит.'));
+  else L.push(TT('✖ Неожиданный ответ ID: ') + ids.map(h4).join(', ') + TT(' (ожидается 0x0D04).'));
   if (!ids.some(v => v === 0x0D04)) {
-    if (d.sdaPd === 0 && d.sdaPu === 1) L.push('Линия данных в простое свободна: это нормально, панель держит её только пока отвечает. Сама по себе она ничего не доказывает.');
-    else if (d.sdaPd === 0 && d.sdaPu === 0) L.push('Линия данных прижата к нулю даже с подтяжкой вверх: замыкание на землю или панель/её контроллер держит линию внизу.');
-    else if (d.sdaPd === 1) L.push('Линия данных прижата к единице даже с подтяжкой вниз: замыкание на питание или панель держит линию вверху.');
-    if (d.bMs !== 0xFFFF && !d.busyOff) L.push('Но BUSY реагирует на питание и сброс (низкий при выключенной панели, высокий после сброса): логика панели жива и сброс до неё доходит. Значит, молчит именно канал данных: панель не получает команду 0x70 или её ответ не доходит до метки. Подозрение: линии SDA, SCLK, CS или DC (обрыв, плохой контакт, пайка).');
+    if (d.sdaPd === 0 && d.sdaPu === 1) L.push(TT('Линия данных в простое свободна: это нормально, панель держит её только пока отвечает. Сама по себе она ничего не доказывает.'));
+    else if (d.sdaPd === 0 && d.sdaPu === 0) L.push(TT('Линия данных прижата к нулю даже с подтяжкой вверх: замыкание на землю или панель/её контроллер держит линию внизу.'));
+    else if (d.sdaPd === 1) L.push(TT('Линия данных прижата к единице даже с подтяжкой вниз: замыкание на питание или панель держит линию вверху.'));
+    if (d.bMs !== 0xFFFF && !d.busyOff) L.push(TT('Но BUSY реагирует на питание и сброс (низкий при выключенной панели, высокий после сброса): логика панели жива и сброс до неё доходит. Значит, молчит именно канал данных: панель не получает команду 0x70 или её ответ не доходит до метки. Подозрение: линии SDA, SCLK, CS или DC (обрыв, плохой контакт, пайка).'));
   }
-  if (d.bMs === 0xFFFF) L.push('✖ BUSY не поднялся за 3 с после сброса: контроллер панели не просыпается.');
-  else L.push('BUSY поднялся через ' + d.bMs + ' мс после сброса' + (d.bMs <= 10 && d.busyOff ? ' (но он высокий и при выключенной панели, так что по нему о панели судить нельзя: линия подтянута на плате)' : '') + '.');
-  if (d.busyOff && d.bLow) L.push('BUSY высокий всегда (и при выключенном питании панели, и при сбросе): вероятно, подтяжка на плате; контроллер панели его не меняет.');
-  out.textContent = L.join('\n') + '\n\nСырые значения: питание панели выключено 3 с: BUSY ' + d.busyOff + ', SDA с подтяжкой вниз/вверх ' + d.sdaPdOff + '/' + d.sdaPuOff +
-    ' | через 20 мс после включения BUSY ' + d.busyOn + ' | сброс: BUSY при RST=0 ' + d.bLow + ', через 10/100/500 мс ' + d.b10 + '/' + d.b100 + '/' + d.b500 + ', ' + (d.bMs === 0xFFFF ? 'не поднялся' : d.bMs + ' мс') +
-    ' | ID ' + ids.map(h4).join(' ') + ' (третий на медленной частоте) | SDA после чтения, подтяжка вниз/вверх ' + d.sdaPd + '/' + d.sdaPu;
-  log('диагностика панели: ' + out.textContent.replace(/\n+/g, ' | '));
+  if (d.bMs === 0xFFFF) L.push(TT('✖ BUSY не поднялся за 3 с после сброса: контроллер панели не просыпается.'));
+  else L.push(TT('BUSY поднялся через ') + d.bMs + TT(' мс после сброса') + (d.bMs <= 10 && d.busyOff ? TT(' (но он высокий и при выключенной панели, так что по нему о панели судить нельзя: линия подтянута на плате)') : '') + '.');
+  if (d.busyOff && d.bLow) L.push(TT('BUSY высокий всегда (и при выключенном питании панели, и при сбросе): вероятно, подтяжка на плате; контроллер панели его не меняет.'));
+  out.textContent = L.join('\n') + TT('\n\nСырые значения: питание панели выключено 3 с: BUSY ') + d.busyOff + TT(', SDA с подтяжкой вниз/вверх ') + d.sdaPdOff + '/' + d.sdaPuOff +
+    TT(' | через 20 мс после включения BUSY ') + d.busyOn + TT(' | сброс: BUSY при RST=0 ') + d.bLow + TT(', через 10/100/500 мс ') + d.b10 + '/' + d.b100 + '/' + d.b500 + ', ' + (d.bMs === 0xFFFF ? TT('не поднялся') : d.bMs + TT(' мс')) +
+    ' | ID ' + ids.map(h4).join(' ') + TT(' (третий на медленной частоте) | SDA после чтения, подтяжка вниз/вверх ') + d.sdaPd + '/' + d.sdaPu;
+  log(TT('диагностика панели: ') + out.textContent.replace(/\n+/g, ' | '));
 }
 
 /* ---- тест кварцев (ответ 0xB9) ---- */
-$('bClk').onclick = () => { $('clkOut').textContent = 'идёт тест, подождите 1–3 секунды …'; cmd([0x3C], 'тест кварцев'); };
-$('bClkGet').onclick = () => cmd([0x3D], 'отчёт');
+$('bClk').onclick = () => { $('clkOut').textContent = TT('идёт тест, подождите 1–3 секунды …'); cmd([0x3C], TT('тест кварцев')); };
+$('bClkGet').onclick = () => cmd([0x3D], TT('отчёт'));
 const CT_DOWN = { lfxo: 512, lfrco: 512, ulfrco: 16 };     // как CT_DOWN_* в ble_hwtest.h
 const HFXO_HZ = 38.4e6;
 function renderClock(a) {
   const out = $('clkOut'), st = a[1], f = a[2], sel = a[3];
-  if (st === 0) { out.textContent = 'Тест ещё не запускался.'; return; }
-  if (st === 1) { out.textContent = 'идёт тест, подождите 1–3 секунды …'; return; }
+  if (st === 0) { out.textContent = TT('Тест ещё не запускался.'); return; }
+  if (st === 1) { out.textContent = TT('идёт тест, подождите 1–3 секунды …'); return; }
   const u24 = i => a[i] | a[i + 1] << 8 | a[i + 2] << 16, hx = v => '0x' + v.toString(16).toUpperCase().padStart(2, '0');
-  const sysN = { 1: 'FSRCO (20 МГц)', 2: 'HFRCODPLL', 3: 'HFXO', 4: 'CLKIN0' }, lfN = { 0: 'не выбран', 1: 'LFRCO', 2: 'LFXO', 3: 'ULFRCO' };
+  const sysN = { 1: TT('FSRCO (20 МГц)'), 2: 'HFRCODPLL', 3: 'HFXO', 4: 'CLKIN0' }, lfN = { 0: TT('не выбран'), 1: 'LFRCO', 2: 'LFXO', 3: 'ULFRCO' };
   const meas = (cnt, down) => cnt ? HFXO_HZ * (down / 2) / cnt : 0;
   const fl = meas(u24(10), CT_DOWN.lfxo), fr = meas(u24(13), CT_DOWN.lfrco), fu = meas(u24(16), CT_DOWN.ulfrco);
   const ppm = (v, nom) => ((v / nom - 1) * 1e6);
   const L = [];
-  L.push('Кварц 38,4 МГц (HFXO): ' + ((f & 1) ? 'работает' : 'НЕ готов') + '. Тактирование ядра: ' + (sysN[sel & 7] || (sel & 7)) + '. Ёмкости настройки сейчас XI/XO: ' + hx(a[4]) + '/' + hx(a[5]) + ', заводские в памяти кристалла: ' + hx(a[6]) + '/' + hx(a[7]) + (a[4] === a[6] && a[5] === a[7] ? ' (совпадают)' : ' (отличаются: прошивка или стек задали свои)') + '.');
-  L.push('Низкочастотный такт для сна сейчас: ' + (lfN[(sel >> 3) & 3] || '?') + ' (группа EM2/3), ' + (lfN[(sel >> 5) & 3] || '?') + ' (RTCC). Это то, что оставила начальная настройка SDK; сама эта прошивка сон пока не использует.');
+  L.push(TT('Кварц 38,4 МГц (HFXO): ') + ((f & 1) ? TT('работает') : TT('НЕ готов')) + TT('. Тактирование ядра: ') + (sysN[sel & 7] || (sel & 7)) + TT('. Ёмкости настройки сейчас XI/XO: ') + hx(a[4]) + '/' + hx(a[5]) + TT(', заводские в памяти кристалла: ') + hx(a[6]) + '/' + hx(a[7]) + (a[4] === a[6] && a[5] === a[7] ? TT(' (совпадают)') : TT(' (отличаются: прошивка или стек задали свои)')) + '.');
+  L.push(TT('Низкочастотный такт для сна сейчас: ') + (lfN[(sel >> 3) & 3] || '?') + TT(' (группа EM2/3), ') + (lfN[(sel >> 5) & 3] || '?') + TT(' (RTCC). Это то, что оставила начальная настройка SDK; сама эта прошивка сон пока не использует.'));
   L.push('');
-  if (f & 2) L.push('LFXO уже был включён до теста (кем-то в прошивке), использовал как есть.');
-  if (f & 4) L.push('LFXO: кварц запустился за ' + u16(a, 8) + ' мс' + (f & 16 ? '' : ', но измерить частоту не удалось') + '.');
-  if (f & 8) L.push('LFXO: детектор отказа сработал — генерации нет.');
-  if (f & 0x80) L.push('LFXO: за 2 с не запустился.');
+  if (f & 2) L.push(TT('LFXO уже был включён до теста (кем-то в прошивке), использовал как есть.'));
+  if (f & 4) L.push(TT('LFXO: кварц запустился за ') + u16(a, 8) + TT(' мс') + (f & 16 ? '' : TT(', но измерить частоту не удалось')) + '.');
+  if (f & 8) L.push(TT('LFXO: детектор отказа сработал — генерации нет.'));
+  if (f & 0x80) L.push(TT('LFXO: за 2 с не запустился.'));
   if (f & 16) {
     const d = ppm(fl, 32768), ad = Math.abs(d);
-    L.push('LFXO: ' + fl.toFixed(2) + ' Гц, отклонение от 32 768 Гц ' + (d >= 0 ? '+' : '') + d.toFixed(0) + ' ppm (при условии, что HFXO точен; его собственная погрешность 10–20 ppm входит сюда же).');
-    L.push(ad <= 100 ? '✔ Кварц 32,768 кГц есть и в норме. Его можно использовать для сна и точных интервалов.'
-      : ad <= 1000 ? '⚠ Кварц есть и работает, но частота сдвинута на ' + ad.toFixed(0) + ' ppm: вероятно, не та ёмкость нагрузки (тест брал внутренние ' + (a[19] * 0.25).toFixed(1) + ' пФ). Для сна BLE допустимо до 500 ppm.'
-      : '✖ Измеренная частота далека от 32 768 Гц (' + ad.toFixed(0) + ' ppm): это не кварц 32,768 кГц или он работает неправильно.');
+    L.push('LFXO: ' + fl.toFixed(2) + TT(' Гц, отклонение от 32 768 Гц ') + (d >= 0 ? '+' : '') + d.toFixed(0) + TT(' ppm (при условии, что HFXO точен; его собственная погрешность 10–20 ppm входит сюда же).'));
+    L.push(ad <= 100 ? TT('✔ Кварц 32,768 кГц есть и в норме. Его можно использовать для сна и точных интервалов.')
+      : ad <= 1000 ? TT('⚠ Кварц есть и работает, но частота сдвинута на ') + ad.toFixed(0) + TT(' ppm: вероятно, не та ёмкость нагрузки (тест брал внутренние ') + (a[19] * 0.25).toFixed(1) + TT(' пФ). Для сна BLE допустимо до 500 ppm.')
+      : TT('✖ Измеренная частота далека от 32 768 Гц (') + ad.toFixed(0) + TT(' ppm): это не кварц 32,768 кГц или он работает неправильно.'));
   } else if (!(f & 2)) {
-    L.push('✖ Кварца 32,768 кГц, судя по всему, нет (или он не подходит под настройки теста). Для сна тогда остаются LFRCO и ULFRCO; это не мешает работе, но интервалы во сне будут менее точными.');
+    L.push(TT('✖ Кварца 32,768 кГц, судя по всему, нет (или он не подходит под настройки теста). Для сна тогда остаются LFRCO и ULFRCO; это не мешает работе, но интервалы во сне будут менее точными.'));
   }
-  if (f & 32) L.push('LFRCO (встроенный RC): ' + fr.toFixed(0) + ' Гц, ' + (ppm(fr, 32768) >= 0 ? '+' : '') + (ppm(fr, 32768) / 1e4).toFixed(2) + ' % от 32 768 Гц.');
-  if (f & 64) L.push('ULFRCO (встроенный, сверхмалое потребление): ' + fu.toFixed(0) + ' Гц, ' + (ppm(fu, 1000) >= 0 ? '+' : '') + (ppm(fu, 1000) / 1e4).toFixed(1) + ' % от 1000 Гц.');
+  if (f & 32) L.push(TT('LFRCO (встроенный RC): ') + fr.toFixed(0) + TT(' Гц, ') + (ppm(fr, 32768) >= 0 ? '+' : '') + (ppm(fr, 32768) / 1e4).toFixed(2) + TT(' % от 32 768 Гц.'));
+  if (f & 64) L.push(TT('ULFRCO (встроенный, сверхмалое потребление): ') + fu.toFixed(0) + TT(' Гц, ') + (ppm(fu, 1000) >= 0 ? '+' : '') + (ppm(fu, 1000) / 1e4).toFixed(1) + TT(' % от 1000 Гц.'));
   L.push('');
-  L.push('Для справки: счёт HFXO на ' + CT_DOWN.lfxo / 2 + ' периодов LFXO = ' + u24(10) + ', LFRCO = ' + u24(13) + '; на ' + CT_DOWN.ulfrco / 2 + ' периодов ULFRCO = ' + u24(16) + ' (0 = измерить не удалось).');
+  L.push(TT('Для справки: счёт HFXO на ') + CT_DOWN.lfxo / 2 + TT(' периодов LFXO = ') + u24(10) + ', LFRCO = ' + u24(13) + TT('; на ') + CT_DOWN.ulfrco / 2 + TT(' периодов ULFRCO = ') + u24(16) + TT(' (0 = измерить не удалось).'));
   out.textContent = L.join('\n');
-  log('тест кварцев: ' + L.filter(x => x).join(' | '));
+  log(TT('тест кварцев: ') + L.filter(x => x).join(' | '));
 }
 
 /* ---- монитор выводов (ответ 0xBA) ---- */
@@ -1087,8 +1834,8 @@ function pmSet(m) {
   const s = tag.pmSel >>> 0, b = [0x3E, m | ($('pmSwd').checked ? 0x80 : 0)];
   if (s !== 0x3FFFFFF) b.push(s & 255, s >>> 8 & 255, s >>> 16 & 255, s >>> 24 & 255);     // команда на 2 байта работает и на прошивке 1.1; маска нужна только при выборе выводов (прошивка 1.2)
   tag.pmAck = false; clearTimeout(tag.pmTo);
-  tag.pmTo = setTimeout(() => { if (!tag.pmAck) $('pmStat').textContent = 'метка не ответила на команду монитора. Проверьте версию прошивки в «Метка → Железо»: для выбора выводов нужна 1.2, для остального достаточно 1.1.'; }, 2500);
-  cmd(b, 'монитор выводов');
+  tag.pmTo = setTimeout(() => { if (!tag.pmAck) $('pmStat').textContent = TT('метка не ответила на команду монитора. Проверьте версию прошивки в «Метка → Железо»: для выбора выводов нужна 1.2, для остального достаточно 1.1.'); }, 2500);
+  cmd(b, TT('монитор выводов'));
 }
 $('pmGrid').onclick = e => {
   const c = e.target.closest('.pmc'); if (!c || c.dataset.i === undefined) return;
@@ -1099,7 +1846,7 @@ $('bPm1').onclick = () => pmSet(1);
 $('bPm2').onclick = () => pmSet(2);
 $('bPm3').onclick = () => pmSet(3);
 $('bPmStop').onclick = () => pmSet(0);
-$('bPmClr').onclick = () => { tag.pmHist = {}; cmd([0x3F, 1], 'монитор выводов'); };
+$('bPmClr').onclick = () => { tag.pmHist = {}; cmd([0x3F, 1], TT('монитор выводов')); };
 $('pmSwd').onchange = () => { if (tag.pm && tag.pm.mode) pmSet(tag.pm.mode); };
 function renderPins(a) {
   if (a) {
@@ -1113,32 +1860,32 @@ function renderPins(a) {
   for (let i = 0; i < PM_N.length; i++) {
     const nm = PM_N[i], bit = (1 << i) >>> 0;
     let cls = 'pmc', txt = '', pick = false;
-    if (PM_OWN[nm]) { cls += ' own'; txt = PM_OWN[nm]; }
-    else if (PM_SWD[nm] && !(m.swd && m.mode)) { cls += ' own'; txt = 'отладка (SWD), не трогаю'; }
-    else if (!(tag.pmSel & bit)) { cls += ' own'; txt = 'исключён, не трогаю'; pick = true; }
-    else if (!m.mode) { txt = 'не наблюдается'; pick = true; }
+    if (TT(PM_OWN[nm])) { cls += ' own'; txt = TT(PM_OWN[nm]); }
+    else if (PM_SWD[nm] && !(m.swd && m.mode)) { cls += ' own'; txt = TT('отладка (SWD), не трогаю'); }
+    else if (!(tag.pmSel & bit)) { cls += ' own'; txt = TT('исключён, не трогаю'); pick = true; }
+    else if (!m.mode) { txt = TT('не наблюдается'); pick = true; }
     else {
       pick = true;
       cls += (m.level & bit) ? ' hi' : ' lo';
-      if (chg & bit) { cls += ' chg'; txt = 'МЕНЯЛСЯ'; } else txt = (m.hi & bit) ? 'всегда 1' : 'всегда 0';
+      if (chg & bit) { cls += ' chg'; txt = TT('МЕНЯЛСЯ'); } else txt = (m.hi & bit) ? TT('всегда 1') : TT('всегда 0');
     }
     cells.push('<div class="' + cls + '"' + (pick ? ' data-i="' + i + '" style="cursor:pointer"' : '') + '><b>' + nm + '</b><br>' + txt + '</div>');
   }
   $('pmGrid').innerHTML = cells.join('');
-  $('pmStat').textContent = 'режим: ' + PM_MODE[m.mode] + (m.mode ? '; идёт ' + m.el + ' с из 300; изменений уровня: ' + m.edges + (m.last !== 255 ? '; последний менялся ' + PM_N[m.last] : '') : '');
+  $('pmStat').textContent = TT('режим: ') + TT(PM_MODE[m.mode]) + (m.mode ? TT('; идёт ') + m.el + TT(' с из 300; изменений уровня: ') + m.edges + (m.last !== 255 ? TT('; последний менялся ') + PM_N[m.last] : '') : '');
   // выводы по режимам
   const names = mask => PM_N.filter((n, i) => (mask >>> i) & 1).join(', ');
   const L = [];
   const modes = [1, 2, 3].filter(k => tag.pmHist[k] !== undefined);
-  for (const k of modes) L.push(PM_MODE[k] + ': менялись ' + (tag.pmHist[k] ? names(tag.pmHist[k]) : 'никакие') + '.');
+  for (const k of modes) L.push(TT(PM_MODE[k]) + TT(': менялись ') + (tag.pmHist[k] ? names(tag.pmHist[k]) : TT('никакие')) + '.');
   if (modes.length) {
     const all = modes.reduce((x, k) => (x & tag.pmHist[k]) >>> 0, 0xFFFFFFFF), up = tag.pmHist[2] || 0, fl = tag.pmHist[1] || 0, dn = tag.pmHist[3] || 0;
     const SWDM = 0xE, allN = (all & ~SWDM) >>> 0, allS = (all & SWDM) >>> 0;
-    if (modes.length >= 2 && allN) L.push('Менялись при всех проверенных режимах: ' + names(allN) + '. Это выход микросхемы, который сам подаёт уровень: самый вероятный кандидат на линию NFC.');
-    if (allS) L.push(names(allS) + ' — выводы отладки (SWD). Они двигаются, когда подключён программатор или идёт обмен по SWD; это не NFC. Для чистой проверки отключите программатор и снимите галочку SWD.');
-    if (tag.pmHist[2] !== undefined && ((up & ~fl & ~dn) >>> 0)) L.push('Менялись только с подтяжкой вверх: ' + names((up & ~fl & ~dn) >>> 0) + '. Типичная линия с открытым стоком (детектор поля).');
-    if (modes.length >= 2 && ((fl & ~up & ~dn) >>> 0) && tag.pmHist[1] !== undefined) L.push('Менялись только на плавающем входе: ' + names((fl & ~up & ~dn) >>> 0) + '. Скорее наводки или утечка, а не сигнал.');
-    L.push('Как проверять: включите режим, подождите 5 секунд без телефона, затем поднесите телефон к метке (или NFC-карту) и уберите. Если после этого в режиме есть «МЕНЯЛСЯ» только на одном выводе, пришлите его имя.');
+    if (modes.length >= 2 && allN) L.push(TT('Менялись при всех проверенных режимах: ') + names(allN) + TT('. Это выход микросхемы, который сам подаёт уровень: самый вероятный кандидат на линию NFC.'));
+    if (allS) L.push(names(allS) + TT(' — выводы отладки (SWD). Они двигаются, когда подключён программатор или идёт обмен по SWD; это не NFC. Для чистой проверки отключите программатор и снимите галочку SWD.'));
+    if (tag.pmHist[2] !== undefined && ((up & ~fl & ~dn) >>> 0)) L.push(TT('Менялись только с подтяжкой вверх: ') + names((up & ~fl & ~dn) >>> 0) + TT('. Типичная линия с открытым стоком (детектор поля).'));
+    if (modes.length >= 2 && ((fl & ~up & ~dn) >>> 0) && tag.pmHist[1] !== undefined) L.push(TT('Менялись только на плавающем входе: ') + names((fl & ~up & ~dn) >>> 0) + TT('. Скорее наводки или утечка, а не сигнал.'));
+    L.push(TT('Как проверять: включите режим, подождите 5 секунд без телефона, затем поднесите телефон к метке (или NFC-карту) и уберите. Если после этого в режиме есть «МЕНЯЛСЯ» только на одном выводе, пришлите его имя.'));
   }
   $('pmNote').textContent = L.join('\n');
 }
@@ -1149,50 +1896,50 @@ const PM_FREE = PM_N.map((n, i) => i).filter(i => !PM_OWN[PM_N[i]] && !PM_SWD[PM
 $('scPins').innerHTML = PM_FREE.map(i => '<label style="margin-right:10px"><input type="checkbox" data-i="' + i + '"' + (['PC5', 'PD2', 'PD3'].includes(PM_N[i]) ? ' checked' : '') + '> ' + PM_N[i] + '</label>').join('');
 $('bScan').onclick = () => {
   const idx = [...document.querySelectorAll('#scPins input:checked')].map(c => +c.dataset.i);
-  if (idx.length < 2 || idx.length > 6) { toast('Выберите от 2 до 6 выводов'); return; }
+  if (idx.length < 2 || idx.length > 6) { toast(TT('Выберите от 2 до 6 выводов')); return; }
   let m = 0; for (const i of idx) m = (m | (1 << i)) >>> 0;
-  $('scOut').textContent = 'идёт сканирование: ' + idx.length * (idx.length - 1) + ' пар, около ' + Math.ceil(idx.length * (idx.length - 1) * 0.15 + 1) + ' с и больше, если линии залипают …';
-  cmd([0x3F, 2, +$('scOpt').value, m & 255, m >>> 8 & 255, m >>> 16 & 255, m >>> 24 & 255], 'сканер I²C');
+  $('scOut').textContent = TT('идёт сканирование: ') + idx.length * (idx.length - 1) + TT(' пар, около ') + Math.ceil(idx.length * (idx.length - 1) * 0.15 + 1) + TT(' с и больше, если линии залипают …');
+  cmd([0x3F, 2, +$('scOpt').value, m & 255, m >>> 8 & 255, m >>> 16 & 255, m >>> 24 & 255], TT('сканер I²C'));
 };
 $('scPwr').innerHTML = PM_FREE.map(i => '<label style="margin-right:10px"><input type="checkbox" data-i="' + i + '"' + (['PC5', 'PD2', 'PD3'].includes(PM_N[i]) ? '' : ' checked') + '> ' + PM_N[i] + '</label>').join('');
 let scLastPwr = false;
 $('bScanPwr').onclick = () => {
   const idx = [...document.querySelectorAll('#scPins input:checked')].map(c => +c.dataset.i);
   const pw = [...document.querySelectorAll('#scPwr input:checked')].map(c => +c.dataset.i).filter(i => !idx.includes(i));
-  if (idx.length < 2 || idx.length > 4) { toast('Для подачи питания выберите 2–4 вывода сканирования'); return; }
-  if (!pw.length) { toast('Отметьте хотя бы один вывод питания (не из сканируемых)'); return; }
+  if (idx.length < 2 || idx.length > 4) { toast(TT('Для подачи питания выберите 2–4 вывода сканирования')); return; }
+  if (!pw.length) { toast(TT('Отметьте хотя бы один вывод питания (не из сканируемых)')); return; }
   let m = 0, pm = 0; for (const i of idx) m = (m | (1 << i)) >>> 0; for (const i of pw) pm = (pm | (1 << i)) >>> 0;
   scLastPwr = true;
-  $('scOut').textContent = 'идёт сканирование с подачей «1»: ' + pw.length + ' выводов питания, примерно ' + Math.ceil(pw.length * 2 + 2) + ' с …';
-  cmd([0x3F, 5, +$('scOpt').value, m & 255, m >>> 8 & 255, m >>> 16 & 255, m >>> 24 & 255, pm & 255, pm >>> 8 & 255, pm >>> 16 & 255, pm >>> 24 & 255], 'сканер I²C');
+  $('scOut').textContent = TT('идёт сканирование с подачей «1»: ') + pw.length + TT(' выводов питания, примерно ') + Math.ceil(pw.length * 2 + 2) + TT(' с …');
+  cmd([0x3F, 5, +$('scOpt').value, m & 255, m >>> 8 & 255, m >>> 16 & 255, m >>> 24 & 255, pm & 255, pm >>> 8 & 255, pm >>> 16 & 255, pm >>> 24 & 255], TT('сканер I²C'));
 };
 $('bScan').addEventListener('click', () => { scLastPwr = false; });
-$('bScanStop').onclick = () => cmd([0x3F, 4], 'сканер I²C');
-$('bScanGet').onclick = () => cmd([0x3F, 3], 'сканер I²C');
-const I2C_HINT = a => a === 0x55 ? 'похоже на NXP NTAG I²C (NT3H…)' : (a === 0x53 || a === 0x57) ? 'похоже на ST25DV (0x53 память пользователя, 0x57 системная)' : (a >= 0x50 && a <= 0x57) ? 'адрес EEPROM / NFC-памяти' : 'неизвестное устройство';
+$('bScanStop').onclick = () => cmd([0x3F, 4], TT('сканер I²C'));
+$('bScanGet').onclick = () => cmd([0x3F, 3], TT('сканер I²C'));
+const I2C_HINT = a => a === 0x55 ? TT('похоже на NXP NTAG I²C (NT3H…)') : (a === 0x53 || a === 0x57) ? TT('похоже на ST25DV (0x53 память пользователя, 0x57 системная)') : (a >= 0x50 && a <= 0x57) ? TT('адрес EEPROM / NFC-памяти') : TT('неизвестное устройство');
 function renderScan(a) {
   const out = $('scOut'), st = a[1] & 15, opt = a[1] >> 4, total = a[2], done = a[3], stuck = a[4], hits = a[5], pwrHit = a[9], pwrNow = a[10], high = u32(a, 12), held = u32(a, 16);
-  const names = mask => PM_N.filter((n, i) => (mask >>> i) & 1).join(', ') || 'никакие';
-  const optT = ['плавающие', 'подтяжка вверх', 'подтяжка вниз'][opt] || opt;
-  if (st === 0) { out.textContent = 'Сканер ещё не запускался.'; return; }
+  const names = mask => PM_N.filter((n, i) => (mask >>> i) & 1).join(', ') || TT('никакие');
+  const optT = [TT('плавающие'), TT('подтяжка вверх'), TT('подтяжка вниз')][opt] || opt;
+  if (st === 0) { out.textContent = TT('Сканер ещё не запускался.'); return; }
   const L = [];
-  if (st === 1) L.push('идёт: проверено пар ' + done + ' из ' + total + ', залипших ' + stuck + ', найдено устройств ' + hits + (pwrNow !== 255 ? '; сейчас «1» подана на ' + PM_N[pwrNow] : '') + ' …');
-  else L.push((st === 3 ? 'прервано' : 'готово') + ' (остальные выводы: ' + optT + '): пар ' + done + ' из ' + total + ', залипших ' + stuck + ', найдено устройств ' + hits + '.');
+  if (st === 1) L.push(TT('идёт: проверено пар ') + done + TT(' из ') + total + TT(', залипших ') + stuck + TT(', найдено устройств ') + hits + (pwrNow !== 255 ? TT('; сейчас «1» подана на ') + PM_N[pwrNow] : '') + ' …');
+  else L.push((st === 3 ? TT('прервано') : TT('готово')) + TT(' (остальные выводы: ') + optT + TT('): пар ') + done + TT(' из ') + total + TT(', залипших ') + stuck + TT(', найдено устройств ') + hits + '.');
   if (hits > 0) {
     const sda = a[6], scl = a[7], ad = a[8];
-    L.push('✔ найдено: SDA=' + PM_N[sda] + ', SCL=' + PM_N[scl] + ', адрес 0x' + ad.toString(16).toUpperCase().padStart(2, '0') + ' (7 бит); ' + I2C_HINT(ad) + '.');
-    if (pwrHit !== 255) L.push('★ Чип ответил, когда на ' + PM_N[pwrHit] + ' была подана «1»: это, скорее всего, его питание (VCC). Запишите этот результат.');
-    if (hits > 1) L.push('Всего устройств: ' + hits + ' (показано первое).');
+    L.push(TT('✔ найдено: SDA=') + PM_N[sda] + ', SCL=' + PM_N[scl] + TT(', адрес 0x') + ad.toString(16).toUpperCase().padStart(2, '0') + TT(' (7 бит); ') + I2C_HINT(ad) + '.');
+    if (pwrHit !== 255) L.push(TT('★ Чип ответил, когда на ') + PM_N[pwrHit] + TT(' была подана «1»: это, скорее всего, его питание (VCC). Запишите этот результат.'));
+    if (hits > 1) L.push(TT('Всего устройств: ') + hits + TT(' (показано первое).'));
   }
-  L.push('При отпускании поднимались в «1»: ' + names(high) + '.');
-  if (held) L.push('Линия данных «отвечала» на все адреса подряд (это не устройство, а вывод, который держится внизу или поднимается очень медленно): ' + names(held) + '. Запишите эти выводы.');
+  L.push(TT('При отпускании поднимались в «1»: ') + names(high) + '.');
+  if (held) L.push(TT('Линия данных «отвечала» на все адреса подряд (это не устройство, а вывод, который держится внизу или поднимается очень медленно): ') + names(held) + TT('. Запишите эти выводы.'));
   if (st === 2 && hits === 0) {
-    if (scLastPwr) L.push('✖ Чип не отозвался ни при подаче «1» на один из отмеченных выводов питания. Значит, питание чипа идёт не с этих выводов (или I²C там не подключён).');
-    else if (stuck >= total) L.push('✖ Ни одна пара не поднялась в «1»: линии удерживаются внизу, то есть чип не запитан достаточно. Запустите с другой настройкой остальных выводов (подтяжка вверх, подтяжка вниз) или кнопкой «Сканировать с подачей «1»».');
-    else L.push('Устройства на адресах 0x08–0x77 не найдено. Попробуйте другую настройку остальных выводов или другую комбинацию выводов.');
+    if (scLastPwr) L.push(TT('✖ Чип не отозвался ни при подаче «1» на один из отмеченных выводов питания. Значит, питание чипа идёт не с этих выводов (или I²C там не подключён).'));
+    else if (stuck >= total) L.push(TT('✖ Ни одна пара не поднялась в «1»: линии удерживаются внизу, то есть чип не запитан достаточно. Запустите с другой настройкой остальных выводов (подтяжка вверх, подтяжка вниз) или кнопкой «Сканировать с подачей «1»».'));
+    else L.push(TT('Устройства на адресах 0x08–0x77 не найдено. Попробуйте другую настройку остальных выводов или другую комбинацию выводов.'));
   }
   out.textContent = L.join('\n');
-  if (st !== 1) log('сканер I²C: ' + L.join(' | '));
+  if (st !== 1) log(TT('сканер I²C: ') + L.join(' | '));
 }
 
 /* ---- NFC-чип по I²C (ответы 0xBC блоки/регистры, 0xBD состояние) ---- */
@@ -1200,16 +1947,16 @@ let nfcPending = false;
 const NFC = { blk: [], regs: [], regsOk: 0, st: null, fd: [], fdWant: false, bk: [], bkBusy: false, op: null, b0: undefined };
 const NFC_BNAME = ['00 (серийные данные, блокировка, CC)', '01 (начало области NDEF)', '02 (продолжение NDEF)', '38 (динамическая блокировка, по даташиту)', '3A (конфигурация)', 'FE (рабочие регистры)'];
 const NFC_RNAME = ['NC_REG', 'LAST_NDEF_BLOCK', 'SRAM_MIRROR_BLOCK', 'WDT_LS', 'WDT_MS', 'I2C_CLOCK_STR', 'NS_REG'];
-$('bNfcSnap').onclick = () => { nfcPending = true; NFC.blk = []; NFC.regs = []; NFC.regsOk = 0; NFC.st = null; $('nfcOut').textContent = 'метка включает чип и читает его, это занимает около секунды …'; cmd([0x3F, 0x10], 'NFC-чип'); };
+$('bNfcSnap').onclick = () => { nfcPending = true; NFC.blk = []; NFC.regs = []; NFC.regsOk = 0; NFC.st = null; $('nfcOut').textContent = TT('метка включает чип и читает его, это занимает около секунды …'); cmd([0x3F, 0x10], TT('NFC-чип')); };
 $('bNfcLive').onclick = () => {
   nfcPending = true; NFC.st = null; NFC.fd = []; NFC.fdWant = $('nfcFd').checked;
-  $('nfcOut').textContent = 'метка включает чип …';
-  if (NFC.fdWant) { const m = nfcFdMask(); cmd([0x3F, 0x11, m & 255, m >>> 8 & 255, m >>> 16 & 255, m >>> 24 & 255], 'NFC-чип'); }
-  else cmd([0x3F, 0x11], 'NFC-чип');
+  $('nfcOut').textContent = TT('метка включает чип …');
+  if (NFC.fdWant) { const m = nfcFdMask(); cmd([0x3F, 0x11, m & 255, m >>> 8 & 255, m >>> 16 & 255, m >>> 24 & 255], TT('NFC-чип')); }
+  else cmd([0x3F, 0x11], TT('NFC-чип'));
 };
 function nfcFdMask() { let m = 0; for (let i = 0; i < PM_N.length; i++) if (PM_FREE.includes(i) && !['PC5', 'PD2', 'PD3'].includes(PM_N[i])) m |= 1 << i; return m >>> 0; }
-$('bNfcStop').onclick = () => cmd([0x3F, 0x12], 'NFC-чип');
-$('bNfcGet').onclick = () => cmd([0x3F, 0x13], 'NFC-чип');
+$('bNfcStop').onclick = () => cmd([0x3F, 0x12], TT('NFC-чип'));
+$('bNfcGet').onclick = () => cmd([0x3F, 0x13], TT('NFC-чип'));
 $('nfcShow').onchange = () => renderNfc();
 function nfcPart(a) {
   nfcPending = false;
@@ -1231,8 +1978,8 @@ function nfcUrl(blk1, blk2) {
   while (i < d.length && d[i] !== 0x03) { if (d[i] === 0) i++; else return null; }
   if (d[i] !== 0x03) return null;
   const len = d[i + 1], r = d.slice(i + 2, i + 2 + len);
-  if (r.length < len || r.length < 5 || (r[0] & 0x07) !== 1 || r[3] !== 0x55) return 'запись NDEF не ссылка: ' + hex(r.slice(0, 12));
-  const pre = ['', 'http://www.', 'https://www.', 'http://', 'https://'][r[4]] || ('(код ' + r[4] + ') ');
+  if (r.length < len || r.length < 5 || (r[0] & 0x07) !== 1 || r[3] !== 0x55) return TT('запись NDEF не ссылка: ') + hex(r.slice(0, 12));
+  const pre = ['', 'http://www.', 'https://www.', 'http://', 'https://'][r[4]] || (TT('(код ') + r[4] + ') ');
   let t = String.fromCharCode(...r.slice(5, 4 + r[2]));
   return { pre, t };
 }
@@ -1246,15 +1993,15 @@ function nfcFdPart(a) {
 // оценка: FD при выборе метки опускает линию (низкий уровень при поле), без поля линия подтянута вверх
 function fdVerdict(f) {
   const nf = f.lo_f + f.hi_f, nn = f.lo_n + f.hi_n;
-  if (nf < 30 || nn < 30) return { cls: 0, txt: 'мало данных (нужны и «с полем», и «без поля»; подносите и убирайте телефон)' };
+  if (nf < 30 || nn < 30) return { cls: 0, txt: TT('мало данных (нужны и «с полем», и «без поля»; подносите и убирайте телефон)') };
   const lowF = f.lo_f / nf, highN = f.hi_n / nn, lowN = f.lo_n / nn;
   const pct = x => Math.round(x * 100) + '%';
-  const d = 'с полем внизу ' + pct(lowF) + ', без поля вверху ' + pct(highN);
-  if (lowF > 0.2 && highN > 0.9) return { cls: 2, txt: '★ ПОХОЖЕ НА FD: ' + d };
-  if (Math.abs(lowF - lowN) > 0.5) return { cls: 1, txt: 'зависит от поля, но не как ожидалось: ' + d };
-  if (lowF < 0.02 && lowN < 0.02) return { cls: 0, txt: 'всё время вверху (на поле не реагирует)' };
-  if (lowF > 0.98 && lowN > 0.98) return { cls: 0, txt: 'всё время внизу (удерживается снаружи)' };
-  return { cls: 0, txt: 'на поле не реагирует: ' + d };
+  const d = TT('с полем внизу ') + pct(lowF) + TT(', без поля вверху ') + pct(highN);
+  if (lowF > 0.2 && highN > 0.9) return { cls: 2, txt: TT('★ ПОХОЖЕ НА FD: ') + d };
+  if (Math.abs(lowF - lowN) > 0.5) return { cls: 1, txt: TT('зависит от поля, но не как ожидалось: ') + d };
+  if (lowF < 0.02 && lowN < 0.02) return { cls: 0, txt: TT('всё время вверху (на поле не реагирует)') };
+  if (lowF > 0.98 && lowN > 0.98) return { cls: 0, txt: TT('всё время внизу (удерживается снаружи)') };
+  return { cls: 0, txt: TT('на поле не реагирует: ') + d };
 }
 /* --- копия чипа --- */
 function nfcBkPart(a) {
@@ -1266,33 +2013,33 @@ const nfcBkFull = () => { for (let i = 0; i < 59; i++) if (!NFC.bk[i]) return fa
 function nfcOpDone() {
   const st = NFC.st, o = NFC.op || {}; NFC.op = null; NFC.bkBusy = false;
   nfcButtons(); renderNfc2();
-  if (st.mode === 3 && st.state === 2) toast(nfcBkFull() ? 'Копия чипа сохранена в странице. Скачайте её в файл.' : 'Копия прочитана не полностью, повторите.');
-  if (st.mode === 4) toast(st.state === 2 ? 'Ссылка записана и проверена чтением.' : 'Запись не удалась: ' + nfcResTxt(st));
-  if (st.mode === 5) toast(st.state === 2 ? 'Блокировка снята и проверена чтением.' : 'Снятие блокировки не удалось: ' + nfcResTxt(st));
-  if (st.mode === 6) toast(st.state === 2 ? 'Поиск закончен.' : 'Чип не найден ни на одном адресе.');
-  if (st.mode === 7) toast(st.state === 2 ? 'Операция с адресом закончена.' : 'Адрес не удалось вернуть: ' + nfcResTxt(st));
+  if (st.mode === 3 && st.state === 2) toast(nfcBkFull() ? TT('Копия чипа сохранена в странице. Скачайте её в файл.') : TT('Копия прочитана не полностью, повторите.'));
+  if (st.mode === 4) toast(st.state === 2 ? TT('Ссылка записана и проверена чтением.') : TT('Запись не удалась: ') + nfcResTxt(st));
+  if (st.mode === 5) toast(st.state === 2 ? TT('Блокировка снята и проверена чтением.') : TT('Снятие блокировки не удалось: ') + nfcResTxt(st));
+  if (st.mode === 6) toast(st.state === 2 ? TT('Поиск закончен.') : TT('Чип не найден ни на одном адресе.'));
+  if (st.mode === 7) toast(st.state === 2 ? TT('Операция с адресом закончена.') : TT('Адрес не удалось вернуть: ') + nfcResTxt(st));
 }
 // почему запись отклонена: какой байт чип не принял и что говорит регистр состояния NS_REG
 function nfcWhy(st) {
   if (st.mode !== 4 && st.mode !== 5) return '';
   const L = [];
-  if (st.fail !== 0xFF && st.fail < 18) L.push(st.fail === 0 ? 'не ответил на адрес' : st.fail === 1 ? 'не принял номер блока' : 'не принял байт данных ' + (st.fail - 2));
+  if (st.fail !== 0xFF && st.fail < 18) L.push(st.fail === 0 ? TT('не ответил на адрес') : st.fail === 1 ? TT('не принял номер блока') : TT('не принял байт данных ') + (st.fail - 2));
   if (st.ns_valid) {
     const ns = st.ns, f = ns & 1, lk = ns >> 6 & 1;
-    L.push('NS_REG=0x' + ns.toString(16).toUpperCase().padStart(2, '0') + ': поле телефона ' + (f ? 'ЕСТЬ' : 'нет') + ', память занята со стороны NFC ' + (lk ? 'ДА' : 'нет') + ', ошибка записи EEPROM ' + (ns >> 2 & 1));
-    L.push(f || lk ? 'уберите телефон от метки (лучше дальше 30 см, NFC на телефоне на время записи можно выключить) и повторите' : 'поля и занятости нет: похоже, запись защищена настройкой чипа; пришлите эту строку');
-  } else L.push('регистр NS_REG прочитать не удалось');
+    L.push('NS_REG=0x' + ns.toString(16).toUpperCase().padStart(2, '0') + TT(': поле телефона ') + (f ? TT('ЕСТЬ') : TT('нет')) + TT(', память занята со стороны NFC ') + (lk ? TT('ДА') : TT('нет')) + TT(', ошибка записи EEPROM ') + (ns >> 2 & 1));
+    L.push(f || lk ? TT('уберите телефон от метки (лучше дальше 30 см, NFC на телефоне на время записи можно выключить) и повторите') : TT('поля и занятости нет: похоже, запись защищена настройкой чипа; пришлите эту строку'));
+  } else L.push(TT('регистр NS_REG прочитать не удалось'));
   return '; ' + L.join('; ');
 }
 function nfcResTxt(st) {
   const b = st.resBlk.toString(16).toUpperCase().padStart(2, '0');
   switch (st.res) {
-    case 0: return 'без ошибок';
-    case 1: return 'чип не принял запись (блок ' + b + ')' + nfcWhy(st);
-    case 2: return 'чип принял запись, но при проверке чтением данные не совпали (блок ' + b + '): запись игнорируется, скорее всего из-за битов блокировки. Попробуйте «Снять блокировку записи»';
-    case 3: return 'метка отказалась: чип не похож на ожидаемый (NTAG I²C plus) или запись NDEF неверна';
-    case 4: return 'чип перестал отвечать во время операции (блок ' + b + ')' + nfcWhy(st) + '. Если после этого «Прочитать чип» тоже не отвечает, нажмите «Найти чип по всем адресам»';
-    default: return 'код ' + st.res;
+    case 0: return TT('без ошибок');
+    case 1: return TT('чип не принял запись (блок ') + b + ')' + nfcWhy(st);
+    case 2: return TT('чип принял запись, но при проверке чтением данные не совпали (блок ') + b + TT('): запись игнорируется, скорее всего из-за битов блокировки. Попробуйте «Снять блокировку записи»');
+    case 3: return TT('метка отказалась: чип не похож на ожидаемый (NTAG I²C plus) или запись NDEF неверна');
+    case 4: return TT('чип перестал отвечать во время операции (блок ') + b + ')' + nfcWhy(st) + TT('. Если после этого «Прочитать чип» тоже не отвечает, нажмите «Найти чип по всем адресам»');
+    default: return TT('код ') + st.res;
   }
 }
 function nfcButtons() {
@@ -1301,7 +2048,7 @@ function nfcButtons() {
   set('bNfcBk', on && !busy);
   set('bNfcDl', full);
   const u = nfcBuild($('nfcUrl').value);
-  $('nfcUrlInfo').textContent = u.err ? u.err : 'в чип запишется ' + u.ndef.length + ' байт (' + u.blocks + ' блоков из 7 доступных).';
+  $('nfcUrlInfo').textContent = u.err ? u.err : TT('в чип запишется ') + u.ndef.length + TT(' байт (') + u.blocks + TT(' блоков из 7 доступных).');
   set('bNfcWr', on && full && !busy && $('nfcWrOk').checked && !u.err);
   set('bNfcRestore', on && full && !busy && $('nfcWrOk').checked && !!nfcStock());
   set('bNfcUnlock', on && full && !busy && $('nfcUnOk').checked && NFC.b0 !== undefined);
@@ -1311,13 +2058,13 @@ function nfcButtons() {
 // NDEF-запись «ссылка»: 03 len D1 01 plen 55 prefix text FE
 function nfcBuild(url) {
   url = (url || '').trim();
-  if (!url) return { err: 'введите ссылку' };
-  if (!/^[\x21-\x7e]+$/.test(url)) return { err: 'только латинские буквы, цифры и знаки без пробелов' };
+  if (!url) return { err: TT('введите ссылку') };
+  if (!/^[\x21-\x7e]+$/.test(url)) return { err: TT('только латинские буквы, цифры и знаки без пробелов') };
   let code = 0, text = url;
   for (const [pre, c] of [['https://www.', 2], ['http://www.', 1], ['https://', 4], ['http://', 3]]) if (url.toLowerCase().startsWith(pre)) { code = c; text = url.slice(pre.length); break; }
-  if (!code) return { err: 'ссылка должна начинаться с http:// или https://' };
+  if (!code) return { err: TT('ссылка должна начинаться с http:// или https://') };
   const pl = 1 + text.length;
-  if (4 + pl + 3 > 112) return { err: 'слишком длинная: после https:// остаётся не больше ' + (112 - 3 - 4 - 1) + ' знаков' };
+  if (4 + pl + 3 > 112) return { err: TT('слишком длинная: после https:// остаётся не больше ') + (112 - 3 - 4 - 1) + TT(' знаков') };
   const rec = [0xD1, 0x01, pl, 0x55, code, ...Array.from(text, ch => ch.charCodeAt(0))];
   const ndef = [0x03, rec.length, ...rec, 0xFE];
   return { ndef, blocks: Math.ceil(ndef.length / 16) };
@@ -1333,41 +2080,41 @@ async function nfcWriteNdef(ndef, what) {
   const n = Math.ceil(ndef.length / 16);
   if (!connected() || NFC.bkBusy) return;
   NFC.bkBusy = true; NFC.op = { what }; NFC.st = null; nfcPending = true; nfcButtons();
-  $('nfcOut2').textContent = 'метка записывает ' + n + ' блок(а) и проверяет чтением …';
+  $('nfcOut2').textContent = TT('метка записывает ') + n + TT(' блок(а) и проверяет чтением …');
   try {
     for (let i = 0; i < n; i++) {
       const blk = new Array(16).fill(0); ndef.slice(i * 16, i * 16 + 16).forEach((b, k) => { blk[k] = b; });
       await sendRetry([0x3F, 0x20, i, ...blk], false);
     }
     await sendRetry([0x3F, 0x21, n, 0xA5], true);
-  } catch (e) { NFC.bkBusy = false; NFC.op = null; nfcButtons(); toast('Ошибка связи: ' + e.message); }
+  } catch (e) { NFC.bkBusy = false; NFC.op = null; nfcButtons(); toast(TT('Ошибка связи: ') + e.message); }
 }
-$('bNfcBk').onclick = () => { NFC.bk = []; NFC.op = { what: 'backup' }; NFC.bkBusy = true; NFC.st = null; nfcPending = true; nfcButtons(); $('nfcOut2').textContent = 'метка читает все 59 блоков чипа …'; cmd([0x3F, 0x14], 'копия чипа'); };
+$('bNfcBk').onclick = () => { NFC.bk = []; NFC.op = { what: 'backup' }; NFC.bkBusy = true; NFC.st = null; nfcPending = true; nfcButtons(); $('nfcOut2').textContent = TT('метка читает все 59 блоков чипа …'); cmd([0x3F, 0x14], TT('копия чипа')); };
 $('bNfcDl').onclick = () => {
   if (!nfcBkFull()) return;
   const buf = new Uint8Array(59 * 16); NFC.bk.forEach((b, i) => buf.set(b, i * 16));
   download(new Blob([buf], { type: 'application/octet-stream' }), 'nfc_chip_backup.bin');
-  toast('Файл содержит серийные данные чипа: храните у себя, не публикуйте.');
+  toast(TT('Файл содержит серийные данные чипа: храните у себя, не публикуйте.'));
 };
 $('bNfcWr').onclick = () => { const u = nfcBuild($('nfcUrl').value); if (!u.err) nfcWriteNdef(u.ndef, 'url'); };
 $('bNfcRestore').onclick = () => { const d = nfcStock(); if (d) nfcWriteNdef(d, 'restore'); };
 $('bNfcUnlock').onclick = () => {
   if (!connected() || NFC.bkBusy) return;
   NFC.bkBusy = true; NFC.op = { what: 'unlock' }; NFC.st = null; nfcPending = true; nfcButtons();
-  $('nfcOut2').textContent = 'метка снимает биты блокировки и проверяет чтением …';
-  cmd([0x3F, 0x22, 0xA5, NFC.b0 & 255], 'снятие блокировки');
+  $('nfcOut2').textContent = TT('метка снимает биты блокировки и проверяет чтением …');
+  cmd([0x3F, 0x22, 0xA5, NFC.b0 & 255], TT('снятие блокировки'));
 };
 $('bNfcFind').onclick = () => {
   if (!connected() || NFC.bkBusy) return;
   NFC.bkBusy = true; NFC.op = { what: 'find' }; NFC.st = null; nfcPending = true; nfcButtons();
-  $('nfcOut2').textContent = 'метка проверяет адреса 0x00–0x7F (около 0,2 с) …';
-  cmd([0x3F, 0x30], 'поиск чипа');
+  $('nfcOut2').textContent = TT('метка проверяет адреса 0x00–0x7F (около 0,2 с) …');
+  cmd([0x3F, 0x30], TT('поиск чипа'));
 };
 $('bNfcRescue').onclick = () => {
   if (!connected() || NFC.bkBusy) return;
   NFC.bkBusy = true; NFC.op = { what: 'rescue' }; NFC.st = null; nfcPending = true; nfcButtons();
-  $('nfcOut2').textContent = 'метка ищет чип и подбирает значение; это может занять до нескольких секунд, не отключайтесь …';
-  cmd([0x3F, 0x31, 0xA5], 'возврат адреса');
+  $('nfcOut2').textContent = TT('метка ищет чип и подбирает значение; это может занять до нескольких секунд, не отключайтесь …');
+  cmd([0x3F, 0x31, 0xA5], TT('возврат адреса'));
 };
 for (const id of ['nfcUrl', 'nfcWrOk', 'nfcUnOk', 'nfcRsOk']) $(id).addEventListener('input', nfcButtons);
 $('nfcUrl').value = (() => { try { if (/^https?:$/.test(location.protocol)) return location.origin + location.pathname.replace(/index\.html$/, ''); } catch (e) { /* без адреса страницы */ } return 'https://steanlab.github.io/SESoid/'; })();
@@ -1375,13 +2122,13 @@ nfcButtons();
 function renderNfc2(quiet) {
   const L = [], st = NFC.st;
   const got = NFC.bk.filter(Boolean).length;
-  if (got) L.push('Копия чипа: прочитано блоков ' + got + ' из 59' + (nfcBkFull() ? ' — полная.' : '.'));
+  if (got) L.push(TT('Копия чипа: прочитано блоков ') + got + TT(' из 59') + (nfcBkFull() ? TT(' — полная.') : '.'));
   if (st && st.mode >= 3 && st.state >= 2) {
-    const nm = { 3: 'Копирование', 4: 'Запись ссылки', 5: 'Снятие блокировки', 6: 'Поиск чипа', 7: 'Возврат адреса' }[st.mode];
+    const nm = { 3: TT('Копирование'), 4: TT('Запись ссылки'), 5: TT('Снятие блокировки'), 6: TT('Поиск чипа'), 7: TT('Возврат адреса') }[st.mode];
     const h2 = x => '0x' + x.toString(16).toUpperCase().padStart(2, '0');
-    if (st.mode === 6) L.push(st.state === 2 ? 'Чип отвечает на адресе ' + h2(st.resBlk) + (st.fail ? ' и ' + h2(st.fail) : '') + (st.fdN > 2 ? ' (всего ' + st.fdN + ' адресов)' : '') + (st.resBlk === 0x55 ? ': это обычный адрес, всё в порядке.' : '. Это не 0x55: нажмите «Вернуть адрес 0x55».') : 'Поиск: на адресах 0x00–0x7F никто не ответил. Проверьте, что включено питание чипа (вывод PC5) и что подключена линия I²C (PD2, PD3); сделайте «Прочитать чип».');
-    else if (st.mode === 7 && st.state === 2) L.push(st.fail === 1 ? 'Чип уже на адресе 0x55, ничего не записано.' : 'Возврат адреса: чип снова на 0x55. Нулевой байт блока 0 = ' + h2(st.resBlk) + ' (запомнено для «Снять блокировку»); попыток: ' + st.fdN + '. Проверьте обычным «Прочитать чип».');
-    else L.push(nm + ': ' + (st.state === 2 ? 'выполнено и проверено' : 'ОШИБКА — ' + nfcResTxt(st)) + '.');
+    if (st.mode === 6) L.push(st.state === 2 ? TT('Чип отвечает на адресе ') + h2(st.resBlk) + (st.fail ? TT(' и ') + h2(st.fail) : '') + (st.fdN > 2 ? TT(' (всего ') + st.fdN + TT(' адресов)') : '') + (st.resBlk === 0x55 ? TT(': это обычный адрес, всё в порядке.') : TT('. Это не 0x55: нажмите «Вернуть адрес 0x55».')) : TT('Поиск: на адресах 0x00–0x7F никто не ответил. Проверьте, что включено питание чипа (вывод PC5) и что подключена линия I²C (PD2, PD3); сделайте «Прочитать чип».'));
+    else if (st.mode === 7 && st.state === 2) L.push(st.fail === 1 ? TT('Чип уже на адресе 0x55, ничего не записано.') : TT('Возврат адреса: чип снова на 0x55. Нулевой байт блока 0 = ') + h2(st.resBlk) + TT(' (запомнено для «Снять блокировку»); попыток: ') + st.fdN + TT('. Проверьте обычным «Прочитать чип».'));
+    else L.push(nm + ': ' + (st.state === 2 ? TT('выполнено и проверено') : TT('ОШИБКА — ') + nfcResTxt(st)) + '.');
   }
   $('nfcOut2').textContent = L.join('\n');
   if (L.length && !quiet) log('NFC: ' + L.join(' | '));
@@ -1390,54 +2137,54 @@ function renderNfc() {
   const out = $('nfcOut'), show = $('nfcShow').checked, st = NFC.st, L = [];
   const mask = (arr, n) => arr.map((b, i) => i >= 1 && i < n && !show ? '••' : b.toString(16).toUpperCase().padStart(2, '0')).join(' ');
   if (st) {
-    const sTxt = ['', 'идёт …', 'готово', 'ЧИП НЕ ОТВЕТИЛ'][st.state] || st.state;
+    const sTxt = ['', TT('идёт …'), TT('готово'), TT('ЧИП НЕ ОТВЕТИЛ')][st.state] || st.state;
     if (st.mode === 2) {
-      L.push('Слежение за полем: ' + sTxt + (st.state === 1 ? ' (осталось ' + Math.max(0, 120 - st.live_s) + ' с)' : ''));
-      L.push('Поле телефона: ' + (!st.ns_valid ? 'ещё не прочитано' : st.field ? 'ЕСТЬ' : 'нет') + '; касаний (нет→есть): ' + st.events + '; опросов: ' + st.polls + '; видели поле хоть раз: ' + (st.ever ? 'да' : 'нет'));
-      if (st.ns_valid) L.push('Регистр NS_REG = 0x' + st.ns.toString(16).toUpperCase().padStart(2, '0') + ' (бит 0 = поле, по даташиту).');
-      if (st.state === 3) L.push('✖ Чип перестал отвечать. Если он не отвечал и сразу, прошивка не включила питание PC5 или линия I²C занята: сделайте «Выключить» и повторите.');
+      L.push(TT('Слежение за полем: ') + sTxt + (st.state === 1 ? TT(' (осталось ') + Math.max(0, 120 - st.live_s) + TT(' с)') : ''));
+      L.push(TT('Поле телефона: ') + (!st.ns_valid ? TT('ещё не прочитано') : st.field ? TT('ЕСТЬ') : TT('нет')) + TT('; касаний (нет→есть): ') + st.events + TT('; опросов: ') + st.polls + TT('; видели поле хоть раз: ') + (st.ever ? TT('да') : TT('нет')));
+      if (st.ns_valid) L.push(TT('Регистр NS_REG = 0x') + st.ns.toString(16).toUpperCase().padStart(2, '0') + TT(' (бит 0 = поле, по даташиту).'));
+      if (st.state === 3) L.push(TT('✖ Чип перестал отвечать. Если он не отвечал и сразу, прошивка не включила питание PC5 или линия I²C занята: сделайте «Выключить» и повторите.'));
     } else if (st.mode >= 3) {
       /* результаты копирования, записи, адреса и блокировки показываются ниже, в нижнем окне */
     } else {
-      L.push('Чтение чипа: ' + sTxt + (st.state === 3 ? ': ни один блок не прочитан' : '') + '.');
-      if (st.fail & 0x3F) L.push('Не ответили блоки: ' + [0, 1, 2, 3, 4, 5].filter(i => st.fail >> i & 1).map(i => NFC_BNAME[i].split(' ')[0]).join(', ') + '.');
-      if (st.fail & 0x40) L.push('Не прочитаны некоторые рабочие регистры (маска прочитанных: 0x' + st.regsOk.toString(16) + ').');
+      L.push(TT('Чтение чипа: ') + sTxt + (st.state === 3 ? TT(': ни один блок не прочитан') : '') + '.');
+      if (st.fail & 0x3F) L.push(TT('Не ответили блоки: ') + [0, 1, 2, 3, 4, 5].filter(i => st.fail >> i & 1).map(i => TT(NFC_BNAME[i]).split(' ')[0]).join(', ') + '.');
+      if (st.fail & 0x40) L.push(TT('Не прочитаны некоторые рабочие регистры (маска прочитанных: 0x') + st.regsOk.toString(16) + ').');
     }
   }
   if (NFC.blk[0]) {
     const b = NFC.blk[0], l0 = b[10], l1 = b[11];
-    L.push('', 'Блок 00: ' + mask(b, 9));
-    L.push('  • байты блокировки: ' + l0.toString(16).toUpperCase().padStart(2, '0') + ' ' + l1.toString(16).toUpperCase().padStart(2, '0') + (l0 || l1 ? ' → часть страниц закрыта от записи по NFC необратимо (с телефона), по даташиту через I²C её можно снять' : ' → записи по NFC не закрыты'));
-    L.push('  • CC: ' + hex(b.slice(12, 16)) + (b[12] === 0xE1 ? '; область NDEF ' + (b[14] * 8) + ' байт; доступ ' + (b[15] === 0x0F ? 'только чтение (по NFC)' : b[15] === 0 ? 'чтение и запись' : '0x' + b[15].toString(16)) : '; нестандартный заголовок'));
+    L.push('', TT('Блок 00: ') + mask(b, 9));
+    L.push(TT('  • байты блокировки: ') + l0.toString(16).toUpperCase().padStart(2, '0') + ' ' + l1.toString(16).toUpperCase().padStart(2, '0') + (l0 || l1 ? TT(' → часть страниц закрыта от записи по NFC необратимо (с телефона), по даташиту через I²C её можно снять') : TT(' → записи по NFC не закрыты')));
+    L.push('  • CC: ' + hex(b.slice(12, 16)) + (b[12] === 0xE1 ? TT('; область NDEF ') + (b[14] * 8) + TT(' байт; доступ ') + (b[15] === 0x0F ? TT('только чтение (по NFC)') : b[15] === 0 ? TT('чтение и запись') : '0x' + b[15].toString(16)) : TT('; нестандартный заголовок')));
   }
   if (NFC.blk[1] && NFC.blk[2]) {
     const u = nfcUrl(NFC.blk[1], NFC.blk[2]);
     if (u && typeof u === 'object') {
       const k = u.t.lastIndexOf('/');
-      L.push('Ссылка в чипе: ' + u.pre + (show || k < 0 ? u.t : u.t.slice(0, k + 1) + '••••••••'));
-    } else L.push('Ссылка в чипе: ' + (u || 'не разобрана') + '; блок 01: ' + mask(NFC.blk[1], 0));
+      L.push(TT('Ссылка в чипе: ') + u.pre + (show || k < 0 ? u.t : u.t.slice(0, k + 1) + '••••••••'));
+    } else L.push(TT('Ссылка в чипе: ') + (u || TT('не разобрана')) + TT('; блок 01: ') + mask(NFC.blk[1], 0));
   }
-  for (const i of [3, 4, 5]) if (NFC.blk[i]) L.push('Блок ' + NFC_BNAME[i] + ': ' + hex(NFC.blk[i]));
+  for (const i of [3, 4, 5]) if (NFC.blk[i]) L.push(TT('Блок ') + TT(NFC_BNAME[i]) + ': ' + hex(NFC.blk[i]));
   if (NFC.regsOk) {
-    L.push('', 'Рабочие регистры: ' + NFC_RNAME.map((n, i) => (NFC.regsOk >> i & 1) ? n + '=' + NFC.regs[i].toString(16).toUpperCase().padStart(2, '0') : n + '=—').join(', '));
-    if (NFC.regsOk & 0x40) { const v = NFC.regs[6]; L.push('  • NS_REG по даташиту: бит0 поле телефона = ' + (v & 1) + ', бит1 запись в EEPROM идёт = ' + (v >> 1 & 1) + ', бит2 ошибка записи = ' + (v >> 2 & 1) + ', бит7 NDEF прочитан = ' + (v >> 7 & 1) + '. Если это не совпадёт с поведением, пришлите байты как есть.'); }
+    L.push('', TT('Рабочие регистры: ') + NFC_RNAME.map((n, i) => (NFC.regsOk >> i & 1) ? n + '=' + NFC.regs[i].toString(16).toUpperCase().padStart(2, '0') : n + '=—').join(', '));
+    if (NFC.regsOk & 0x40) { const v = NFC.regs[6]; L.push(TT('  • NS_REG по даташиту: бит0 поле телефона = ') + (v & 1) + TT(', бит1 запись в EEPROM идёт = ') + (v >> 1 & 1) + TT(', бит2 ошибка записи = ') + (v >> 2 & 1) + TT(', бит7 NDEF прочитан = ') + (v >> 7 & 1) + TT('. Если это не совпадёт с поведением, пришлите байты как есть.')); }
   }
   if (NFC.fd.length) {
-    L.push('', 'Поиск вывода FD (по одному на каждый свободный вывод):');
+    L.push('', TT('Поиск вывода FD (по одному на каждый свободный вывод):'));
     const rows = NFC.fd.map(f => ({ f, v: fdVerdict(f) })).sort((x, y) => y.v.cls - x.v.cls);
     for (const r of rows) L.push('  ' + PM_N[r.f.pin].padEnd(4) + ' ' + r.v.txt);
-    if (!rows.some(r => r.v.cls === 2)) L.push('  Подходящего вывода пока нет: запустите слежение, поднесите телефон на 2–3 секунды и уберите, повторите несколько раз, затем «Показать отчёт».');
-  } else if (NFC.fdWant && st && st.mode === 2 && st.state >= 2) L.push('', 'Метка не прислала данных по выводам FD.');
+    if (!rows.some(r => r.v.cls === 2)) L.push(TT('  Подходящего вывода пока нет: запустите слежение, поднесите телефон на 2–3 секунды и уберите, повторите несколько раз, затем «Показать отчёт».'));
+  } else if (NFC.fdWant && st && st.mode === 2 && st.state >= 2) L.push('', TT('Метка не прислала данных по выводам FD.'));
   out.textContent = L.join('\n');
-  if (st && st.state >= 2 && L.some(x => x)) log('NFC-чип: ' + L.filter(x => x).join(' | '));
+  if (st && st.state >= 2 && L.some(x => x)) log(TT('NFC-чип: ') + L.filter(x => x).join(' | '));
 }
 $('bFInfo').onclick = () => cmd([0x20]);
-$('bFErase').onclick = () => { log('стираю сектор ' + $('sec').value + ' ...'); cmd([0x21, +$('sec').value]); };
-$('bFProg').onclick = () => { log('записываю страницу в сектор ' + $('sec').value + ' ...'); cmd([0x22, +$('sec').value]); };
+$('bFErase').onclick = () => { log(TT('стираю сектор ') + $('sec').value + ' ...'); cmd([0x21, +$('sec').value]); };
+$('bFProg').onclick = () => { log(TT('записываю страницу в сектор ') + $('sec').value + ' ...'); cmd([0x22, +$('sec').value]); };
 $('bFScan').onclick = () => cmd([0x23, +$('sec').value, 0]);
-$('bVer').onclick = () => { log('читаю слот ' + $('vSlot').value + ' из flash ...'); cmd([0x24, +$('vSlot').value]); };
+$('bVer').onclick = () => { log(TT('читаю слот ') + $('vSlot').value + TT(' из flash ...')); cmd([0x24, +$('vSlot').value]); };
 $('bClearLog').onclick = () => { logEl.textContent = ''; };
-$('bCopyLog').onclick = () => { navigator.clipboard.writeText(logEl.textContent).then(() => toast('Журнал скопирован'), () => toast('Не удалось скопировать')); };
+$('bCopyLog').onclick = () => { navigator.clipboard.writeText(logEl.textContent).then(() => toast(TT('Журнал скопирован')), () => toast(TT('Не удалось скопировать'))); };
 
 /* ===================================================================================================================
    ЗАГРУЗКА ДАННЫХ В МЕТКУ (ОЗУ или flash)
@@ -1453,33 +2200,33 @@ async function uploadData(img, mode, slot, prog) {
     await sendRetry([0x12, p & 255, p >> 8], false);
   };
   try {
-    if (mode && total > 0xF000) throw new Error('во flash помещается не больше 61 440 байт');
-    log(mode ? 'BEGIN: во flash, слот ' + slot + ' (метка сначала стирает слот) ...' : 'BEGIN: в ОЗУ');
+    if (mode && total > 0xF000) throw new Error(TT('во flash помещается не больше 61 440 байт'));
+    log(mode ? TT('BEGIN: во flash, слот ') + slot + TT(' (метка сначала стирает слот) ...') : TT('BEGIN: в ОЗУ'));
     for (let attempt = 0; ; attempt++) {
       await sendRetry(mode ? [0x10, 1, ...le32(total), slot] : [0x10, 0, ...le32(total)], true);
       const a0 = await expect(a => a[0] === 0x90, mode ? 20000 : 3000);
-      if (!a0) throw new Error('метка не ответила на BEGIN');
+      if (!a0) throw new Error(TT('метка не ответила на BEGIN'));
       if (a0[1] === 0) break;
-      if (a0[1] === 1 && attempt < 8) { log('метка занята (идёт вывод слайда с flash или другая операция), повторю через 4 с'); await sleep(4000); if (stopFlag) throw new Error('остановлено'); continue; }
-      throw new Error('метка не приняла BEGIN: ' + hex(a0) + (a0[1] === 4 ? ' (стирание не удалось)' : ''));
+      if (a0[1] === 1 && attempt < 8) { log(TT('метка занята (идёт вывод слайда с flash или другая операция), повторю через 4 с')); await sleep(4000); if (stopFlag) throw new Error(TT('остановлено')); continue; }
+      throw new Error(TT('метка не приняла BEGIN: ') + hex(a0) + (a0[1] === 4 ? TT(' (стирание не удалось)') : ''));
     }
-    if (mode) log('слот стёрт, начинаю передачу');
+    if (mode) log(TT('слот стёрт, начинаю передачу'));
     let base = 0, sent = 0, lastProgress = performance.now();
     while (base < pages) {
-      if (stopFlag) { await sendRetry([0x14], true); throw new Error('остановлено'); }
+      if (stopFlag) { await sendRetry([0x14], true); throw new Error(TT('остановлено')); }
       while (sent < pages && sent < base + 4) { await sendPage(sent); sent++; }
       const a = await expect(r => r[0] === 0x92 || r[0] === 0x93, 1500);
-      if (!a) { retried++; if (performance.now() - lastProgress > 20000) throw new Error('нет ответа 20 с'); await sendRetry([0x12, base & 255, base >> 8], false); continue; }
+      if (!a) { retried++; if (performance.now() - lastProgress > 20000) throw new Error(TT('нет ответа 20 с')); await sendRetry([0x12, base & 255, base >> 8], false); continue; }
       const p = a[1] | a[2] << 8;
       if (a[0] === 0x92 && a[3] === 0) { if (p === base) { base++; lastProgress = performance.now(); } }
-      else if (a[0] === 0x92 && a[3] === 1) { const e = a[4] | a[5] << 8; log('метка ждёт страницу ' + e); base = sent = e; }
-      else if (a[0] === 0x92) throw new Error('ошибка хранения на странице ' + p);
+      else if (a[0] === 0x92 && a[3] === 1) { const e = a[4] | a[5] << 8; log(TT('метка ждёт страницу ') + e); base = sent = e; }
+      else if (a[0] === 0x92) throw new Error(TT('ошибка хранения на странице ') + p);
       else { retried++; await sendPage(p, a[3] | a[4] << 8); }
       if (prog) prog(base / pages);
     }
     let crc = null;
     for (let i = 0; i < 6 && !crc; i++) { await sendRetry([0x13], true); crc = await expect(r => r[0] === 0x94, 2500); }
-    if (!crc) throw new Error('нет ответа на END');
+    if (!crc) throw new Error(TT('нет ответа на END'));
     const dt = (performance.now() - t0) / 1000, got = u32(crc, 2);
     const ok = crc[1] === 0 && got === want && u32(crc, 6) === total;
     return { ok, crc: got, want, dt, retried, total };
@@ -1491,35 +2238,35 @@ let upRunning = false;
 $('bUpStop').onclick = () => { stopFlag = true; };
 $('bUpload').onclick = async () => {
   if (upRunning || !lastFrame) return;
-  const slot = +$('upSlot').value, frame = lastFrame.slice(), name = srcName || 'картинка', pal = curPalette().map(c => c.slice()), orient = P.orient;
+  const slot = +$('upSlot').value, frame = lastFrame.slice(), name = srcName || TT('картинка'), pal = curPalette().map(c => c.slice()), orient = P.orient;
   const thumbCv = idxToCanvas(lastIdx, P.simPanel ? PALETTES.panel.c : curPalette(), 240, 85);
   upRunning = true; $('bUpload').disabled = true; $('bUpStop').disabled = false; $('upRes').textContent = ''; $('upBar').style.width = '0';
   try {
     const r = await uploadData(frame, 1, slot, f => { $('upBar').style.width = (f * 100).toFixed(0) + '%'; });
-    let msg = (r.ok ? 'ГОТОВО: контрольная сумма совпала. ' : 'ОШИБКА: контрольная сумма не совпала. ') + r.total + ' байт за ' + r.dt.toFixed(1) + ' с = ' + (r.total / r.dt / 1024).toFixed(2) + ' КБ/с; повторов ' + r.retried + '.';
+    let msg = (r.ok ? TT('ГОТОВО: контрольная сумма совпала. ') : TT('ОШИБКА: контрольная сумма не совпала. ')) + r.total + TT(' байт за ') + r.dt.toFixed(1) + TT(' с = ') + (r.total / r.dt / 1024).toFixed(2) + TT(' КБ/с; повторов ') + r.retried + '.';
     if (r.ok) {
-      log('запись завершена, проверяю чтением обратно ...'); queue = [];
+      log(TT('запись завершена, проверяю чтением обратно ...')); queue = [];
       await sendRetry([0x24, slot], true);
       const v = await expect(a => a[0] === 0xA4, 15000);
-      if (!v) throw new Error('нет ответа на проверку слота');
-      if (v[2] !== 0) { msg += ' Проверка чтением из flash: ОШИБКА (код ' + v[2] + ').'; r.ok = false; }
+      if (!v) throw new Error(TT('нет ответа на проверку слота'));
+      if (v[2] !== 0) { msg += TT(' Проверка чтением из flash: ОШИБКА (код ') + v[2] + ').'; r.ok = false; }
       else {
-        msg += ' Проверка чтением из flash: CRC совпал.';
+        msg += TT(' Проверка чтением из flash: CRC совпал.');
         await LIB.put({ slot, name, crc: r.crc, total: r.total, thumb: thumbCv.toDataURL('image/png'), frame: frame.buffer, pal, orient, ts: Date.now() });
         if ($('upList').checked && tag.cfg) { tag.cfg.mask |= 1 << slot; await sendCfgObj(tag.cfg); await sleep(300); }
         await cmd([0x31]);
-        if ($('upShow').checked) { await sleep(500); await cmd([0x32, slot], 'показ'); }
+        if ($('upShow').checked) { await sleep(500); await cmd([0x32, slot], TT('показ')); }
       }
     }
-    $('upRes').textContent = msg; $('upRes').className = 'n ' + (r.ok ? 'ok' : 'bad'); toast(r.ok ? 'Слот ' + slot + ' загружен' : 'Загрузка не удалась'); log(msg);
-  } catch (e) { log('загрузка прервана: ' + e.message); $('upRes').textContent = 'Прервано: ' + e.message; $('upRes').className = 'n bad'; }
+    $('upRes').textContent = msg; $('upRes').className = 'n ' + (r.ok ? 'ok' : 'bad'); toast(r.ok ? TT('Слот ') + slot + TT(' загружен') : TT('Загрузка не удалась')); log(msg);
+  } catch (e) { log(TT('загрузка прервана: ') + e.message); $('upRes').textContent = TT('Прервано: ') + e.message; $('upRes').className = 'n bad'; }
   upRunning = false; $('bUpStop').disabled = true; updateUpButtons(); renderSlots();
 };
 $('bRam').onclick = async () => {
   const total = +$('tSize').value, img = new Uint8Array(total); for (let i = 0; i < total; i++) img[i] = (i * 31 + (i >> 8) * 7 + 5) & 255;
   $('bRam').disabled = true;
-  try { const r = await uploadData(img, 0, 0, null); $('ramRes').textContent = (r.ok ? 'ГОТОВО: контрольная сумма совпала. ' : 'ОШИБКА: сумма не совпала. ') + total + ' байт за ' + r.dt.toFixed(1) + ' с = ' + (total / r.dt / 1024).toFixed(2) + ' КБ/с; повторов ' + r.retried; log($('ramRes').textContent); }
-  catch (e) { $('ramRes').textContent = 'Прервано: ' + e.message; }
+  try { const r = await uploadData(img, 0, 0, null); $('ramRes').textContent = (r.ok ? TT('ГОТОВО: контрольная сумма совпала. ') : TT('ОШИБКА: сумма не совпала. ')) + total + TT(' байт за ') + r.dt.toFixed(1) + TT(' с = ') + (total / r.dt / 1024).toFixed(2) + TT(' КБ/с; повторов ') + r.retried; log($('ramRes').textContent); }
+  catch (e) { $('ramRes').textContent = TT('Прервано: ') + e.message; }
   $('bRam').disabled = !connected();
 };
 
@@ -1535,20 +2282,39 @@ $('tabs').addEventListener('click', e => {
 buildControls(); buildPresets(); fillSelects(); buildCfgUi(); writeCtls(); renderSlots();
 LIB.open().then(renderSlots);
 window.__gs = { P, convert, buildFrame, frameToIdx, crc32, setSource, get lastIdx() { return lastIdx; }, get lastFrame() { return lastFrame; }, tag, LIB, handle, demoImage };
+
+/* ---------- language switch ---------- */
+function applyLang() {
+  document.documentElement.lang = lang;
+  $('bLang').textContent = lang === 'ru' ? 'EN' : 'RU';
+  i18nNode(document.body);
+  const keep = { cInt: $('cInt').value, cTx: $('cTx').value };
+  const ok = f => { try { f(); } catch (e) { /* a part that is not ready yet */ } };
+  ok(buildControls); ok(buildPresets); ok(writeCtls);
+  ok(() => { const up = $('upSlot'); for (let s = 1; s <= 7; s++) if (up.options[s - 1]) up.options[s - 1].text = TT('слот ') + s; });
+  ok(buildCfgUi); ok(() => { $('cInt').value = keep.cInt; $('cTx').value = keep.cTx; }); ok(fillCfg);
+  ok(renderSlots); ok(renderTag); ok(renderSlideInfo); ok(renderHw);
+  ok(() => setConn(connected()));
+  for (const [op, fn] of [[0xB8, renderPdiag], [0xB9, renderClock], [0xBA, renderPins], [0xBB, renderScan]]) if (LAST[op]) ok(() => fn(LAST[op]));
+  ok(renderNfc); ok(nfcButtons);
+  ok(() => { const rev = new Map(); for (const [r, e] of EN_JS) rev.set(e, r); const ru = rev.get(srcName) || srcName; srcName = TT(ru); if (src) { $('srcName').textContent = srcName + ' · ' + (src.width || src.naturalWidth) + '×' + (src.height || src.naturalHeight); schedule(); } });
+}
+$('bLang').onclick = () => { lang = lang === 'ru' ? 'en' : 'ru'; try { localStorage.setItem('gs.lang', lang); } catch (e) { /* ignore */ } applyLang(); };
+applyLang();
 /* ---------- PWA: установка и работа без интернета ---------- */
 (() => {
   let ev = null;
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); ev = e; $('bInstall').hidden = false; });
   $('bInstall').onclick = async () => { if (!ev) return; ev.prompt(); try { await ev.userChoice; } catch (e) { /* ignore */ } ev = null; $('bInstall').hidden = true; };
-  window.addEventListener('appinstalled', () => { $('bInstall').hidden = true; toast('Приложение установлено'); });
+  window.addEventListener('appinstalled', () => { $('bInstall').hidden = true; toast(TT('Приложение установлено')); });
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* ignore */ }     // чтобы браузер не вычистил библиотеку слотов
   if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
     const had = !!navigator.serviceWorker.controller;
-    navigator.serviceWorker.register('sw.js').then(() => navigator.serviceWorker.ready).then(() => { $('pwaPill').hidden = false; log('офлайн-режим готов (service worker)'); }).catch(e => log('service worker не запустился: ' + e.message));
-    navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) toast('Вышла новая версия страницы: обновите вкладку'); });
+    navigator.serviceWorker.register('sw.js').then(() => navigator.serviceWorker.ready).then(() => { $('pwaPill').hidden = false; log(TT('офлайн-режим готов (service worker)')); }).catch(e => log(TT('service worker не запустился: ') + e.message));
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (had) toast(TT('Вышла новая версия страницы: обновите вкладку')); });
   }
 })();
-if (!navigator.bluetooth) log('Web Bluetooth недоступен в этом браузере: конвертер работает, а загрузка в метку нужна Chrome по https.');
+if (!navigator.bluetooth) log(TT('Web Bluetooth недоступен в этом браузере: конвертер работает, а загрузка в метку нужна Chrome по https.'));
 </script>
 </body>
 </html>
