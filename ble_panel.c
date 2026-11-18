@@ -328,7 +328,11 @@ static void run(void)
         int8_t t = temp_c;
         if (auto_temp) {
           int16_t dc = sys_temp_dc();
-          if (dc != SYS_TEMP_NA) { int v = (dc + (dc >= 0 ? 5 : -5)) / 10; t = (int8_t)(v < -20 ? -20 : v > 60 ? 60 : v); }
+          bool have_chip = dc != SYS_TEMP_NA;
+          if (have_chip) { int v = (dc + (dc >= 0 ? 5 : -5)) / 10; t = (int8_t)(v < -20 ? -20 : v > 60 ? 60 : v); }
+          uint16_t raw = read_cmd16(0x40);          // the panel's own sensor (confirmed on this tag: 0x1800 = 24 C, high byte = whole degrees)
+          int8_t pt = (int8_t)(raw >> 8);
+          if (raw != 0x0000u && raw != 0xFFFFu && pt >= -20 && pt <= 60 && (!have_chip || (pt - t < 15 && t - pt < 15))) t = pt;   // implausible or far from the chip value: the chip value stays
         }
         temp_used = t;
         cmd1(0xE6, (uint8_t)t);

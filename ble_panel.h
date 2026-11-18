@@ -28,7 +28,7 @@ bool panel_show_splash(void);                        // each returns false when 
 bool panel_show_slot(uint8_t slot, uint32_t crc);    // slot 1..7 of the flash; crc = the record's CRC (checked while streaming)
 bool panel_show_demo(uint8_t pattern);                // demo picture 0..DEMO_COUNT-1 (ble_demo.h), generated line by line
 bool panel_show_fill(uint8_t code);                  // 0 black, 1 white, 2 yellow, 3 red
-void panel_set_auto_temp(bool on);                   // on: before every update the chip temperature (EMU sensor) is handed to the panel instead of the set value
+void panel_set_auto_temp(bool on);                   // on: before every update the panel's own sensor (command 0x40; the chip sensor if that read is implausible) is handed to the panel instead of the set value
 int8_t panel_temp_used(void);                        // the value handed to the panel by the last update (command 0xE6)
 void panel_set_temp(int8_t celsius);                 // handed to the panel for choosing the waveform (command 0xE6)
 
