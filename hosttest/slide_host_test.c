@@ -69,7 +69,7 @@ static void pmodel(void) { if (pbusy && (int32_t)(now_us - panel_end_us) >= 0) {
 bool panel_busy(void) { pmodel(); return pbusy; }
 bool panel_show_slot(uint8_t s, uint32_t crc) { (void)crc; pmodel(); if (pbusy) return false; pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_SLOT; pshown = s; last_shown_slot = s; shows++; return true; }
 static int fills; static uint8_t last_fill; static int demos; static uint8_t last_demo;
-bool panel_show_demo(uint8_t n) { pmodel(); if (pbusy || (n >= 9 && n != 100)) return false; pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_DEMO; pshown = n; last_demo = n; demos++; return true; }
+bool panel_show_demo(uint8_t n) { pmodel(); if (pbusy || (n >= 9 && n != 100)) return false;   /* same rule as ble_panel.c: 0..8 and DEMO_PAT_HW */ pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_DEMO; pshown = n; last_demo = n; demos++; return true; }
 bool panel_show_fill(uint8_t code) { pmodel(); if (pbusy) return false; pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_FILL; pshown = code; last_fill = code; fills++; return true; }
 static char hw_l[9][16], hw_v[9][47];
 void demo_hw_clear(void) { memset(hw_l, 0, sizeof hw_l); memset(hw_v, 0, sizeof hw_v); }

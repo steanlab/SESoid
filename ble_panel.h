@@ -26,7 +26,7 @@ void panel_start(void);                              // main context, once after
 void panel_poll(void);                               // main context, as often as possible
 bool panel_show_splash(void);                        // each returns false when an update is already running
 bool panel_show_slot(uint8_t slot, uint32_t crc);    // slot 1..7 of the flash; crc = the record's CRC (checked while streaming)
-bool panel_show_demo(uint8_t pattern);                // demo picture 0..DEMO_COUNT-1 (ble_demo.h), generated line by line
+bool panel_show_demo(uint8_t pattern);                // demo picture 0..DEMO_COUNT-1 or DEMO_PAT_HW (ble_demo.h), generated line by line
 bool panel_show_fill(uint8_t code);                  // 0 black, 1 white, 2 yellow, 3 red
 void panel_set_auto_temp(bool on);                   // on: before every update the panel's own sensor (command 0x40; the chip sensor if that read is implausible) is handed to the panel instead of the set value
 bool panel_temp_sensor(int8_t *celsius);              // the panel's own temperature reading of the last update (false = none yet or implausible)

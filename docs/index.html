@@ -1768,13 +1768,13 @@ function renderTag() {
   if (s.pst === 1) progPct('pn', TT('Экран обновляется: ') + STEP_TXT(s.step), STEP_PCT[Math.min(s.step, 27)], 0, 0); else progOff('pn');
   $('pnBar').style.width = (s.pst === 1 ? STEP_PCT[Math.min(s.step, 27)] : s.pst === 0 ? 0 : 100) + '%';
   $('pnKv').innerHTML = '';
-  const rows = [[TT('Показано'), s.src === 2 ? TT('слот ') + s.shown : s.src === 3 ? TT('заливка ') + [TT('чёрная'), TT('белая'), TT('жёлтая'), TT('красная')][s.shown & 3] : s.src === 4 ? TT('демо ') + (s.shown + 1) : TT(PN_SRC[s.src])], [TT('Ошибка панели'), s.perr ? TT(PN_ERR[s.perr]) || s.perr : TT('нет')],
+  const rows = [[TT('Показано'), s.src === 2 ? TT('слот ') + s.shown : s.src === 3 ? TT('заливка ') + [TT('чёрная'), TT('белая'), TT('жёлтая'), TT('красная')][s.shown & 3] : s.src === 4 ? (s.shown === 100 ? 'TAG HARDWARE' : TT('демо ') + (s.shown + 1)) : TT(PN_SRC[s.src])], [TT('Ошибка панели'), s.perr ? TT(PN_ERR[s.perr]) || s.perr : TT('нет')],
     [TT('Обновлений с запуска'), s.count], [TT('Расхождений CRC слота'), s.crcBad], [TT('До автосмены'), '<span id="kvNext">' + fmtT(nextLeft()) + '</span>'], [TT('Работает'), fmtUp(s.upS)]];
   for (const [k, v] of rows) { const a = document.createElement('div'), b = document.createElement('div'); a.textContent = k; b.innerHTML = v; $('pnKv').append(a, b); }
 }
 function renderSlideInfo() {
   const s = tag.st, c = tag.cfg; if (!s) { $('slideInfo').textContent = ''; return; }
-  $('slideInfo').textContent = (s.pst === 1 ? TT('Экран обновляется (') + STEP_TXT(s.step) + '). ' : '') + (c && c.en ? TT('Следующая смена через ') + fmtT(nextLeft()) + '. ' : TT('Автосмена выключена. ')) + TT('Показано: ') + (s.src === 2 ? TT('слот ') + s.shown : s.src === 4 ? TT('демо ') + (s.shown + 1) : TT(PN_SRC[s.src])) + '.';
+  $('slideInfo').textContent = (s.pst === 1 ? TT('Экран обновляется (') + STEP_TXT(s.step) + '). ' : '') + (c && c.en ? TT('Следующая смена через ') + fmtT(nextLeft()) + '. ' : TT('Автосмена выключена. ')) + TT('Показано: ') + (s.src === 2 ? TT('слот ') + s.shown : s.src === 4 ? (s.shown === 100 ? 'TAG HARDWARE' : TT('демо ') + (s.shown + 1)) : TT(PN_SRC[s.src])) + '.';
 }
 const RST_BITS = [[0, 'включение питания'], [1, 'сброс по выводу RESET'], [2, 'выход из EM4'], [3, 'сторожевой таймер'], [4, 'просадка питания'], [5, 'зависание ядра'], [6, 'программный сброс'], [7, 'ошибка питания DECOUPLE']];
 function renderHw() {

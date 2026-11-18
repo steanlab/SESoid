@@ -576,7 +576,7 @@ bool panel_show_slot(uint8_t slot, uint32_t crc)
 
 bool panel_show_demo(uint8_t pattern)
 {
-  if (pattern >= DEMO_COUNT) return false;
+  if (pattern >= DEMO_COUNT && pattern != DEMO_PAT_HW) return false;      // the hardware screen has its own number
   demo_pat = pattern;
   if (!begin(PSRC_DEMO)) return false;
   shown = pattern;
