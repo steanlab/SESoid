@@ -11,7 +11,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define ACC_BOOT_S  120u
+#define ACC_BOOT_S  180u                       // 3 minutes after power-up
 #define ACC_TAP_S   90u
 #define ACC_LINK_S  30u
 #define ACC_DANGER_S 60u                       // dangerous commands (reboot, NFC chip writes, flash tests) work this long after a tap

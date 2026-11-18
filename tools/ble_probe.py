@@ -28,7 +28,8 @@ FIELDS = [
     'up_ooo', 'up_crc', 'fl_jedec', 'fl_sr', 'fl_op', 'fl_result', 'fl_busy_us', 'fl_blocked', 'fl_pages_ok',
     'fl_pages_bad', 'pn_state', 'pn_err', 'pn_line', 'pn_chip', 'pn_t_ms', 'pn_refresh_ms',
     'pn_src', 'pn_count', 'pn_crc_bad', 'sl_valid', 'sl_cfgmask', 'sl_cur', 'sl_due_s', 'sl_log_next', 'sl_saves', 'sl_tx_ddbm', 'sl_tx_status',
-    'sys_reset', 'sys_wdog'
+    'sys_reset', 'sys_wdog', 'acc_closed',
+    'tap_fd', 'tap_ns', 'tap_polls', 'tap_naks', 'tap_count', 'tap_field', 'acc_left_s', 'uptime_s'
 ]
 STAGE = {1: 'main reached', 2: 'RAIL ready', 3: 'advertising', 4: 'CONNECTED'}
 EV_BITS = {3: 'RX_PKT', 6: 'SYNC1', 8: 'FRAME_ERR', 9: 'RX_FIFO_FULL', 10: 'RX_OVERFLOW', 12: 'RX_TIMEOUT', 13: 'SCHED_RX_START',
@@ -101,6 +102,8 @@ def show(d, prev_hb=[None]):
         print('last RAIL error: status %d in %s' % (d['last_status'], WHERE.get(d['status_where'], d['status_where'])))
     print('advertising: rounds %d, TX sent %d failed %d | SCAN_REQ %d | CONNECT_IND %d (ignored %d)' % (
         d['adv_rounds'], d['adv_tx_sent'], d['adv_tx_failed'], d['scan_req'], d['connect_ind'], d['connect_ignored']))
+    print('window: %d s left | uptime %d s | closed %d times | heartbeat %d | NFC tap: state %d (4 = watching), %d reads, %d refused, field now %d (bit 1 = FD pin level), taps counted %d, of them seen on the FD pin %d' % (
+        d['acc_left_s'], d['uptime_s'], d['acc_closed'], d['heartbeat'], d['tap_ns'], d['tap_polls'], d['tap_naks'], d['tap_field'], d['tap_count'], d['tap_fd']))
     print('connections: %d started, %d ended, last end reason 0x%x (0x1xx = master terminated with code xx, 0x200 = supervision timeout)' % (
         d['conns'], d['disconns'], d['disc_reason']))
     if d['conns']:

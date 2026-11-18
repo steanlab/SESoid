@@ -255,6 +255,15 @@ static void test_tap(void)
   field = 0; advance(800000u); field = 1; advance(600000u);
   CHECK(nfc_tap_take() && nfc_tap_count() == 2, "removed and put back again: a second tap (%u)", nfc_tap_count());
 
+  printf("tap mode: the FD pin alone (PA8) also sees a tap, even with a chip that does not answer on I2C\n");
+  field = 0; fd_on = 1; advance(500000u);
+  CHECK(!nfc_tap_take(), "FD high: no tap");
+  dead = 1; advance(250000u);
+  field = 1; advance(60000u);                                   // FD goes low while the register reads fail
+  CHECK(nfc_tap_take(), "FD low after high: a tap without the register");
+  advance(100000u); CHECK(!nfc_tap_take(), "FD kept low: not again");
+  dead = 0; fd_on = 0; field = 0; advance(7000000u);
+
   printf("tap mode: held off by the pin tools, resumes\n");
   field = 0; advance(1000000u);
   nfc_hold(true); advance(500000u);

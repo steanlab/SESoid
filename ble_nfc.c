@@ -57,6 +57,7 @@ static uint16_t rs_idx;
 static bool tap_en, tap_hold, tap_base, tap_prev;
 static uint8_t tap_absent, tap_pending, tap_count;
 static uint32_t tap_retry_at;
+static uint32_t tap_polls, tap_naks; static uint8_t tap_field;      // diagnostics (ble_diag.h): reads of the field register, refused reads, last field bit
 static bool tap_wait;               // a retry time is pending (a flag, so the 32 bit microsecond clock may wrap)
 
 const nfc_t *nfc_state(void) { return &nf; }
@@ -84,6 +85,23 @@ static void cfg(int p, int n, uint32_t mode, uint32_t dout)
 }
 static uint32_t rd(int p, int n) { return ((uint32_t)GPIO->P[p].DIN >> n) & 1u; }
 static void pin_split(int idx, int *p, int *n) { int q = 3; while (q > 0 && idx < port_first[q]) q--; *p = q; *n = idx - port_first[q]; }
+
+// second tap detector that needs no I2C: the NFC chip's FD pin (PA8, found with the page's pin search) is an open-drain output that goes low while a phone's
+// field is present, so with the pull-up on it a tap is a low after a high. It works even if the register reads fail.
+#define FD_P 0
+#define FD_N 8
+#define FD_PERIOD_US 5000u
+static bool fd_on; static uint8_t fd_sv_m, fd_sv_d, fd_hi, fd_lo, fd_armed; static uint32_t fd_t, tap_fd_count;
+static void fd_tap_on(void) { fd_sv_m = (uint8_t)get_mode(FD_P, FD_N); fd_sv_d = (uint8_t)((GPIO->P[FD_P].DOUT >> FD_N) & 1u); cfg(FD_P, FD_N, 2, 1); fd_on = true; fd_hi = fd_lo = fd_armed = 0; }
+static void fd_tap_off(void) { if (fd_on) { cfg(FD_P, FD_N, fd_sv_m, fd_sv_d); fd_on = false; } }
+static void fd_tap_sample(uint32_t now)
+{
+  if (!fd_on || (uint32_t)(now - fd_t) < FD_PERIOD_US) return;
+  fd_t = now;
+  if (rd(FD_P, FD_N)) { if (fd_hi < 255) fd_hi++; fd_lo = 0; if (fd_hi >= 20) fd_armed = 1; }       // high for 100 ms: ready for a tap
+  else { if (fd_lo < 255) fd_lo++; fd_hi = 0; if (fd_armed && fd_lo >= 3) { fd_armed = 0; tap_fd_count++; if (!tap_pending) tap_pending = 1; } }   // low for 15 ms: a field
+}
+void nfc_tap_diag(uint32_t *ns_, uint32_t *polls, uint32_t *naks, uint32_t *field, uint32_t *fdtaps) { *ns_ = (uint32_t)ns; *polls = tap_polls; *naks = tap_naks; *field = tap_field | ((uint32_t)rd(FD_P, FD_N) << 1); *fdtaps = tap_fd_count; }
 
 static void wait_us(uint32_t us) { uint32_t t0 = RAIL_GetTime(); while ((uint32_t)(RAIL_GetTime() - t0) < us) { } }
 
@@ -198,7 +216,7 @@ static void finish(uint8_t state)
   addr = ADDR;
   ns = NS_IDLE; nf.state = state; nf_changed = true;
 }
-static void leave_tap(void) { pins_back(); ns = NS_IDLE; }
+static void leave_tap(void) { fd_tap_off(); pins_back(); ns = NS_IDLE; }
 
 void nfc_stop(void)
 {
@@ -432,7 +450,8 @@ static void job_live(uint32_t now)
   nf.polls++;
   if (read_reg(NFC_LIVE_NS_REG, &v)) {
     nak_run = 0;
-    uint8_t f = v & 1u;                                               // NS_REG bit 0: RF field present
+    uint8_t f = v & 1u;
+    tap_polls++; tap_field = f;                                               // NS_REG bit 0: RF field present
     if (!nf.ns_valid || nf.regs[NFC_LIVE_NS_REG] != v || nf.field_now != f) nf_changed = true;
     if (f && !nf.field_now) nf.events++;
     if (f) nf.field_ever = 1;
@@ -457,7 +476,7 @@ static void tap_step(uint32_t now)
       else if (tap_absent < 100) tap_absent++;
       tap_prev = f;
     }
-  } else if (++nak_run >= LIVE_NAK_MAX) { leave_tap(); tap_retry_at = now + TAP_RETRY_US; tap_wait = true; }
+  } else if (tap_naks++, ++nak_run >= LIVE_NAK_MAX) { leave_tap(); tap_retry_at = now + TAP_RETRY_US; tap_wait = true; }
 }
 
 void nfc_poll(void)
@@ -466,10 +485,11 @@ void nfc_poll(void)
   if (ns == NS_IDLE) {
     if (tap_wait && (int32_t)(now - tap_retry_at) >= 0) tap_wait = false;
     if (tap_en && !tap_hold && !tap_wait) {
-      pins_save_on(); ns = NS_TAP_UP; nf_next = now + PWRUP_US; tap_base = false; nak_run = 0;
+      pins_save_on(); fd_tap_on(); ns = NS_TAP_UP; nf_next = now + PWRUP_US; tap_base = false; nak_run = 0;
     }
     return;
   }
+  if (ns == NS_TAP || ns == NS_TAP_UP) fd_tap_sample(now);
   if (ns == NS_RUN && nf.mode == NFC_M_LIVE && fd.n && (int32_t)(now - fd_next) >= 0) { fd_next = now + FD_SAMPLE_US; fd_sample(); }
   if ((int32_t)(now - nf_next) < 0) return;
   switch (ns) {

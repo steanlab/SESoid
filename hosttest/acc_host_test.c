@@ -23,11 +23,11 @@ int main(void)
   // window
   acc_init(a, S1);
   CHECK(!acc_is_open(0), "closed before it was opened");
-  acc_open(0, ACC_BOOT_S); CHECK(acc_is_open(0) && acc_is_open(119) && !acc_is_open(120), "boot window 120 s");
-  CHECK(acc_left_s(100) == 20, "left %u", acc_left_s(100));
-  acc_open(100, ACC_TAP_S); CHECK(acc_is_open(189) && !acc_is_open(190), "tap extends to 190");
-  acc_open(150, ACC_LINK_S); CHECK(!acc_is_open(190), "a shorter request never shortens the window");
-  acc_open(300, 30); CHECK(acc_is_open(329) && !acc_is_open(330), "reopen later");
+  acc_open(0, ACC_BOOT_S); CHECK(acc_is_open(0) && acc_is_open(ACC_BOOT_S - 1) && !acc_is_open(ACC_BOOT_S), "boot window");
+  CHECK(acc_left_s(ACC_BOOT_S - 20) == 20, "left %u", acc_left_s(ACC_BOOT_S - 20));
+  acc_open(ACC_BOOT_S - 20, ACC_TAP_S); CHECK(acc_is_open(ACC_BOOT_S + ACC_TAP_S - 21) && !acc_is_open(ACC_BOOT_S + ACC_TAP_S - 20), "tap extends");
+  acc_open(ACC_BOOT_S + 30, ACC_LINK_S); CHECK(!acc_is_open(ACC_BOOT_S + ACC_TAP_S - 20), "a shorter request never shortens the window");
+  acc_open(2000, 30); CHECK(acc_is_open(2029) && !acc_is_open(2030), "reopen later");
   // the uptime counter wraps: the window still works
   acc_init(a, S1); acc_open(0xFFFFFFF0u, 60); CHECK(acc_is_open(0xFFFFFFF5u) && acc_is_open(10) && !acc_is_open(60), "wrap");
   // dangerous commands: locked until a tap, open for 60 s, locked again after

@@ -342,6 +342,8 @@ void ctl_poll(void)
   nfc_tap_enable(true);                                                            // a tap opens the Bluetooth window (ble_acc.h), so the chip is always watched
   nfc_hold(hwtest_scan()->state == 1 || hwtest_pins()->mode != PM_MODE_OFF);       // the scanner and the pin monitor own those pins while they run
   nfc_poll();
+  { uint32_t a, b, c, d, e; nfc_tap_diag(&a, &b, &c, &d, &e); g_diag.tap_fd = e; g_diag.tap_ns = a; g_diag.tap_polls = b; g_diag.tap_naks = c; g_diag.tap_field = d;
+    g_diag.tap_count = nfc_tap_count(); g_diag.acc_left_s = acc_left_s(slide_uptime_s()); g_diag.uptime_s = slide_uptime_s(); }
   if (nfc_tap_take()) {
     acc_open(slide_uptime_s(), ACC_TAP_S);
     acc_danger_arm(slide_uptime_s());
