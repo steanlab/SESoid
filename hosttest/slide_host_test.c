@@ -10,6 +10,8 @@
 #include "ble_up.h"
 #include "ble_ll.h"
 #include "ble_diag.h"
+#include "ble_hwtest.h"
+#include "ble_sys.h"
 
 volatile ble_diag_t g_diag;
 volatile fl_result_t fl_res; volatile bool fl_done;
@@ -66,9 +68,19 @@ static uint32_t panel_end_us; static bool pbusy; static panel_src_t psrc; static
 static void pmodel(void) { if (pbusy && (int32_t)(now_us - panel_end_us) >= 0) { pbusy = false; n_done++; } }
 bool panel_busy(void) { pmodel(); return pbusy; }
 bool panel_show_slot(uint8_t s, uint32_t crc) { (void)crc; pmodel(); if (pbusy) return false; pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_SLOT; pshown = s; last_shown_slot = s; shows++; return true; }
-static int fills; static uint8_t last_fill;
+static int fills; static uint8_t last_fill; static int demos; static uint8_t last_demo;
+bool panel_show_demo(uint8_t n) { pmodel(); if (pbusy || (n >= 9 && n != 100)) return false; pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_DEMO; pshown = n; last_demo = n; demos++; return true; }
 bool panel_show_fill(uint8_t code) { pmodel(); if (pbusy) return false; pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_FILL; pshown = code; last_fill = code; fills++; return true; }
-bool panel_show_splash(void) { pmodel(); if (pbusy) return false; pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_SPLASH; return true; }
+static char hw_l[9][16], hw_v[9][47];
+void demo_hw_clear(void) { memset(hw_l, 0, sizeof hw_l); memset(hw_v, 0, sizeof hw_v); }
+void demo_hw_set(uint8_t i, const char *l, const char *v) { if (i < 9) { strncpy(hw_l[i], l, 15); strncpy(hw_v[i], v, 46); } }
+static int splashes; static hwtest_clock_t g_clk; static int clk_starts;
+const hwtest_clock_t *hwtest_clock(void) { return &g_clk; }
+bool hwtest_clock_start(void) { clk_starts++; return true; }
+bool panel_temp_sensor(int8_t *t) { *t = 24; return true; }
+uint32_t panel_count(void) { return n_done; }
+int16_t sys_temp_dc(void) { return 251; }
+bool panel_show_splash(void) { splashes++; pmodel(); if (pbusy) return false; pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_SPLASH; return true; }
 void panel_set_temp(int8_t c) { (void)c; }
 void panel_set_auto_temp(bool on) { (void)on; }
 panel_status_t panel_status(void) { return pbusy ? PST_RUNNING : PST_DONE_OK; }
@@ -202,6 +214,33 @@ int main(void)
     y.clean_mode = 2; slide_set_cfg(&y); tick(200); f0 = fills; s0 = shows;
     CHECK(slide_clean(2) == SLR_OK, "manual cleaning starts"); for (int k = 0; k < 10; k++) tick(31000);
     CHECK(fills - f0 == 5 && shows == s0, "manual cleaning: five fills, no slide (%d, %d)", fills - f0, shows - s0);
+    // demo: a single picture, then the tour (splash, chosen pictures, slide, hardware screen, back), stop
+    uint8_t en0 = y.enabled, iv0 = y.interval_min; y.clean_n = 0; y.enabled = 1; y.interval_min = 1; slide_set_cfg(&y); tick(200); int d0 = demos;
+    CHECK(slide_demo(99, 0, 0) == SLR_BAD_SLOT, "bad demo number");
+    CHECK(slide_demo(3, 0, 0) == SLR_OK && last_demo == 2 && demos - d0 == 1, "single demo picture (3 = index 2)");
+    CHECK(slide_demo(0xFF, 0x5, 0) == SLR_PANEL_BUSY, "demo refused while the panel is busy");
+    tick(31000);
+    d0 = demos; s0 = shows; int sp0 = splashes;
+    int slot_ok = 0; for (int q = 1; q <= 10; q++) if (slide_slot((uint8_t)q)->show) { slot_ok = q; break; }
+    g_clk.state = 2; g_clk.flags = 0x10; g_clk.cnt_lfxo = 599980u;
+    CHECK(slide_demo(0xFF, 0x300D, (uint8_t)slot_ok) == SLR_OK, "tour starts");
+    for (int k = 0; k < 14; k++) tick(41000);
+    CHECK(splashes - sp0 == 1, "tour begins with the splash (%d)", splashes - sp0);
+    CHECK(demos - d0 == 3 + 1 && last_demo == 100, "three chosen pictures then the hardware screen (%d, last %u)", demos - d0, last_demo);
+    CHECK(slot_ok ? shows - s0 >= 2 : 1, "the chosen slide is shown and the earlier slide comes back (%d shows)", shows - s0);
+    CHECK(!slide_demo_active(), "tour ended");
+    CHECK(slide_demo(0xFF, 0, 0) == SLR_BAD_SLOT, "an empty tour is refused");
+    CHECK(strcmp(hw_v[2], "panel 24 C, chip 25.1 C") == 0, "temperature line: %s", hw_v[2]);
+    CHECK(strncmp(hw_v[3], "5 x CR2450, ", 12) == 0, "battery line: %s", hw_v[3]);
+    CHECK(strncmp(hw_v[8], "SESoid 2.", 9) == 0 && strstr(hw_v[8], " screens"), "firmware line: %s", hw_v[8]);
+    CHECK(strncmp(hw_v[4], "Winbond EF 40 13, 512 KiB, slides ", 33) == 0, "flash line: %s", hw_v[4]);
+    CHECK(strncmp(hw_v[6], "BLE 2.4 GHz, TX ", 16) == 0, "radio line: %s", hw_v[6]);
+    CHECK(strcmp(hw_v[5], "38.4 MHz, 32.768 kHz (+33 ppm)") == 0, "crystals line: %s", hw_v[5]);
+    CHECK(clk_starts >= 1, "the crystal test is started with the tour");
+    d0 = demos; CHECK(slide_demo(0xFF, 0x31FF, 0) == SLR_OK, "second tour"); tick(41000); tick(41000); tick(41000);
+    CHECK(slide_demo_active() && slide_demo(0, 0, 0) == SLR_OK, "stop"); for (int k = 0; k < 6; k++) tick(41000);
+    CHECK(!slide_demo_active() && demos - d0 <= 4, "tour stopped (%d pictures)", demos - d0);
+    tick(41000); tick(41000); tick(31000); y.enabled = en0; y.interval_min = iv0; slide_set_cfg(&y); tick(200);
     // slot 10 takes part when its mask bit is set
     y.clean_n = 0; y.mask = 1u << 10; slide_set_cfg(&y); tick(200);
     CHECK(slide_next() == SLR_OK && last_shown_slot == 10, "slot 10 in the playlist (shown %d)", last_shown_slot); tick(31000);

@@ -51,6 +51,8 @@ uint32_t up_crc32(uint32_t crc, const uint8_t *p, uint32_t n)
   return ~crc;
 }
 #include "../ble_splash.c"
+#include "../ble_font7x14.c"
+#include "../ble_demo.c"
 #include "../ble_panel.c"
 
 GpioT g_gpio; CmuT g_cmu;
@@ -172,7 +174,7 @@ static void init_regs(void)
 }
 
 // ---- run
-enum { K_SPLASH, K_SLOT, K_SLOT_BADCRC, K_FILL_WHITE, K_SLOT_DEAD };
+enum { K_SPLASH, K_SLOT, K_SLOT_BADCRC, K_FILL_WHITE, K_SLOT_DEAD, K_DEMO };
 static uint32_t frame_crc;
 static int run_once(const char *name, bool connected, uint32_t free_pattern, int kind)
 {
@@ -190,6 +192,7 @@ static int run_once(const char *name, bool connected, uint32_t free_pattern, int
     case K_SLOT: case K_SLOT_DEAD: started = panel_show_slot(3, frame_crc); break;
     case K_SLOT_BADCRC: started = panel_show_slot(3, frame_crc ^ 1u); break;
     case K_FILL_WHITE: started = panel_show_fill(1); break;
+    case K_DEMO: started = panel_show_demo(2) && !panel_show_demo(DEMO_COUNT); break;
   }
   if (!started) { printf("[%s] panel_show failed to start\n", name); return 1; }
   uint64_t t0 = now_us(), maxblock = 0; uint64_t polls = 0, gated_skips = 0;
@@ -231,6 +234,12 @@ static int run_once(const char *name, bool connected, uint32_t free_pattern, int
     int nonwhite = 0; for (int i = 0; i < 46080; i++) if (img[i] != 0x55) nonwhite++;
     printf("      fill white: bytes that are not 0x55: %d (expect 0)\n", nonwhite);
     bad += nonwhite;
+  }
+  if (kind == K_DEMO) {
+    int diff = 0; uint8_t ln[64];
+    for (int l = 0; l < PANEL_LINES; l++) { demo_gen_line(2, l, ln); if (memcmp(ln, img + l * 64, 64)) diff++; }
+    printf("      demo picture 2: lines that differ from the generator: %d (expect 0), shown=%u\n", diff, panel_shown());
+    bad += diff + (panel_shown() != 2);
   }
   return bad;
 }
@@ -290,6 +299,7 @@ int main(void)
   flash_deny_pct = 0;
   bad += run_once("slot_badcrc", false, 0, K_SLOT_BADCRC);
   bad += run_once("fill_white", false, 0, K_FILL_WHITE);
+  bad += run_once("demo", false, 0, K_DEMO);
   bad += run_once("slot_flash_dead", false, 0, K_SLOT_DEAD);
   bad += run_diag("healthy", false, false);
   bad += run_diag("healthy_conn", true, false);

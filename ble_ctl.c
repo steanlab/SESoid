@@ -112,7 +112,7 @@ bool ctl_write(const uint8_t *v, uint8_t len)
       else queue_result(0x3E, SLR_BAD_SLOT);
       break;
     case 0x3F:
-      if (len == 3 && v[1] == 0x40) queue_result(0x3F, slide_demo(v[2]));      // demo pictures: [0x3F, 0x40, n]
+      if ((len == 3 || len == 6) && v[1] == 0x40) queue_result(0x3F, slide_demo(v[2], len == 6 ? (uint16_t)(v[3] | (v[4] << 8)) : 0u, len == 6 ? v[5] : 0u));      // demo: [0x3F, 0x40, n] or [0x3F, 0x40, 0xFF, mask lo, mask hi, slot]
       else if (((v[1] >= 0x10 && v[1] <= 0x16) || (v[1] >= 0x20 && v[1] <= 0x22) || v[1] == 0x30 || v[1] == 0x31)) {              // NFC chip (ble_nfc.h)
         uint8_t ok = SLR_OK;
         bool start = false;
@@ -350,7 +350,8 @@ void ctl_poll(void)
   if (nfc_tap_take()) {
     acc_open(slide_uptime_s(), ACC_TAP_S);
     acc_danger_arm(slide_uptime_s());
-    if (slide_cfg()->nfc) { tap_pending = true; tap_t0 = now; tap_next_try = now; }          // with the NFC switch on a tap also shows the next slide
+    if (slide_demo_active()) (void)slide_demo(0, 0, 0);                                      // a tap stops a demo tour after the current screen
+    else if (slide_cfg()->nfc) { tap_pending = true; tap_t0 = now; tap_next_try = now; }          // with the NFC switch on a tap also shows the next slide
   }
   if (tap_pending && (int32_t)(now - tap_next_try) >= 0) {                       // a tap shows the next slide; while the panel or the flash is busy it is tried again
     uint8_t r = slide_next();

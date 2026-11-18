@@ -4,6 +4,8 @@
 #include "ble_batt.h"
 #include "ble_panel.h"
 #include "ble_demo.h"
+#include "ble_hwtest.h"
+#include "ble_sys.h"
 #include "ble_flash.h"
 #include "ble_up.h"
 #include "ble_ll.h"
@@ -20,9 +22,16 @@ static slot_info_t slots[FL_SLOTS + 1];     // index 1..10
 static uint8_t cur_slot;
 static uint8_t clean_seq[5];               // fill colour codes of the running cleaning sequence
 static uint8_t clean_len, clean_pos;       // sequence length / next step (clean_len 0 = none running)
-static bool demo_tour;                    // a demo tour is running: the pictures follow each other, the slideshow waits
-static uint8_t demo_idx;                   // next picture of the tour
+static bool demo_tour;                    // a demo tour is running: the screens follow each other, the slideshow waits
+static uint8_t demo_steps[DEMO_COUNT + 5]; // the tour: DS_* or a picture number 0..DEMO_COUNT-1
+static uint8_t demo_n, demo_pos;           // steps / next step
+static uint8_t demo_restore;               // the slot that was shown before the tour (0 = none: the next slide of the playlist)
 static uint32_t demo_gap_s;                // the next picture of the tour is shown at this uptime
+#define DS_SPLASH 0xF0u
+#define DS_SLOT   0xF1u
+#define DS_HW     0xF2u
+#define DS_BACK   0xF3u
+static uint8_t demo_slot;                  // the slide shown in the tour (0 = none)
 static uint8_t clean_slot;                 // a white full-screen update is running; this slide follows it (0 = none)
 static uint8_t changes;                    // slide changes since the last full-screen update
 static uint32_t log_next;                  // index of the first free log entry (LOG_ENTRIES = full)
@@ -272,16 +281,71 @@ static uint8_t start_show(uint8_t slot)
 
 uint8_t slide_show(uint8_t slot) { return start_show(slot); }
 
-uint8_t slide_demo(uint8_t n)
+// ---- the TAG HARDWARE screen: the facts and the current readings, as text for ble_demo.c
+static char *ap(char *p, const char *s) { while (*s) *p++ = *s++; return p; }
+static char *apn(char *p, uint32_t v) { char t[11]; int n = 0; do { t[n++] = (char)('0' + v % 10u); v /= 10u; } while (v); while (n) *p++ = t[--n]; return p; }
+static char *ap1(char *p, int32_t tenths) { if (tenths < 0) { *p++ = '-'; tenths = -tenths; } p = apn(p, (uint32_t)tenths / 10u); *p++ = '.'; *p++ = (char)('0' + (uint32_t)tenths % 10u); return p; }
+static char *apd(char *p, int32_t v) { if (v < 0) { *p++ = '-'; v = -v; } return apn(p, (uint32_t)v); }
+static void demo_hw_fill(void)
 {
-  if (n == 0) { demo_tour = false; return SLR_OK; }
-  if (n != 0xFFu && n > DEMO_COUNT) return SLR_BAD_SLOT;
+  char b[48], *p;
+  demo_hw_clear();
+  demo_hw_set(0, "PROCESSOR", "EFR32FG22C121F256GM40, M33 38.4 MHz");
+  demo_hw_set(1, "PANEL", "5.9 in, 720 x 256, BWRY, PDi 0x0D04");
+  { int8_t pt; int16_t dc = sys_temp_dc();
+    p = ap(b, "panel "); if (panel_temp_sensor(&pt)) { p = apd(p, pt); p = ap(p, " C"); } else p = ap(p, "n/a");
+    p = ap(p, ", chip "); if (dc != SYS_TEMP_NA) { p = ap1(p, dc); p = ap(p, " C"); } else p = ap(p, "n/a");
+    *p = 0; demo_hw_set(2, "TEMPERATURE", b); }
+  p = ap(b, "5 x CR2450, ");
+  if (batt_mv()) { uint32_t mv = batt_mv(); p = apn(p, mv / 1000u); *p++ = '.'; *p++ = (char)('0' + mv / 100u % 10u); *p++ = (char)('0' + mv / 10u % 10u); p = ap(p, " V, "); p = ap(p, batt_level() == BATT_OK ? "OK" : batt_level() == BATT_LOW ? "low" : "critical"); }
+  else p = ap(p, "not measured");
+  *p = 0; demo_hw_set(3, "BATTERY", b);
+  { uint32_t n = 0; for (uint8_t i = 1; i <= FL_SLOTS; i++) if (slots[i].show) n++;
+    p = ap(b, "Winbond EF 40 13, 512 KiB, slides "); p = apn(p, n); p = ap(p, "/"); p = apn(p, FL_SLOTS); *p = 0; demo_hw_set(4, "FLASH CHIP", b); }
+  { const hwtest_clock_t *k = hwtest_clock();
+    p = ap(b, "38.4 MHz, 32.768 kHz");
+    if (k->state == 2 && (k->flags & 0x10u) && k->cnt_lfxo > 500000u && k->cnt_lfxo < 700000u) { int32_t ppm = (int32_t)(((int64_t)(600000 - (int32_t)k->cnt_lfxo) * 1000000) / 600000); p = ap(p, " ("); if (ppm >= 0) *p++ = '+'; p = apd(p, ppm); p = ap(p, " ppm)"); }
+    *p = 0; demo_hw_set(5, "CRYSTALS", b); }
+  { int32_t rs = (int32_t)g_diag.last_rssi;
+    p = ap(b, "BLE 2.4 GHz, TX "); p = ap1(p, slide_tx_actual_ddbm()); p = ap(p, " dBm");
+    if (rs < 0 && rs > -128) { p = ap(p, ", RSSI "); p = apd(p, rs); p = ap(p, " dBm"); }
+    *p = 0; demo_hw_set(6, "RADIO", b); }
+  demo_hw_set(7, "NFC", "NTAG I2C plus, NDEF 112 bytes");
+  { uint32_t up = uptime_s;
+    p = ap(b, "SESoid "); p = apn(p, FW_VERSION_MAJOR); *p++ = '.'; p = apn(p, FW_VERSION_MINOR); p = ap(p, ", up "); 
+    if (up >= 3600u) { p = apn(p, up / 3600u); p = ap(p, " h "); }
+    p = apn(p, up / 60u % 60u); p = ap(p, " min, "); p = apn(p, panel_count()); p = ap(p, " screens"); *p = 0; demo_hw_set(8, "FIRMWARE", b); }
+}
+
+bool slide_demo_active(void) { return demo_tour; }
+
+static bool demo_idle_ok(void) { return !panel_busy() && up_idle() && ps == P_IDLE && !fl_busy() && !slide_scanning() && !clean_len && !clean_slot; }
+
+// n: 0 = stop (the tour ends after the current screen with the slide that was shown before), 1..DEMO_COUNT = that picture, 0xFE = the hardware screen,
+// 0xFF = tour: splash (mask bit 12), the pictures of mask (bit i = picture i + 1), the slide `slot` (0 = none), the hardware screen (mask bit 13), back to the earlier slide
+uint8_t slide_demo(uint8_t n, uint16_t mask, uint8_t slot)
+{
+  if (n == 0) { if (demo_tour && demo_pos < demo_n) demo_pos = (uint8_t)(demo_n - 1u); return SLR_OK; }     // the last step puts the earlier slide back
+  if (n != 0xFFu && n != 0xFEu && n > DEMO_COUNT) return SLR_BAD_SLOT;
   if (panel_busy()) return SLR_PANEL_BUSY;
-  if (!up_idle() || ps != P_IDLE || fl_busy() || slide_scanning() || clean_len || clean_slot) return SLR_FLASH_BUSY;
+  if (!demo_idle_ok()) return SLR_FLASH_BUSY;
   if (batt_level() == BATT_CRIT) return SLR_BAD_SLOT;
-  if (!panel_show_demo(n == 0xFFu ? 0u : (uint8_t)(n - 1u))) return SLR_PANEL_BUSY;
-  demo_tour = n == 0xFFu; demo_idx = 1; demo_gap_s = 0;
-  return SLR_OK;
+  if (n == 0xFFu) {
+    demo_n = 0;
+    if (mask & 0x1000u) demo_steps[demo_n++] = DS_SPLASH;
+    for (uint8_t i = 0; i < DEMO_COUNT; i++) if (mask & (1u << i)) demo_steps[demo_n++] = i;
+    demo_slot = (slot >= 1 && slot <= FL_SLOTS && slots[slot].show) ? slot : 0;
+    if (demo_slot) demo_steps[demo_n++] = DS_SLOT;
+    if (mask & 0x2000u) demo_steps[demo_n++] = DS_HW;
+    if (demo_n == 0) return SLR_BAD_SLOT;                 // nothing chosen
+    demo_steps[demo_n++] = DS_BACK;
+    demo_pos = 0; demo_restore = cur_slot; demo_gap_s = uptime_s + 10u; demo_tour = true;      // the first screen comes 10 s after the command: the page disconnects meanwhile
+    (void)hwtest_clock_start();                         // the crystal figures for the hardware screen
+    return SLR_OK;                                      // the first step starts from slide_poll
+  }
+  if (n == 0xFEu) { demo_hw_fill(); return panel_show_demo(DEMO_PAT_HW) ? SLR_OK : SLR_PANEL_BUSY; }
+  demo_tour = false;
+  return panel_show_demo((uint8_t)(n - 1u)) ? SLR_OK : SLR_PANEL_BUSY;
 }
 
 uint8_t slide_clean(uint8_t mode)
@@ -371,9 +435,20 @@ void slide_poll(void)
       clean_len = 0; clean_pos = 0;
     }
   }
-  if (demo_tour && !busy && (int32_t)(uptime_s - demo_gap_s) >= 0) {   // the demo tour goes on with the next picture
-    if (demo_idx >= DEMO_COUNT || batt_level() == BATT_CRIT) demo_tour = false;
-    else if (up_idle() && !fl_busy() && panel_show_demo(demo_idx)) demo_idx++;
+  if (demo_tour && !busy && (int32_t)(uptime_s - demo_gap_s) >= 0 && demo_idle_ok()) {    // the tour goes on with the next screen
+    uint8_t st = demo_steps[demo_pos];
+    if (batt_level() == BATT_CRIT) { demo_tour = false; }
+    else if (st == DS_BACK) {
+      demo_tour = false;
+      if (demo_restore && start_show(demo_restore) == SLR_OK) { } else (void)slide_next();
+    } else {
+      bool ok;
+      if (st == DS_SPLASH) ok = panel_show_splash();
+      else if (st == DS_SLOT) ok = start_show(demo_slot) == SLR_OK;
+      else if (st == DS_HW) { demo_hw_fill(); ok = panel_show_demo(DEMO_PAT_HW); }
+      else ok = panel_show_demo(st);
+      if (ok) demo_pos++;
+    }
   }
   if (clean_slot && !busy && !clean_len) {             // the cleaning is done: now the slide itself
     if (start_show(clean_slot) == SLR_OK) clean_slot = 0;

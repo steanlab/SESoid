@@ -71,6 +71,8 @@ static uint32_t slot_crc, run_crc, n_done, last_ms;
 static int8_t temp_c = 25;
 static bool auto_temp;           // take the temperature from the chip sensor
 static int8_t temp_used = 25;
+static int8_t temp_sensor;        // the panel's own reading of the last update
+static bool temp_sensor_ok;
 static uint8_t pg[256];             // slot streaming: one flash page = 4 panel lines
 static int pg_idx;
 static uint32_t t_flash_wait;       // first failed flash read of the current stall (0 = none)
@@ -326,14 +328,15 @@ static void run(void)
     case S_INIT_A:
       {
         int8_t t = temp_c;
-        if (auto_temp) {
-          int16_t dc = sys_temp_dc();
-          bool have_chip = dc != SYS_TEMP_NA;
-          if (have_chip) { int v = (dc + (dc >= 0 ? 5 : -5)) / 10; t = (int8_t)(v < -20 ? -20 : v > 60 ? 60 : v); }
-          uint16_t raw = read_cmd16(0x40);          // the panel's own sensor (confirmed on this tag: 0x1800 = 24 C, high byte = whole degrees)
-          int8_t pt = (int8_t)(raw >> 8);
-          if (raw != 0x0000u && raw != 0xFFFFu && pt >= -20 && pt <= 60 && (!have_chip || (pt - t < 15 && t - pt < 15))) t = pt;   // implausible or far from the chip value: the chip value stays
-        }
+        int16_t dc = sys_temp_dc();
+        bool have_chip = dc != SYS_TEMP_NA;
+        int8_t chip_t = t;
+        if (have_chip) { int v = (dc + (dc >= 0 ? 5 : -5)) / 10; chip_t = (int8_t)(v < -20 ? -20 : v > 60 ? 60 : v); }
+        uint16_t raw = read_cmd16(0x40);            // the panel's own sensor (confirmed on this tag: 0x1800 = 24 C, high byte = whole degrees)
+        int8_t pt = (int8_t)(raw >> 8);
+        temp_sensor_ok = raw != 0x0000u && raw != 0xFFFFu && pt >= -20 && pt <= 60 && (!have_chip || (pt - chip_t < 15 && chip_t - pt < 15));   // implausible or far from the chip value: not used
+        if (temp_sensor_ok) temp_sensor = pt;
+        if (auto_temp) t = temp_sensor_ok ? pt : chip_t;
         temp_used = t;
         cmd1(0xE6, (uint8_t)t);
       }
@@ -591,6 +594,7 @@ bool panel_show_fill(uint8_t code)
 void panel_set_temp(int8_t celsius) { temp_c = celsius; }
 void panel_set_auto_temp(bool on) { auto_temp = on; }
 int8_t panel_temp_used(void) { return temp_used; }
+bool panel_temp_sensor(int8_t *celsius) { if (temp_sensor_ok) *celsius = temp_sensor; return temp_sensor_ok; }
 
 void panel_start(void)
 {

@@ -39,8 +39,8 @@ The NFC chip is **powered from a GPIO (PC5)**. The firmware switches it on only 
 * Update sequence (about 30 s in total, the refresh itself about 19 s): panel on (PC6 low) -> reset -> OTP read -> init with the temperature value (command 0xE6) -> image (0x10) -> DC/DC on (0x04) -> refresh (0x12, BUSY about 19 s) -> **mandatory DC/DC stop sequence** (0x02, 0x00 `07 2B 01`, then 0xEE writes with 4 ms / 3 ms waits, 0xFF/0xE3 toggles) -> panel off.
 * The stop sequence must run after every refresh; the firmware does it also after a failed one.
 * Full-colour cleaning cycles (fills in several colour combinations) remove ghost images; the number of changes between cleanings is a setting.
-* The panel's own temperature: the firmware passes a fixed value to the waveform selection; **temperature compensation is intentionally not touched**. A 16-bit read with command 0x40 is tried during the page's panel diagnostics and shown as a raw value, but it is *(not verified)* that this controller answers it.
-* **Chip temperature as a substitute:** the MCU has a die temperature sensor (EMU->TEMP, 0.25 K steps). With the setting "take the screen temperature from the tag's sensor" the firmware hands this value (rounded, limited to -20..60 C) to the panel with command 0xE6 before every update; without it the number from the page's "Panel temperature" field is used (default 25). At rest the die is close to the air temperature; right after radio or panel activity it is a little warmer. The page shows the chip temperature and the value sent at the last update.
+* The panel's own temperature: the controller has a temperature sensor. Command 0x40 returns 16 bits; on this tag it returned 0x1800 at room temperature, i.e. the high byte is the whole degrees (24 C) and the low byte the fraction (read as 8.8 fixed point; the fraction was 0 in that one reading). Measured by the owner with the page's panel diagnostics; a comparison with the chip temperature over a wider range is still to be done.
+* **Temperature handed to the panel:** with the setting "take the screen temperature from the panel's sensor" the firmware reads the panel's own sensor (command 0x40) before every update and hands it to the waveform selection with command 0xE6. If that reading is zero, 0xFFFF, outside -20..60 C or more than 15 C away from the chip temperature, the chip temperature (MCU die sensor EMU->TEMP, 0.25 K steps, rounded) is used instead; without the setting the number from the page's "Panel temperature" field is used (default 25). The page shows the chip temperature and the value sent at the last update.
 
 ## External flash
 
@@ -68,7 +68,7 @@ The flash is a separate chip: unlocking the MCU does not erase it.
 
 * Five CR2450 in parallel. Battery voltage = the chip's own supply, read by the IADC (AVDD/4 input, internal 1.21 V reference, no calibration, about +-2 %), measured a few seconds after power-up and then every 10 minutes while the panel is idle. Default thresholds: warning 2.7 V, critical 2.5 V (at critical the firmware stops automatic slide changes and cleaning cycles; manual ones still work).
 * HFXO 38.4 MHz (SMD crystal next to the MCU, marked 38.4) runs the core and the radio.
-* **LFXO: a 32.768 kHz crystal is fitted** (the larger SMD crystal at the right of the MCU); the owner measured 32.76909 kHz (about 33 ppm above nominal; measured value as reported, method not recorded). The firmware used the internal LFRCO instead until the crystal was found; since the build after that the SDK's own LFXO setup (CTUNE 63 by default) runs the sleep timer and the EM2 wake-ups from the crystal. The "Crystal test" of the page shows the frequency that the crystal really has with the firmware's setting.
+* **LFXO: a 32.768 kHz crystal is fitted** (the larger SMD crystal at the right of the MCU); measured by the firmware's crystal test: starts in about 1.05 s, 32769.09 Hz (+33 ppm against the HFXO, whose own error is included). The firmware used the internal LFRCO instead until the crystal was found; since the build after that the SDK's own LFXO setup (CTUNE 63 by default) runs the sleep timer and the EM2 wake-ups from the crystal. The "Crystal test" of the page shows the frequency that the crystal really has with the firmware's setting.
 * Watchdog about 8 s from the 1 kHz ULFRCO. Deep sleep (EM2) is optional and off by default: the sleep timer then runs from the LFRCO; RAIL time stops in EM2 and is corrected after the sleep.
 * On the bench the tag is powered from the debug probe, not from the cells.
 
@@ -78,6 +78,6 @@ A factory tag is **debug-locked**: over SWD no core is found. The status read th
 
 ## Open questions
 
-* Panel temperature sensor: command 0x40 answer not confirmed.
+* Panel temperature sensor: command 0x40 answers (0x1800 = 24 C); accuracy and the fraction byte not examined yet.
 * Real current consumption (no measurements yet; deep sleep is estimated to extend battery life but has not been measured).
 * Antenna tuning (S11, resonance) and radiated power: only the configured TX power is known; the antenna type is read from the board photo. The blue SMD part next to the matching network and the large dark-green rectangle marked "RFRT x035B" (imagotag, Graz) are not identified.

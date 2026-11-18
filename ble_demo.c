@@ -1,6 +1,9 @@
 // SES V300: demo pictures (see ble_demo.h). Integer arithmetic only.
 #include "ble_demo.h"
 #include "ble_splash.h"
+#include <string.h>
+
+extern const uint8_t demo_font7x14[95][14];
 
 enum { K = 0, W = 1, Y = 2, R = 3 };
 
@@ -18,7 +21,7 @@ static uint8_t mix(int u, int v, uint8_t a, uint8_t b, int level64)   // level 0
 
 static int in_rect(int u, int v, int x, int y, int w, int h) { return u >= x && u < x + w && v >= y && v < y + h; }
 
-// ---- 0: calibration chart (like the one on the page): solid fields, mixing ramps, thin lines, checks, frames
+// ---- calibration chart (like the one on the page): solid fields, mixing ramps, thin lines, checks, frames
 static uint8_t px_calib(int u, int v)
 {
   if (u < 2 || v < 2 || u >= 718 || v >= 254) return K;
@@ -47,7 +50,7 @@ static uint8_t px_calib(int u, int v)
   return W;
 }
 
-// ---- 1: chessboards: 32 px black/white, 16 px four colours, then 4 px and 1 px black/white
+// ---- chessboards: 32 px black/white, 16 px four colours, then 4 px and 1 px black/white
 static uint8_t px_chess(int u, int v)
 {
   if (u < 3 || v < 3 || u >= 717 || v >= 253) return K;
@@ -60,16 +63,14 @@ static uint8_t px_chess(int u, int v)
   return (((u - 600) ^ v) & 1) ? W : K;
 }
 
-// ---- 2 / 3: Mandelbrot and Julia sets in Q4.26 fixed point
+// ---- Julia set in Q4.26 fixed point
 #define FQ 26
-static uint8_t px_fractal(int u, int v, int julia)
+static uint8_t px_julia(int u, int v)
 {
-  int32_t cr, ci, zr, zi;
-  int64_t step = julia ? (int64_t)(3.6 / 720 * (1 << FQ) + 0.5) : (int64_t)(3.4 / 720 * (1 << FQ) + 0.5);
-  int64_t x = (int64_t)(u - 360) * step, y = (int64_t)(v - 128) * step;
-  if (julia) { zr = (int32_t)x; zi = (int32_t)y; cr = (int32_t)(-0.8 * (1 << FQ)); ci = (int32_t)(0.156 * (1 << FQ)); }
-  else { cr = (int32_t)(x - (int64_t)(0.55 * (1 << FQ))); ci = (int32_t)y; zr = 0; zi = 0; }
-  const int maxit = julia ? 40 : 36;
+  const int64_t step = (int64_t)(3.6 / 720 * (1 << FQ) + 0.5);
+  int32_t zr = (int32_t)((int64_t)(u - 360) * step), zi = (int32_t)((int64_t)(v - 128) * step);
+  const int32_t cr = (int32_t)(-0.8 * (1 << FQ)), ci = (int32_t)(0.156 * (1 << FQ));
+  const int maxit = 40;
   int it;
   for (it = 0; it < maxit; it++) {
     int64_t rr = ((int64_t)zr * zr) >> FQ, ii = ((int64_t)zi * zi) >> FQ;
@@ -82,7 +83,7 @@ static uint8_t px_fractal(int u, int v, int julia)
   switch (it % 3) { case 0: return Y; case 1: return R; default: return W; }
 }
 
-// ---- 4: Sierpinski triangle / XOR texture
+// ---- Sierpinski triangle / XOR texture
 static uint8_t px_sierp(int u, int v)
 {
   int x = u + 8, y = v;                              // a little offset so that the pattern does not start on the edge
@@ -91,16 +92,7 @@ static uint8_t px_sierp(int u, int v)
   return c[(((x ^ y) >> 5) + (x >> 8)) % 3];
 }
 
-// ---- 5: two zone plates (interference / moire); r^2 / 256 steps around the centres, colours in the order K R Y W
-static uint8_t px_zone(int u, int v)
-{
-  static const uint8_t ord[4] = { K, R, Y, W };
-  int dv = v - 128, du1 = u - 240, du2 = u - 480;
-  int a = (du1 * du1 + dv * dv) >> 8, b = (du2 * du2 + dv * dv) >> 8;
-  return ord[(a + b) & 3];
-}
-
-// ---- 6: tone ramps: eight horizontal bands, every one a dithered gradient from one colour to another (64 levels), thin white marks every 1/8
+// ---- tone ramps: eight horizontal bands, every one a dithered gradient from one colour to another (64 levels), thin white marks every 1/8
 static uint8_t px_ramps(int u, int v)
 {
   static const uint8_t pair[8][2] = { {K, W}, {W, Y}, {Y, R}, {R, K}, {K, Y}, {K, R}, {W, R}, {Y, W} };
@@ -112,7 +104,7 @@ static uint8_t px_ramps(int u, int v)
   return mix(u, v, pair[band][0], pair[band][1], level);
 }
 
-// ---- 7: Truchet tiles 16 x 16 with quarter circles (black and red) on white
+// ---- Truchet tiles 16 x 16 with quarter circles (black and red) on white
 static uint8_t px_truchet(int u, int v)
 {
   int tx = u >> 4, ty = v >> 4, x = u & 15, y = v & 15;
@@ -128,17 +120,138 @@ static uint8_t px_truchet(int u, int v)
   return W;
 }
 
+
+// ---- TV test chart (same picture as the page's "TV chart"): grid, circles, diagonals, bars, gradations, line packets, mixing ramps, checks
+static int in_ring(int u, int v, int cx, int cy, int r)       // |distance - r| < 1.1, integer arithmetic in tenths of a pixel
+{
+  int x = 10 * u + 5 - 10 * cx, y = 10 * v + 5 - 10 * cy, d2 = x * x + y * y, lo = 10 * r - 11, hi = 10 * r + 11;
+  return d2 > lo * lo && d2 < hi * hi;
+}
+static int frame_hit(int u, int v, int x, int y, int w, int h) { return in_rect(u, v, x, y, w, h) && (u == x || u == x + w - 1 || v == y || v == y + h - 1); }
+static uint8_t px_tv(int u, int v)
+{
+  if (frame_hit(u, v, 0, 0, 720, 256) || in_rect(u, v, 0, 0, 720, 2) || in_rect(u, v, 0, 254, 720, 2) || in_rect(u, v, 0, 0, 2, 256) || in_rect(u, v, 718, 0, 2, 256)) {
+    if (in_rect(u, v, 2, 2, 14, 14) || in_rect(u, v, 704, 2, 14, 14) || in_rect(u, v, 2, 240, 14, 14) || in_rect(u, v, 704, 240, 14, 14)) return R;
+    return K;
+  }
+  if (in_rect(u, v, 2, 2, 14, 14) || in_rect(u, v, 704, 2, 14, 14) || in_rect(u, v, 2, 240, 14, 14) || in_rect(u, v, 704, 240, 14, 14)) return R;
+  // left block
+  if (in_rect(u, v, 18, 18, 214, 220)) {
+    if (frame_hit(u, v, 18, 18, 214, 220)) return K;
+    if (in_rect(u, v, 22, 22, 204, 56)) { if (frame_hit(u, v, 22, 22, 204, 56)) return K; static const uint8_t bars[4] = { W, Y, R, K }; return bars[(u - 22) / 51]; }
+    if (in_rect(u, v, 22, 84, 198, 26)) { if (frame_hit(u, v, 22, 84, 198, 26)) return K; return mix(u, v, K, W, ((u - 22) / 22) * 8); }
+    static const uint8_t pitch[6] = { 2, 3, 4, 5, 6, 8 };
+    for (int i = 0; i < 6; i++) {
+      int x0 = 22 + i * 34;
+      if (in_rect(u, v, x0, 116, 34, 56)) return (frame_hit(u, v, x0, 116, 34, 56) || ((u - x0) % pitch[i]) == 0) ? K : W;
+      if (in_rect(u, v, x0, 178, 34, 56)) return (frame_hit(u, v, x0, 178, 34, 56) || ((v - 178) % pitch[i]) == 0) ? K : W;
+    }
+    return W;
+  }
+  // right block
+  if (in_rect(u, v, 488, 18, 214, 220)) {
+    if (frame_hit(u, v, 488, 18, 214, 220)) return K;
+    static const uint8_t rp[4][2] = { {K, R}, {W, R}, {W, Y}, {Y, R} };
+    for (int r = 0; r < 4; r++) if (in_rect(u, v, 492, 22 + r * 24, 198, 20)) return frame_hit(u, v, 492, 22 + r * 24, 198, 20) ? (uint8_t)K : mix(u, v, rp[r][0], rp[r][1], ((u - 492) / 22) * 8);
+    static const uint8_t cc[4] = { K, K, R, Y }, cell[4] = { 1, 2, 1, 1 };
+    for (int i = 0; i < 4; i++) {
+      int x0 = 492 + i * 50;
+      if (in_rect(u, v, x0, 124, 48, 56)) { if (frame_hit(u, v, x0, 124, 48, 56)) return K; return ((((u - x0) / cell[i]) + ((v - 124) / cell[i])) & 1) ? (uint8_t)W : cc[i]; }
+      if (in_rect(u, v, x0, 186, 48, 48)) return frame_hit(u, v, x0, 186, 48, 48) ? (uint8_t)K : (uint8_t)i;
+    }
+    return W;
+  }
+  // centre: circles
+  { int x = 10 * u + 5 - 3600, y = 10 * v + 5 - 1280;
+    if (in_ring(u, v, 360, 128, 52)) return K;
+    if (x * x + y * y < 520 * 520) { int dx = x < 0, dy = y < 0; return dx ? (dy ? W : R) : (dy ? Y : K); }
+    if (in_ring(u, v, 360, 128, 118)) return K; }
+  { int y0 = (u * 510 + 719) / 1438; if (v == y0 || v == 255 - y0) return K; }
+  if (((u - 360) % 32) == 0 || v == 255 || (v >= 0 && ((v - 128) % 32) == 0)) return K;
+  return W;
+}
+
+// ---- TAG HARDWARE screen
+static char hw_label[DEMO_HW_ITEMS][16], hw_value[DEMO_HW_ITEMS][47];
+void demo_hw_clear(void) { memset(hw_label, 0, sizeof hw_label); memset(hw_value, 0, sizeof hw_value); }
+void demo_hw_set(uint8_t i, const char *label, const char *value)
+{
+  if (i >= DEMO_HW_ITEMS) return;
+  strncpy(hw_label[i], label, 15); hw_label[i][15] = 0;
+  strncpy(hw_value[i], value, 46); hw_value[i][46] = 0;
+}
+// a glyph pixel of string s at (x, y) relative to its top left corner, scale 1 or 2; 0 = outside / not set
+static int glyph_hit(const char *s, int x, int y, int scale)
+{
+  if (x < 0 || y < 0 || y >= 14 * scale) return 0;
+  int ci = x / (7 * scale), n = (int)strlen(s);
+  if (ci >= n) return 0;
+  unsigned char ch = (unsigned char)s[ci];
+  if (ch < 32 || ch > 126) return 0;
+  int gx = (x % (7 * scale)) / scale, gy = y / scale;
+  return (demo_font7x14[ch - 32][gy] >> (7 - gx)) & 1;
+}
+static uint8_t px_hw(int u, int v)
+{
+  if (u < 3 || v < 3 || u >= 717 || v >= 253) return K;
+  if (v < 36) {                                          // title bar
+    if (glyph_hit("TAG HARDWARE", u - 16, v - 6, 2)) return W;
+    if (glyph_hit("SES V300", u - 640, v - 11, 1)) return Y;
+    return K;
+  }
+  if (v < 39) return Y;
+  if (u == 359 || u == 360) return (v & 1) ? W : K;
+  int col = u >= 360, x = u - (col ? 376 : 16), y0 = v - 46, row = y0 / 41, ly = y0 % 41;
+  int idx = col ? 5 + row : row;
+  if (y0 < 0 || x < 0 || row > 4 || idx >= DEMO_HW_ITEMS || !hw_label[idx][0]) return W;
+  if (ly == 39) return ((u & 3) == 0) ? K : W;
+  if (glyph_hit(hw_label[idx], x, ly, 1)) return R;
+  if (glyph_hit(hw_value[idx], x, ly - 16, 1)) return K;
+  return W;
+}
+
+static uint8_t px_newton(int u, int v)                       // Newton fractal of z^3 = 1, Q16 fixed point
+{
+  const int Q = 16;
+  const int64_t st = (int64_t)(5.2 / 720 * (1 << Q) + 0.5);
+  int32_t zr = (int32_t)((u - 360) * st), zi = (int32_t)((v - 128) * st);
+  static const int32_t rootr[3] = { 1 << 16, -(1 << 15), -(1 << 15) }, rooti[3] = { 0, 56756, -56756 };   // 1, -1/2 +- i sqrt(3)/2
+  for (int it = 0; it < 24; it++) {
+    for (int k = 0; k < 3; k++) {
+      int64_t dr = zr - rootr[k], di = zi - rooti[k];
+      if ((dr * dr + di * di) >> Q < 40) {                  // converged: colour by root, dark rings by the iteration count
+        static const uint8_t col[3] = { W, Y, R };
+        return (it < 2) ? col[k] : ((it & 1) ? col[k] : (uint8_t)K);
+      }
+    }
+    int64_t sr = ((int64_t)zr * zr - (int64_t)zi * zi) >> Q, si = ((int64_t)2 * zr * zi) >> Q;   // z^2
+    int64_t den = (sr * sr + si * si) >> Q;                  // |z^2|^2
+    if (den < 16) return K;
+    int64_t ir = (sr << Q) / den, ii = (-si << Q) / den;   // 1 / z^2 = conj(z^2) / |z^2|^2
+    zr = (int32_t)((2 * (int64_t)zr + ir) / 3); zi = (int32_t)((2 * (int64_t)zi + ii) / 3);
+  }
+  return K;
+}
+static uint8_t px_carpet(int u, int v)
+{
+  int x = u + 24, y = v;                                   // 81 x 81 cells tiled: 27-pixel squares, three levels (27, 9, 3) and the pixel level
+  for (int s = 27; s >= 1; s /= 3) if (((x / s) % 3 == 1) && ((y / s) % 3 == 1)) return (uint8_t)(((x / (s * 3) + y / (s * 3)) & 1) ? R : (s == 27 ? Y : K));
+  return W;
+}
+
 uint8_t demo_px(uint8_t pattern, int u, int v)
 {
+  if (pattern == DEMO_PAT_HW) return px_hw(u, v);
   switch (pattern) {
     case 0: return px_calib(u, v);
     case 1: return px_chess(u, v);
-    case 2: return px_fractal(u, v, 0);
-    case 3: return px_fractal(u, v, 1);
-    case 4: return px_sierp(u, v);
-    case 5: return px_zone(u, v);
-    case 6: return px_ramps(u, v);
-    default: return px_truchet(u, v);
+    case 2: return px_julia(u, v);
+    case 3: return px_sierp(u, v);
+    case 4: return px_ramps(u, v);
+    case 5: return px_truchet(u, v);
+    case 6: return px_tv(u, v);
+    case 7: return px_carpet(u, v);
+    default: return px_newton(u, v);
   }
 }
 

@@ -149,7 +149,7 @@
     <div class="ctl sel"><span></span><span class="sub"><span id="cTempInfo" class="n" style="margin:0"></span></span></div>
     <div class="ctl sel"><span>Полная перерисовка</span><span class="sub"><input type="number" id="cClean" min="0" max="250" style="width:80px" disabled> смен <select id="cCleanMode" disabled><option value="0">белый</option><option value="1">чёрный + белый</option><option value="2">полный цикл (~2 мин)</option></select> <span class="n" style="margin:0">после стольких смен слайда экран сначала очищается выбранной серией заливок (убирает «призраки»); 0 — никогда. Полный цикл: чёрный, белый, красный, жёлтый, белый</span></span></div>
     <div class="ctl sel"><span>Мощность Bluetooth</span><span class="sub"><select id="cTx"></select><span id="cTxAct" class="n" style="margin:0"></span></span></div>
-    <div class="ctl sel"><span>Режимы</span><span class="sub"><label><input type="checkbox" id="cDeep" disabled> глубокий сон EM2 (экономия батареи)</label> <label><input type="checkbox" id="cOd" disabled> совместимость с OpenDisplay</label> <label><input type="checkbox" id="cTAuto" disabled> температуру для экрана брать с датчика метки</label><span id="cFlagInfo" class="n" style="margin:0"></span></span></div>
+    <div class="ctl sel"><span>Режимы</span><span class="sub"><label><input type="checkbox" id="cDeep" disabled> глубокий сон EM2 (экономия батареи)</label> <label><input type="checkbox" id="cOd" disabled> совместимость с OpenDisplay</label> <label><input type="checkbox" id="cTAuto" disabled> температуру для экрана брать с датчика панели</label><span id="cFlagInfo" class="n" style="margin:0"></span></span></div>
     <div class="ctl sel"><span>NFC-касание</span><span class="sub"><label><input type="checkbox" id="cNfc" disabled> касание телефоном листает слайд</label><span id="cNfcInfo" class="n" style="margin:0"></span></span></div>
     <div class="ctl sel"><span>Батарея</span><span class="sub"><span id="cBattInfo" class="n" style="margin:0">—</span><span>предупреждение <input type="number" id="cBattLow" min="2.1" max="4" step="0.05" style="width:80px" disabled> В, критический <input type="number" id="cBattCrit" min="2.05" max="4" step="0.05" style="width:80px" disabled> В <span class="n" style="margin:0">пять CR2450 параллельно; ниже критического уровня автосмена слайдов и очистка останавливаются, ручные команды работают</span></span></span></div>
     <div class="row"><button class="p" id="bCfg" disabled>Применить и сохранить в метке</button><button id="bCfgGet" disabled>Прочитать из метки</button></div>
@@ -168,6 +168,10 @@
       <div class="kv" id="pnKv"></div>
       <h3>Управление</h3>
       <div class="row"><button id="bShowNext" disabled>Следующий слайд</button><button id="bSplash" disabled>Заставка</button></div>
+      <div class="n"><b>Демо-тур</b> (для съёмки): из чего он состоит, выбирается галочками: заставка, картинки, слайд, экран TAG HARDWARE с данными метки; в конце метка возвращает прежний слайд. Картинки рисует сама метка. Через 10 секунд после запуска страница отключается и тур начинается, чтобы в кадре осталась одна метка; касание метки останавливает тур после текущего экрана. Обычная смена слайдов на время тура ждёт.</div>
+      <div class="row"><label><input type="checkbox" id="demoSplash" checked> заставка</label><label><input type="checkbox" id="demoHw" checked> экран с данными железа</label></div>
+      <div class="row" id="demoPics"></div>
+      <div class="row"><label>Слайд в туре <select id="demoSlot"><option value="0">без слайда</option><option value="1">слот 1</option><option value="2">слот 2</option><option value="3">слот 3</option><option value="4">слот 4</option><option value="5">слот 5</option><option value="6">слот 6</option><option value="7">слот 7</option><option value="8">слот 8</option><option value="9">слот 9</option><option value="10">слот 10</option></select></label><button id="bDemo2" disabled>Запустить тур</button><button id="bDemoStop" disabled>Остановить тур</button></div>
       <div class="row"><span class="n" style="margin:0">Заливка (чистит остаточные изображения):</span>
         <button class="fill" data-c="0" disabled>Чёрный</button><button class="fill" data-c="1" disabled>Белый</button><button class="fill" data-c="2" disabled>Жёлтый</button><button class="fill" data-c="3" disabled>Красный</button></div>
       <div class="row"><span class="n" style="margin:0">Очистка (серия заливок):</span>
@@ -284,7 +288,7 @@
 /* ===== i18n: Russian is the source language, English comes from these tables (switch in the header, remembered in the browser) ===== */
 const EN_JS = new Map([
   ['нужна прошивка 2.0','needs firmware 2.0'],
-  ['Все режимы по умолчанию выключены. Глубокий сон действует, когда окно Bluetooth закрыто; после касания телефона метка просыпается. После включения OpenDisplay метка видна приложениям OpenDisplay как экран с кадром 720 × 256. Датчик температуры: перед каждым обновлением экрана метка берёт температуру кристалла (в покое она близка к температуре воздуха) вместо числа из поля «Температура панели».','All modes are off by default. Deep sleep applies while the Bluetooth window is closed; the tag wakes when a phone taps it. With OpenDisplay on, OpenDisplay apps see the tag as a display with a 720 × 256 frame. Temperature sensor: before every screen update the tag takes the die temperature (at rest close to the air temperature) instead of the number in the Panel temperature field.'],
+  ['Все режимы по умолчанию выключены. Глубокий сон действует, когда окно Bluetooth закрыто; после касания телефона метка просыпается. После включения OpenDisplay метка видна приложениям OpenDisplay как экран с кадром 720 × 256. Датчик температуры: перед каждым обновлением экрана метка читает температуру у самой панели (если ответ неправдоподобен, берёт температуру кристалла) вместо числа из поля «Температура панели».','All modes are off by default. Deep sleep applies while the Bluetooth window is closed; the tag wakes when a phone taps it. With OpenDisplay on, OpenDisplay apps see the tag as a display with a 720 × 256 frame. Temperature sensor: before every screen update the tag reads the temperature next to the panel itself (if the answer is implausible it uses the die temperature) instead of the number in the Panel temperature field.'],
   ['\nТемпература панели (опыт, команда 0x40, не подтверждена для этого контроллера): сырое ','\nPanel temperature (experimental, command 0x40, unconfirmed for this controller): raw '],
   [' — похоже на отсутствие ответа, датчик не читается.',' — looks like no answer, the sensor is not readable.'],
   [' — если это формат UC81xx, старший байт = ',' — if this is the UC81xx format, the high byte = '],
@@ -392,6 +396,16 @@ const EN_JS = new Map([
   ['отключение DC/DC: таймаут','DC/DC off: timeout'],
   ['flash не отвечает при выводе слайда','flash does not respond while a slide is being sent'],
   ['заставка','splash'],
+  ['демо','demo'],
+  ['Калибровочная таблица','Calibration chart'],
+  ['Шахматки','Chessboards'],
+  ['Множество Жюлиа','Julia set'],
+  ['Треугольник Серпинского','Sierpinski triangle'],
+  ['Градиенты тонов','Tone gradients'],
+  ['Дуги Трюше','Truchet arcs'],
+  ['ТВ-таблица','TV test chart'],
+  ['Ковёр Серпинского','Sierpinski carpet'],
+  ['Фрактал Ньютона','Newton fractal'],
   ['слот','slot'],
   ['заливка','fill'],
   ['запущено (около 30 с)','started (about 30 s)'],
@@ -921,7 +935,7 @@ const EN_HTML = new Map([
   ["Просмотр","View"],
   ["Обновить список с метки","Refresh list from the tag"],
   ["Показать следующий сейчас","Show the next one now"],
-  ["температуру для экрана брать с датчика метки","take the screen temperature from the tag's sensor"],
+  ["температуру для экрана брать с датчика панели","take the screen temperature from the panel's sensor"],
   ["Запись в NFC-метку","Write to the NFC tag"],
   ["Что увидит телефон, если приложить его к метке. На время записи уберите телефон от метки дальше чем на 30 см.","What a phone shows when it is held to the tag. Keep the phone more than 30 cm away from the tag while writing."],
   ["Записать в чип","Write to the chip"],
@@ -974,6 +988,26 @@ const EN_HTML = new Map([
   ["Управление","Control"],
   ["Следующий слайд","Next slide"],
   ["Заставка","Splash"],
+  ["Демо-тур","Demo tour"],
+  ["Демо начнётся через 10 секунд, страница отключится","The demo starts in 10 seconds, the page disconnects"],
+  ["Ничего не выбрано","Nothing selected"],
+  ["экран с данными железа","hardware data screen"],
+  ["заставка","splash"],
+  ["(для съёмки): из чего он состоит, выбирается галочками: заставка, картинки, слайд, экран TAG HARDWARE с данными метки; в конце метка возвращает прежний слайд. Картинки рисует сама метка. Через 10 секунд после запуска страница отключается и тур начинается, чтобы в кадре осталась одна метка; касание метки останавливает тур после текущего экрана. Обычная смена слайдов на время тура ждёт.","(for filming): what it consists of is chosen with the checkboxes: splash, pictures, slide, the TAG HARDWARE screen with the tag's data; at the end the tag puts the earlier slide back. The tag draws the pictures itself. 10 seconds after the start the page disconnects and the tour begins, so that only the tag is in the frame; a touch of the tag stops the tour after the current screen. The normal slide change waits during the tour."],
+  ["Слайд в туре","Slide in the tour"],
+  ["слот 1","slot 1"],
+  ["слот 2","slot 2"],
+  ["слот 3","slot 3"],
+  ["слот 4","slot 4"],
+  ["слот 5","slot 5"],
+  ["слот 6","slot 6"],
+  ["слот 7","slot 7"],
+  ["слот 8","slot 8"],
+  ["слот 9","slot 9"],
+  ["слот 10","slot 10"],
+  ["без слайда","no slide"],
+  ["Запустить тур","Start the tour"],
+  ["Остановить тур","Stop the tour"],
   ["Заливка (чистит остаточные изображения):","Fill (cleans ghost images):"],
   ["Чёрный","Black"],
   ["Белый","White"],
@@ -1630,7 +1664,7 @@ const cmd = (arr, what) => sendRetry(arr, true).catch(e => { log((what || TT('к
 
 const PN_STATE = ['не запускалось', 'идёт обновление', 'готово', 'ошибка'];
 const PN_ERR = { 0: 'нет', 1: 'BUSY панели не поднялся после сброса', 2: 'ID чипа панели не 0x0D04', 3: 'OTP: таймаут', 4: 'OTP: таймаут в конце', 5: 'нет метки в OTP', 6: 'BUSY после второго сброса', 7: 'инициализация: таймаут', 8: 'DC/DC: таймаут', 9: 'обновление: таймаут', 10: 'отключение DC/DC: таймаут', 11: 'flash не отвечает при выводе слайда' };
-const PN_SRC = ['—', 'заставка', 'слот', 'заливка'];
+const PN_SRC = ['—', 'заставка', 'слот', 'заливка', 'демо'];
 const RES_TXT = ['запущено (около 30 с)', 'экран ещё обновляется', 'в слоте нет кадра 720×256', 'flash занята (загрузка или тест)', 'опасная команда заблокирована: приложите телефон к метке (NFC) и повторите в течение 60 с'];
 const STEP_PCT = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 25, 28, 55, 78, 80, 82, 84, 86, 90, 95, 100, 100];
 const STEP_TXT = s => s === 0 ? TT('ожидание') : s <= 8 ? TT('включение и сброс панели') : s === 9 ? TT('идентификатор панели') : s <= 13 ? TT('чтение OTP') : s <= 15 ? TT('инициализация') : s === 16 ? TT('передача изображения') : s === 17 ? TT('включение DC/DC') : s === 18 ? TT('смена изображения (≈ 19 с)') : s <= 24 ? TT('остановка DC/DC') : s <= 26 ? TT('выключение') : TT('готово');
@@ -1708,7 +1742,7 @@ function onDisc() { log(TT('соединение закрыто')); setConn(fals
 function setConn(on) {
   $('connPill').classList.toggle('on', on); $('connTxt').textContent = on ? TT('подключено: ') + (dev ? dev.name : '') : TT('не подключено');
   $('bConn').disabled = $('bConnAll').disabled = on; $('bDisc').disabled = !on;
-  for (const id of ['bSlots', 'bNext', 'bEraseAll', 'bCfg', 'bCfgGet', 'bShowNext', 'bSplash', 'bReboot', 'bHw', 'bPing', 'bStat', 'bReset', 'bRam', 'bPdiag', 'bPdiagGet', 'bClk', 'bClkGet', 'bPm1', 'bPm2', 'bPm3', 'bPmStop', 'bPmClr', 'bScan', 'bScanPwr', 'bScanStop', 'bScanGet', 'bNfcSnap', 'bNfcLive', 'bNfcStop', 'bNfcGet', 'bNfcBk', 'bNfcWr', 'bNfcRestore', 'bNfcUnlock', 'bNfcFind', 'bNfcRescue', 'bFInfo', 'bFErase', 'bFProg', 'bFScan', 'bVer']) $(id).disabled = !on;
+  for (const id of ['bSlots', 'bNext', 'bEraseAll', 'bCfg', 'bCfgGet', 'bShowNext', 'bSplash', 'bDemo2', 'bDemoStop', 'bReboot', 'bHw', 'bPing', 'bStat', 'bReset', 'bRam', 'bPdiag', 'bPdiagGet', 'bClk', 'bClkGet', 'bPm1', 'bPm2', 'bPm3', 'bPmStop', 'bPmClr', 'bScan', 'bScanPwr', 'bScanStop', 'bScanGet', 'bNfcSnap', 'bNfcLive', 'bNfcStop', 'bNfcGet', 'bNfcBk', 'bNfcWr', 'bNfcRestore', 'bNfcUnlock', 'bNfcFind', 'bNfcRescue', 'bFInfo', 'bFErase', 'bFProg', 'bFScan', 'bVer']) $(id).disabled = !on;
   nfcButtons();
   document.querySelectorAll('.fill').forEach(b => b.disabled = !on);
   updateUpButtons(); renderSlots();
@@ -1730,13 +1764,13 @@ function renderTag() {
   if (s.pst === 1) progPct('pn', TT('Экран обновляется: ') + STEP_TXT(s.step), STEP_PCT[Math.min(s.step, 27)], 0, 0); else progOff('pn');
   $('pnBar').style.width = (s.pst === 1 ? STEP_PCT[Math.min(s.step, 27)] : s.pst === 0 ? 0 : 100) + '%';
   $('pnKv').innerHTML = '';
-  const rows = [[TT('Показано'), s.src === 2 ? TT('слот ') + s.shown : s.src === 3 ? TT('заливка ') + [TT('чёрная'), TT('белая'), TT('жёлтая'), TT('красная')][s.shown & 3] : TT(PN_SRC[s.src])], [TT('Ошибка панели'), s.perr ? TT(PN_ERR[s.perr]) || s.perr : TT('нет')],
+  const rows = [[TT('Показано'), s.src === 2 ? TT('слот ') + s.shown : s.src === 3 ? TT('заливка ') + [TT('чёрная'), TT('белая'), TT('жёлтая'), TT('красная')][s.shown & 3] : s.src === 4 ? TT('демо ') + (s.shown + 1) : TT(PN_SRC[s.src])], [TT('Ошибка панели'), s.perr ? TT(PN_ERR[s.perr]) || s.perr : TT('нет')],
     [TT('Обновлений с запуска'), s.count], [TT('Расхождений CRC слота'), s.crcBad], [TT('До автосмены'), '<span id="kvNext">' + fmtT(nextLeft()) + '</span>'], [TT('Работает'), fmtUp(s.upS)]];
   for (const [k, v] of rows) { const a = document.createElement('div'), b = document.createElement('div'); a.textContent = k; b.innerHTML = v; $('pnKv').append(a, b); }
 }
 function renderSlideInfo() {
   const s = tag.st, c = tag.cfg; if (!s) { $('slideInfo').textContent = ''; return; }
-  $('slideInfo').textContent = (s.pst === 1 ? TT('Экран обновляется (') + STEP_TXT(s.step) + '). ' : '') + (c && c.en ? TT('Следующая смена через ') + fmtT(nextLeft()) + '. ' : TT('Автосмена выключена. ')) + TT('Показано: ') + (s.src === 2 ? TT('слот ') + s.shown : TT(PN_SRC[s.src])) + '.';
+  $('slideInfo').textContent = (s.pst === 1 ? TT('Экран обновляется (') + STEP_TXT(s.step) + '). ' : '') + (c && c.en ? TT('Следующая смена через ') + fmtT(nextLeft()) + '. ' : TT('Автосмена выключена. ')) + TT('Показано: ') + (s.src === 2 ? TT('слот ') + s.shown : s.src === 4 ? TT('демо ') + (s.shown + 1) : TT(PN_SRC[s.src])) + '.';
 }
 const RST_BITS = [[0, 'включение питания'], [1, 'сброс по выводу RESET'], [2, 'выход из EM4'], [3, 'сторожевой таймер'], [4, 'просадка питания'], [5, 'зависание ядра'], [6, 'программный сброс'], [7, 'ошибка питания DECOUPLE']];
 function renderHw() {
@@ -1804,6 +1838,17 @@ $('bEraseAll').onclick = () => { if (confirm(TT('Стереть все 10 сла
 $('bNext').onclick = () => cmd([0x33], TT('следующий'));
 $('bShowNext').onclick = () => cmd([0x33], TT('следующий'));
 $('bSplash').onclick = () => cmd([0x39], TT('заставка'));
+const DEMO_PICS = [[0, 'Калибровочная таблица'], [1, 'Шахматки'], [2, 'Множество Жюлиа'], [3, 'Треугольник Серпинского'], [4, 'Градиенты тонов'], [5, 'Дуги Трюше'], [6, 'ТВ-таблица'], [7, 'Ковёр Серпинского'], [8, 'Фрактал Ньютона']];
+for (const [id, name] of DEMO_PICS) { const l = document.createElement('label'); l.style.marginRight = '12px'; const c = document.createElement('input'); c.type = 'checkbox'; c.dataset.demo = id; c.checked = true; l.append(c, ' ' + TT(name)); $('demoPics').append(l); }
+$('bDemo2').onclick = () => {
+  let m = 0; document.querySelectorAll('#demoPics input').forEach(c => { if (c.checked) m |= 1 << +c.dataset.demo; });
+  if ($('demoSplash').checked) m |= 0x1000; if ($('demoHw').checked) m |= 0x2000;
+  if (!m && !+$('demoSlot').value) { toast(TT('Ничего не выбрано'), true); return; }
+  cmd([0x3F, 0x40, 0xFF, m & 255, m >> 8 & 255, +$('demoSlot').value], TT('демо'));
+  toast(TT('Демо начнётся через 10 секунд, страница отключится'));
+  setTimeout(() => { if (connected()) dev.gatt.disconnect(); }, 10000);
+};
+$('bDemoStop').onclick = () => cmd([0x3F, 0x40, 0], TT('демо'));
 document.querySelectorAll('.fill').forEach(b => b.onclick = () => cmd([0x38, +b.dataset.c], TT('заливка')));
 $('bReboot').onclick = () => { if (confirm(TT('Перезагрузить метку? Соединение прервётся, на экране снова появится заставка (около 30 с).'))) cmd([0x36, 0xA5], TT('перезагрузка')); };
 $('bHw').onclick = async () => { tag.hw = {}; renderHw(); await cmd([0x37], 'hw'); };
@@ -1826,7 +1871,7 @@ function fillCfg() {
   $('cClean').disabled = c.clean === undefined; $('cClean').value = c.clean === undefined ? '' : c.clean;
   $('cCleanMode').disabled = c.cleanMode === undefined; $('cCleanMode').value = c.cleanMode === undefined ? 0 : c.cleanMode;
   $('cDeep').disabled = $('cOd').disabled = $('cTAuto').disabled = c.flags === undefined; $('cDeep').checked = !!(c.flags & 1); $('cOd').checked = !!(c.flags & 2); $('cTAuto').checked = !!(c.flags & 4);
-  $('cFlagInfo').textContent = c.flags === undefined ? TT('нужна прошивка 2.0') : TT('Все режимы по умолчанию выключены. Глубокий сон действует, когда окно Bluetooth закрыто; после касания телефона метка просыпается. После включения OpenDisplay метка видна приложениям OpenDisplay как экран с кадром 720 × 256. Датчик температуры: перед каждым обновлением экрана метка берёт температуру кристалла (в покое она близка к температуре воздуха) вместо числа из поля «Температура панели».');
+  $('cFlagInfo').textContent = c.flags === undefined ? TT('нужна прошивка 2.0') : TT('Все режимы по умолчанию выключены. Глубокий сон действует, когда окно Bluetooth закрыто; после касания телефона метка просыпается. После включения OpenDisplay метка видна приложениям OpenDisplay как экран с кадром 720 × 256. Датчик температуры: перед каждым обновлением экрана метка читает температуру у самой панели (если ответ неправдоподобен, берёт температуру кристалла) вместо числа из поля «Температура панели».');
   $('cNfc').disabled = c.nfc === undefined; $('cNfc').checked = !!c.nfc;
   $('cNfcInfo').textContent = c.nfc === undefined ? TT('нужна прошивка 1.7 или новее') : TT('касаний с запуска метки: ') + c.taps + TT('. Касание телефоном всегда включает Bluetooth метки на 90 секунд; с галочкой оно ещё и листает слайд.');
 }

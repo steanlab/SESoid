@@ -16,6 +16,7 @@ source:
 - {path: ble_panel.c}
 - {path: ble_splash.c}
 - {path: ble_demo.c}
+- {path: ble_font7x14.c}
 - {path: ble_slide.c}
 - {path: ble_ctl.c}
 - {path: ble_sys.c}
