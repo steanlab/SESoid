@@ -4,9 +4,7 @@ Firmware and control page for the SES-imagotag V300 5.9" BWRY GU510, a four-colo
 
 
 
-https://github.com/user-attachments/assets/6f2ca2d5-14f1-40ce-aa37-a45791aea135
-
-
+https://github.com/user-attachments/assets/186bc194-f564-40d1-857a-5786471e9222
 
 
 
