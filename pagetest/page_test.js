@@ -237,6 +237,9 @@ const MOCK = `
   await pg.click('[data-t=cfg]');
   await pg.selectOption('#cInt', '5'); await pg.selectOption('#cMode', '1'); await pg.selectOption('#cTx', '-10'); await pg.fill('#cTemp', '24'); await pg.fill('#cClean', '7'); await pg.selectOption('#cCleanMode', '2');
   await pg.waitForTimeout(300);
+  { const bp = await pg.evaluate(() => ({ b: document.getElementById('battPill').hidden ? null : document.getElementById('battPill').textContent, t: document.getElementById('tempPill').hidden ? null : document.getElementById('tempPill').textContent }));
+    ok(bp.b && bp.b.includes('2.92') && bp.t && bp.t.includes('24'), 'header shows battery and panel temperature: ' + JSON.stringify(bp));
+    ok(process.env.LOC !== 'en-US' || !/[А-Яа-яЁё]/.test(bp.b + bp.t), 'header pills have no Russian in English mode'); }
   ok((await pg.textContent('#cBattInfo')).includes('2.92') && (await pg.inputValue('#cBattLow')) === '2.70' && (await pg.inputValue('#cBattCrit')) === '2.50', 'battery report shown: ' + await pg.textContent('#cBattInfo'));
   await pg.check('#cDeep'); await pg.check('#cOd'); await pg.check('#cTAuto');
   await pg.fill('#cBattLow', '2.8'); await pg.fill('#cBattCrit', '2.6');

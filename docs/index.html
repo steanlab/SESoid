@@ -42,6 +42,7 @@
   header { padding:14px 16px 8px; max-width:1100px; margin:0 auto; display:flex; flex-wrap:wrap; gap:10px 16px; align-items:center; }
   header h1 { font-size:20px; margin:0; letter-spacing:.2px; } header h1 small { font-weight:400; color:var(--mut); font-size:13px; margin-left:6px; }
   .pill { display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border:1px solid var(--line); border-radius:99px; background:var(--card); font-size:13px; }
+  .pill[hidden] { display:none; } .pill.warn { color:var(--warn); border-color:var(--warn); } .pill.bad { color:var(--bad); border-color:var(--bad); }
   .dot { width:9px; height:9px; border-radius:50%; background:var(--mut); } .on .dot { background:var(--ok); }
   nav { max-width:1100px; margin:0 auto; padding:0 12px; display:flex; flex-wrap:wrap; gap:4px; border-bottom:1px solid var(--line); }
   nav button { border:0; background:none; color:var(--mut); padding:9px 12px; font:inherit; border-bottom:2px solid transparent; cursor:pointer; margin:0; border-radius:0; }
@@ -95,6 +96,7 @@
 <header>
   <h1>Gecko Slide <small>Страница управления электронными метками SES Imagotag. Проверено на V300 5.9″ BWRY</small></h1>
   <span class="pill" id="connPill"><span class="dot"></span><span id="connTxt">не подключено</span></span>
+  <span class="pill" id="battPill" hidden></span><span class="pill" id="tempPill" hidden></span>
   <button id="bLang" title="Language / Язык">EN</button><button class="p" id="bConn">Подключиться</button><button id="bConnAll" title="Показать в окне выбора все Bluetooth-устройства без фильтра по имени: если метка видна только так, дело в имени в рекламе">Все устройства</button><button id="bDisc" disabled>Отключиться</button><button id="bInstall" hidden title="Установить как приложение: откроется в своём окне и будет работать без интернета">Установить приложение</button><span class="pill" id="pwaPill" hidden title="Страница сохранена в браузере и откроется без интернета"><span class="dot"></span>работает офлайн</span>
 </header>
 <div id="prog" aria-live="polite"><div id="pst"></div><div id="pbar"><i></i></div><div id="pdet"></div></div>
@@ -435,6 +437,14 @@ const EN_JS = new Map([
   ['Ковёр Серпинского','Sierpinski carpet'],
   ['Фрактал Ньютона','Newton fractal'],
   ['Фрактал Нова','Nova fractal'],
+  ['батарея ','battery '],
+  ['измерено ','measured '],
+  [' В',' V'],
+  [', низкий заряд',', low'],
+  [', критический',', critical'],
+  ['батарея: не измерена','battery: not measured yet'],
+  ['панель ','panel '],
+  ['температура, переданная панели при последнем обновлении экрана (датчик панели, при отказе датчик микроконтроллера)','temperature given to the panel at the last screen update (panel sensor, chip sensor if it fails)'],
   ['Кривая Гильберта','Hilbert curve'],
   ['Папоротник Барнсли','Barnsley fern'],
   ['слот','slot'],
@@ -1775,12 +1785,13 @@ function setConn(on) {
   for (const id of ['bSlots', 'bNext', 'bEraseAll', 'bCfg', 'bCfgGet', 'bShowNext', 'bSplash', 'bDemo2', 'bDemoStop', 'bReboot', 'bHw', 'bPing', 'bStat', 'bReset', 'bRam', 'bPdiag', 'bPdiagGet', 'bClk', 'bClkGet', 'bPm1', 'bPm2', 'bPm3', 'bPmStop', 'bPmClr', 'bScan', 'bScanPwr', 'bScanStop', 'bScanGet', 'bNfcSnap', 'bNfcLive', 'bNfcStop', 'bNfcGet', 'bNfcBk', 'bNfcWr', 'bNfcRestore', 'bNfcUnlock', 'bNfcFind', 'bNfcRescue', 'bFInfo', 'bFErase', 'bFProg', 'bFScan', 'bVer']) $(id).disabled = !on;
   nfcButtons();
   document.querySelectorAll('.fill').forEach(b => b.disabled = !on);
-  updateUpButtons(); renderSlots();
+  updateUpButtons(); renderSlots(); renderHeadPills();
 }
 $('bConn').onclick = () => connect();
 $('bConnAll').onclick = () => connect(true);
 $('bDisc').onclick = () => { if (connected()) dev.gatt.disconnect(); };
 setInterval(() => { if (connected() && !busy && document.visibilityState === 'visible') cmd([0x30]); }, 5000);
+setInterval(() => { if (connected() && !busy && document.visibilityState === 'visible') cmd([0x35]); }, 60000);   // battery and temperature in the header
 setInterval(() => { if (tag.st) { renderSlideInfo(); renderTagCountdown(); } }, 1000);
 
 /* ---------- отображение состояния метки ---------- */
@@ -1906,8 +1917,19 @@ function fillCfg() {
   $('cNfc').disabled = c.nfc === undefined; $('cNfc').checked = !!c.nfc;
   $('cNfcInfo').textContent = c.nfc === undefined ? TT('нужна прошивка 1.7 или новее') : TT('касаний с запуска метки: ') + c.taps + TT('. Касание телефоном всегда включает Bluetooth метки на 90 секунд; с галочкой оно ещё и листает слайд.');
 }
+function renderHeadPills() {                      // battery and panel temperature in the header, only while connected
+  const bp = $('battPill'), tp = $('tempPill'), b = connected() ? tag.batt : null;
+  bp.hidden = tp.hidden = !b;
+  if (!b) return;
+  bp.textContent = b.mv ? TT('батарея ') + (b.mv / 1000).toFixed(2) + TT(' В') + (b.level === 1 ? TT(', низкий заряд') : b.level === 2 ? TT(', критический') : '') : TT('батарея: не измерена');
+  bp.className = 'pill' + (b.level === 2 ? ' bad' : b.level === 1 ? ' warn' : '');
+  bp.title = b.mv ? TT('измерено ') + Math.round(b.age / 60) + TT(' мин назад') : '';
+  tp.hidden = b.tUsed === undefined;
+  if (b.tUsed !== undefined) { tp.textContent = TT('панель ') + b.tUsed + ' °C'; tp.title = TT('температура, переданная панели при последнем обновлении экрана (датчик панели, при отказе датчик микроконтроллера)'); }
+}
 function renderBatt() {
   const b = tag.batt; if (!b) return;
+  renderHeadPills();
   $('cBattLow').disabled = $('cBattCrit').disabled = false;
   $('cBattLow').value = ((2000 + 10 * b.low) / 1000).toFixed(2); $('cBattCrit').value = ((2000 + 10 * b.crit) / 1000).toFixed(2);
   const L = [TT('норма'), TT('низкий заряд'), TT('критический: автосмена остановлена')];
