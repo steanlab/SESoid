@@ -84,6 +84,8 @@ int16_t sys_temp_dc(void) { return 251; }
 bool panel_show_splash(void) { splashes++; pmodel(); if (pbusy) return false; pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_SPLASH; return true; }
 void panel_set_temp(int8_t c) { (void)c; }
 void panel_set_auto_temp(bool on) { (void)on; }
+static int rot_set = -1;
+void panel_set_rotate(bool on) { rot_set = on ? 1 : 0; }
 panel_status_t panel_status(void) { return pbusy ? PST_RUNNING : PST_DONE_OK; }
 uint8_t panel_error(void) { return perr; }
 panel_src_t panel_source(void) { return psrc; }
@@ -188,7 +190,9 @@ int main(void)
   // out of range values are clamped
   slide_cfg_t bad = { 2, 3, 5000, 0xFFFF, 120, 100, 0, 9, 255, 255, 255, 255 }; bad.clean_n = 255; bad.flags = 0xFF; slide_set_cfg(&bad);
   CHECK(slide_cfg()->enabled == 1 && slide_cfg()->mode == 1 && slide_cfg()->interval_min == 1440 && slide_cfg()->mask == 0x7FE && slide_cfg()->temp_c == 60 && slide_cfg()->tx_dbm == 20 && slide_cfg()->clean_n == 250, "clamping");
-  CHECK(slide_cfg()->flags == 7, "flags clamped to the three defined bits: %u", slide_cfg()->flags);
+  CHECK(slide_cfg()->flags == 15, "flags clamped to the four defined bits: %u", slide_cfg()->flags);
+  CHECK(rot_set == 1, "bit 3 turns the panel rotation on");
+  { slide_cfg_t r = *slide_cfg(); r.flags = 7; slide_set_cfg(&r); CHECK(rot_set == 0, "bit 3 clear turns it off"); r.flags = 8; slide_set_cfg(&r); CHECK(rot_set == 1, "bit 3 alone turns it on"); }
   bad.nfc = 7; slide_set_cfg(&bad); CHECK(slide_cfg()->nfc == 1, "nfc flag clamped to 1");
   // auto mode off
   bad.enabled = 0; bad.interval_min = 1; slide_set_cfg(&bad); CHECK(slide_next_in_s() == 0xFFFFFFFFu, "auto off must disable the countdown");

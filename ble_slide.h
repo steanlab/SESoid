@@ -21,7 +21,7 @@ typedef struct {
   uint8_t  clean_mode;     // what a full-screen cleaning does: 0 white, 1 black then white, 2 full cycle black, white, red, yellow, white (about 2 minutes)
   uint8_t  batt_low;       // battery warning threshold: 2000 + 10 * value millivolts (default 70 = 2.70 V)
   uint8_t  batt_crit;      // critical threshold, same scale (default 50 = 2.50 V): automatic slide changes and cleaning stop
-  uint8_t  flags;          // bit 0: deep sleep (EM2) while nothing needs the radio; bit 1: OpenDisplay compatibility (service 0x2446, see ble_od.h). bit 2: the panel temperature for the waveform comes from the chip sensor instead of the set value. All default off
+  uint8_t  flags;          // bit 0: deep sleep (EM2) while nothing needs the radio; bit 1: OpenDisplay compatibility (service 0x2446, see ble_od.h). bit 2: the panel temperature for the waveform comes from the chip sensor instead of the set value. bit 3: everything on the panel is turned by 180 degrees (case with the flex cable on the other side). All default off
   uint8_t  clean_n;        // 0 = never; otherwise after every N slide changes the next change is preceded by a white full-screen update (cleans ghosts)
 } slide_cfg_t;
 

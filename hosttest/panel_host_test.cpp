@@ -174,7 +174,7 @@ static void init_regs(void)
 }
 
 // ---- run
-enum { K_SPLASH, K_SLOT, K_SLOT_BADCRC, K_FILL_WHITE, K_SLOT_DEAD, K_DEMO, K_DEMO_HW };
+enum { K_SPLASH, K_SLOT, K_SLOT_BADCRC, K_FILL_WHITE, K_SLOT_DEAD, K_DEMO, K_DEMO_HW, K_SLOT_ROT, K_DEMO_ROT };
 static uint32_t frame_crc;
 static int run_once(const char *name, bool connected, uint32_t free_pattern, int kind)
 {
@@ -186,13 +186,15 @@ static int run_once(const char *name, bool connected, uint32_t free_pattern, int
   logf = fopen(fn, "w");
   memset((void *)&g_diag, 0, sizeof g_diag);
   flash_dead = (kind == K_SLOT_DEAD);
+  panel_set_rotate(kind == K_SLOT_ROT || kind == K_DEMO_ROT);
   bool started = false;
   switch (kind) {
     case K_SPLASH: started = panel_show_splash(); break;
-    case K_SLOT: case K_SLOT_DEAD: started = panel_show_slot(3, frame_crc); break;
+    case K_SLOT: case K_SLOT_DEAD: case K_SLOT_ROT: started = panel_show_slot(3, frame_crc); break;
     case K_SLOT_BADCRC: started = panel_show_slot(3, frame_crc ^ 1u); break;
     case K_FILL_WHITE: started = panel_show_fill(1); break;
     case K_DEMO: started = panel_show_demo(2) && !panel_show_demo(DEMO_COUNT); break;
+    case K_DEMO_ROT: started = panel_show_demo(2); break;
     case K_DEMO_HW: demo_hw_set(0, "TEST", "hardware screen"); started = panel_show_demo(DEMO_PAT_HW); break;
   }
   if (!started) { printf("[%s] panel_show failed to start\n", name); return 1; }
@@ -230,6 +232,25 @@ static int run_once(const char *name, bool connected, uint32_t free_pattern, int
     int diff = memcmp(img, flash_mem + FL_SLOT_BASE(3), 46080);
     printf("      slot frame equals flash content: %s | crc mismatch counter %u (expect %d)\n", diff ? "NO" : "yes", g_diag.pn_crc_bad, kind == K_SLOT_BADCRC);
     bad += (diff != 0) + (g_diag.pn_crc_bad != (kind == K_SLOT_BADCRC ? 1u : 0u));
+  }
+  if (kind == K_SLOT_ROT) {                     // the slot comes out turned by 180 degrees: line order and pixel order reversed; the CRC check is skipped for a turned picture
+    int diff = 0;
+    for (int l = 0; l < PANEL_LINES; l++) for (int i = 0; i < 64; i++) {
+      uint8_t s = flash_mem[FL_SLOT_BASE(3) + (PANEL_LINES - 1 - l) * 64 + (63 - i)];
+      uint8_t want = (uint8_t)(((s & 3u) << 6) | ((s & 0xCu) << 2) | ((s & 0x30u) >> 2) | ((s >> 6) & 3u));
+      if (img[l * 64 + i] != want) diff++;
+    }
+    printf("      slot turned by 180 degrees: bytes that differ from the reversed flash content: %d (expect 0), crc mismatch counter %u (expect 0)\n", diff, g_diag.pn_crc_bad);
+    bad += diff + (g_diag.pn_crc_bad != 0);
+  }
+  if (kind == K_DEMO_ROT) {
+    int diff = 0; uint8_t ln[64];
+    for (int l = 0; l < PANEL_LINES; l++) {
+      demo_gen_line(2, PANEL_LINES - 1 - l, ln);
+      for (int i = 0; i < 64; i++) { uint8_t s = ln[63 - i]; uint8_t want = (uint8_t)(((s & 3u) << 6) | ((s & 0xCu) << 2) | ((s & 0x30u) >> 2) | ((s >> 6) & 3u)); if (img[l * 64 + i] != want) diff++; }
+    }
+    printf("      demo picture turned by 180 degrees: bytes that differ: %d (expect 0)\n", diff);
+    bad += diff;
   }
   if (kind == K_FILL_WHITE) {
     int nonwhite = 0; for (int i = 0; i < 46080; i++) if (img[i] != 0x55) nonwhite++;
@@ -308,6 +329,9 @@ int main(void)
   bad += run_once("fill_white", false, 0, K_FILL_WHITE);
   bad += run_once("demo", false, 0, K_DEMO);
   bad += run_once("demo_hw", false, 0, K_DEMO_HW);
+  bad += run_once("slot_rot", false, 0, K_SLOT_ROT);
+  bad += run_once("demo_rot", true, 5, K_DEMO_ROT);
+  panel_set_rotate(false);
   bad += run_once("slot_flash_dead", false, 0, K_SLOT_DEAD);
   bad += run_diag("healthy", false, false);
   bad += run_diag("healthy_conn", true, false);

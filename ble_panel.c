@@ -234,8 +234,8 @@ static void start_reset(pstate_t ret, uint8_t e)
   st = S_RST1;
 }
 
-// one panel line (64 bytes) of the current picture; false = not available right now (flash busy)
-static bool get_line(int l, uint8_t *out)
+// one panel line (64 bytes) of the current picture as the source holds it; false = not available right now (flash busy)
+static bool get_line_src(int l, uint8_t *out)
 {
   switch (src) {
     case PSRC_SLOT: {
@@ -258,6 +258,19 @@ static bool get_line(int l, uint8_t *out)
       splash_gen_line(l, out);
       return true;
   }
+}
+
+static bool rotate_cfg, rot_run;                  // rotate_cfg: the setting; rot_run: what the picture being drawn now uses (latched when the picture starts)
+static uint8_t rev4(uint8_t b) { return (uint8_t)(((b & 3u) << 6) | ((b & 0xCu) << 2) | ((b & 0x30u) >> 2) | ((b >> 6) & 3u)); }   // the four 2-bit pixels of a byte in reverse order
+
+// one line as it goes to the panel: with the picture turned by 180 degrees the line order and the pixel order in each line are reversed
+static bool get_line(int l, uint8_t *out)
+{
+  if (!rot_run) return get_line_src(l, out);
+  uint8_t t[PANEL_LINE_BYTES];
+  if (!get_line_src(PANEL_LINES - 1 - l, t)) return false;
+  for (int i = 0; i < PANEL_LINE_BYTES; i++) out[i] = rev4(t[PANEL_LINE_BYTES - 1 - i]);
+  return true;
 }
 
 // ---- one step of the sequence (the state says what to do now)
@@ -378,6 +391,7 @@ static void run(void)
         img_open = true;
         run_crc = 0;
         pg_idx = -1;
+        rot_run = rotate_cfg;
       }
       int n = ll_connected() ? 1 : IMG_LINES_ADV;
       uint8_t line[PANEL_LINE_BYTES];
@@ -396,7 +410,7 @@ static void run(void)
       if (img_line >= PANEL_LINES) {
         pc_set(CS_PIN); pc_set(DC_PIN);
         img_open = false;
-        if (src == PSRC_SLOT && run_crc != slot_crc) g_diag.pn_crc_bad++;     // shown anyway; the number says the flash content was not what the record promised
+        if (src == PSRC_SLOT && !rot_run && run_crc != slot_crc) g_diag.pn_crc_bad++;     // shown anyway; the number says the flash content was not what the record promised
         st = S_ON;
       }
       break;
@@ -593,6 +607,7 @@ bool panel_show_fill(uint8_t code)
 
 void panel_set_temp(int8_t celsius) { temp_c = celsius; }
 void panel_set_auto_temp(bool on) { auto_temp = on; }
+void panel_set_rotate(bool on) { rotate_cfg = on; }
 int8_t panel_temp_used(void) { return temp_used; }
 bool panel_temp_sensor(int8_t *celsius) { if (temp_sensor_ok) *celsius = temp_sensor; return temp_sensor_ok; }
 

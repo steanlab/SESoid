@@ -242,12 +242,12 @@ const MOCK = `
     ok(bp.b && bp.b.includes('2.92') && bp.t && bp.t.includes('24'), 'header shows battery and panel temperature: ' + JSON.stringify(bp));
     ok(process.env.LOC !== 'en-US' || !/[А-Яа-яЁё]/.test(bp.b + bp.t), 'header pills have no Russian in English mode'); }
   ok((await pg.textContent('#cBattInfo')).includes('2.92') && (await pg.inputValue('#cBattLow')) === '2.70' && (await pg.inputValue('#cBattCrit')) === '2.50', 'battery report shown: ' + await pg.textContent('#cBattInfo'));
-  await pg.check('#cDeep'); await pg.check('#cOd'); await pg.check('#cTAuto');
+  await pg.check('#cDeep'); await pg.check('#cOd'); await pg.check('#cTAuto'); await pg.check('#cRot');
   await pg.fill('#cBattLow', '2.8'); await pg.fill('#cBattCrit', '2.6');
   await pg.click('#bCfg'); await pg.waitForTimeout(600);
   ok((await pg.evaluate(() => window.__tag.batt)).join() === '80,60', 'battery thresholds reached the tag (14-byte message): ' + await pg.evaluate(() => window.__tag.batt));
   const cfg = await pg.evaluate(() => window.__tag.cfg);  const cfgLen = await pg.evaluate(() => window.__tag.cfgLen);
-  ok(cfg.clean === 7 && cfg.cmode === 2 && cfgLen === 15 && cfg.flags === 7, 'full-redraw period, cleaning mode and the three mode flags reached the tag (15-byte message): ' + JSON.stringify(cfg));
+  ok(cfg.clean === 7 && cfg.cmode === 2 && cfgLen === 15 && cfg.flags === 15, 'full-redraw period, cleaning mode and the four mode flags (incl. rotate 180) reached the tag (15-byte message): ' + JSON.stringify(cfg));
   ok(cfg.iv === 5 && cfg.mode === 1 && cfg.tx === -10 && cfg.temp === 24 && cfg.en === 1 && (cfg.mask & 8), 'settings reached the tag: ' + JSON.stringify(cfg));
   { const ti = await pg.textContent('#cTempInfo'); ok(ti.includes('23.5') && ti.includes('24'), 'chip temperature and the value sent to the panel are shown: ' + ti); }
   await pg.screenshot({ path: path.join(OUT, 'shot_cfg.png') });

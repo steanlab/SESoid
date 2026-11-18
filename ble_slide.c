@@ -86,7 +86,7 @@ static void sanitize(slide_cfg_t *c)
   if (c->clean_mode > 2u) c->clean_mode = 0u;
   if (c->batt_low < 10u || c->batt_low > 200u) c->batt_low = 70u;
   if (c->batt_crit < 5u || c->batt_crit > c->batt_low) c->batt_crit = c->batt_low < 50u ? c->batt_low : 50u;
-  c->flags &= 7u;
+  c->flags &= 15u;
   if (c->clean_n > 250u) c->clean_n = 250u;
   if (c->temp_c < -20) c->temp_c = -20;
   if (c->temp_c > 60) c->temp_c = 60;
@@ -238,6 +238,7 @@ void slide_set_cfg(const slide_cfg_t *c)
   cfg = n;
   panel_set_temp(cfg.temp_c);
   panel_set_auto_temp((cfg.flags & 4u) != 0);
+  panel_set_rotate((cfg.flags & 8u) != 0);
   batt_set_thresholds((uint16_t)(2000u + 10u * cfg.batt_low), (uint16_t)(2000u + 10u * cfg.batt_crit));
   if (tx_changed) tx_apply_due = true;
   if (changed) persist_pending = true;
@@ -401,6 +402,7 @@ void slide_init(void)
   load_settings();
   panel_set_temp(cfg.temp_c);
   panel_set_auto_temp((cfg.flags & 4u) != 0);
+  panel_set_rotate((cfg.flags & 8u) != 0);
   batt_set_thresholds((uint16_t)(2000u + 10u * cfg.batt_low), (uint16_t)(2000u + 10u * cfg.batt_crit));
   slide_apply_tx();
   last_us = RAIL_GetTime();
