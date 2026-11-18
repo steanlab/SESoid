@@ -8,6 +8,7 @@
 #define NONE          0xFFu         // no address (a 7-bit address is at most 0x7F; address 0 is a real one)
 #define HALF_US       5u            // half a clock period: about 60 kHz, the same as the scanner that found the chip
 #define STRETCH_US    8000u         // the chip holds SCL low while its EEPROM stores a block (about 4 ms) or the NFC side has the memory; 200 us was too short
+#define PWRDN_US      200000u       // supply off before a write, to reset the chip
 #define PWRUP_US      30000u        // after the supply is switched on
 #define PACE_US       1000u
 #define LIVE_PERIOD_US 200000u
@@ -33,7 +34,7 @@ static const uint8_t port_first[4] = { 0, 9, 14, 22 };
 
 const uint8_t nfc_block_addr[NFC_BLOCKS] = { 0x00, 0x01, 0x02, 0x38, 0x3A, 0xFE };
 
-typedef enum { NS_IDLE = 0, NS_PWRUP, NS_RUN, NS_TAP_UP, NS_TAP } ns_t;
+typedef enum { NS_IDLE = 0, NS_PWRDN, NS_PWRUP, NS_RUN, NS_TAP_UP, NS_TAP } ns_t;
 
 static nfc_t nf;
 static nfc_fd_t fd;
@@ -237,6 +238,9 @@ static bool begin(uint8_t mode)
   found_n = 0; rs_hit = NONE; rs_cur = 0; rs_v = 0; rs_idx = 0; rs_cnt = 0;
   fd.n = 0;                                                         // only a live run watches pins; its pins are set after this
   nf_t0 = RAIL_GetTime(); nf_next = nf_t0 + PWRUP_US;
+  if (mode == NFC_M_WRITE) {                                        // a write starts from a reset chip: a stuck EEPROM cycle (NS_REG: EEPROM_WR_BUSY) clears only when the supply is off for a moment
+    cfg(PWR_P, PWR_N, 4, 0); ns = NS_PWRDN; nf_next = nf_t0 + PWRDN_US;
+  }
   nf_changed = true;
   return true;
 }
@@ -494,6 +498,7 @@ void nfc_poll(void)
   if ((int32_t)(now - nf_next) < 0) return;
   switch (ns) {
     case NS_IDLE: break;
+    case NS_PWRDN: cfg(PWR_P, PWR_N, 4, 1); ns = NS_PWRUP; nf_next = now + PWRUP_US; break;
     case NS_PWRUP: ns = NS_RUN; nf_next = now; break;
     case NS_TAP_UP: ns = NS_TAP; nf_next = now; break;
     case NS_TAP: nf_next = now + TAP_PERIOD_US; tap_step(now); break;

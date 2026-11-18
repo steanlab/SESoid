@@ -41,6 +41,9 @@ static up_t u;
 static bool begin_ack_due;          // flash mode: the BEGIN answer is sent after the erase
 static bool end_wanted;
 static bool vfy_active;            // slot verify (command 0x24) running
+static bool era_active;            // erase of all slots (command 0x25) running
+static uint8_t era_n;              // slots done
+static bool era_run;               // a sector erase of this job is running
 static uint32_t vfy_off, vfy_crc, vfy_total, vfy_rec_crc;
 static uint8_t vfy_slot;
 static bool flash_pending;        // flash test: send the answer when the operation is done
@@ -79,14 +82,14 @@ void up_reset(void)
   memset(&u, 0, sizeof(u));
   flash_pending = false;
   flash_q_op = 0;
-  begin_ack_due = end_wanted = vfy_active = false;
+  begin_ack_due = end_wanted = vfy_active = era_active = era_run = false;
   if (!slide_flash_busy()) fl_init();              // a running settings write must not lose its flash state
   sync_diag();
 }
 
 bool up_idle(void)
 {
-  return !up_busy() && !flash_q_op && !flash_pending && !vfy_active;
+  return !up_busy() && !flash_q_op && !flash_pending && !vfy_active && !era_active;
 }
 
 // the flash is in use by the slideshow code (settings write) or by the panel update streaming a slide out of it
@@ -280,6 +283,14 @@ bool up_write(const uint8_t *v, uint8_t len)
       }
       vfy_active = true; vfy_slot = v[1]; vfy_off = 0xFFFFFFFFu; vfy_crc = 0;
       return true;
+    case 0x25:   // ERASE ALL SLOTS: [0x25, 0xA5]; the record sector of every slot is erased, the slots are empty afterwards (gated: tap on the NFC chip)
+      if (len != 2 || v[1] != 0xA5 || up_busy() || flash_q_op || flash_pending || fl_busy() || vfy_active || era_active || flash_taken() || panel_busy()) {
+        uint8_t e[3] = { 0xA5, 1, 0 }; up_notify(e, 3); return true;
+      }
+      memset(&u, 0, sizeof(u));
+      era_active = true; era_n = 0; era_run = false;
+      fl_set_range(0, FL_SLOT_BASE(FL_SLOTS + 1u));
+      return true;
     case 0x20: case 0x21: case 0x22: case 0x23:
       if (flash_q_op || flash_pending || fl_busy() || up_busy() || vfy_active || flash_taken()) { uint8_t e[3] = { 0xA3, FLR_PARAM, 0 }; up_notify(e, 3); return true; }   // one operation at a time
       fl_set_range(FL_TEST_LO, FL_TEST_END);
@@ -335,6 +346,22 @@ void up_poll(void)
   }
   if (vfy_active) slot_verify_poll();
   fl_poll();
+
+  if (era_active && !fl_busy()) {
+    if (era_run && fl_done) {
+      fl_done = false; era_run = false;
+      if (fl_res.result != FLR_OK) {
+        era_active = false; fl_set_range(FL_TEST_LO, FL_TEST_END);
+        uint8_t e[3] = { 0xA5, 4, era_n }; up_notify(e, 3); slide_rescan();
+      } else era_n++;
+    }
+    if (era_active && !era_run) {
+      if (era_n >= FL_SLOTS) {
+        era_active = false; fl_set_range(FL_TEST_LO, FL_TEST_END);
+        uint8_t e[3] = { 0xA5, 0, era_n }; up_notify(e, 3); slide_rescan();
+      } else if (fl_start_erase(FL_SLOT_BASE(era_n + 1u) + (FL_SLOT_REC / FL_SECTOR) * FL_SECTOR)) era_run = true;
+    }
+  }
 
   if (u.active && u.mode == 1) {
     switch (u.fs) {

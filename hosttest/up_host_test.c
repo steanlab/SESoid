@@ -12,7 +12,7 @@
 #include "ble_panel.h"
 #include "ble_od.h"
 bool od_busy(void) { return false; } bool od_up_sink(const uint8_t *d, uint8_t n) { (void)d; (void)n; return false; }   // OpenDisplay is tested in od_host_test.c
-bool slide_flash_busy(void) { return false; } bool panel_flash_busy(void) { return false; }   // stage 4 modules: not part of this test
+void slide_rescan(void) {} bool panel_busy(void) { return false; } bool slide_flash_busy(void) { return false; } bool panel_flash_busy(void) { return false; }   // stage 4 modules: not part of this test
 volatile ble_diag_t g_diag;
 volatile fl_result_t fl_res; volatile bool fl_done;
 static uint8_t mem[0x80000]; static uint32_t lo, hi; static int deny_pct; static unsigned rnd(void);
@@ -107,6 +107,17 @@ int main(void)
     up_reset(); nh = nt = 0;
     uint8_t b3[7] = { 0x10, 1, 0x00, 0xB4, 0, 0, 0 };
     up_write(b3, 7); if (nt != 1 || nq[0][1] != 1) { printf("FAIL: slot 0 accepted\n"); bad++; }
+  }
+  { // erase all slots: every record sector is erased, frames are left, a refused command changes nothing
+    up_reset(); nh = nt = 0;
+    for (uint32_t n = 1; n <= FL_SLOTS; n++) { memcpy(mem + FL_SLOT_BASE(n) + FL_SLOT_REC, "SLD1", 4); mem[FL_SLOT_BASE(n)] = 0x55; }
+    uint8_t bad1[2] = { 0x25, 0x00 }; up_write(bad1, 2);
+    if (nt != 1 || nq[0][0] != 0xA5 || nq[0][1] != 1) { printf("FAIL: erase-all without magic\n"); bad++; }
+    nh = nt = 0; uint8_t ea[2] = { 0x25, 0xA5 }; up_write(ea, 2);
+    for (int i = 0; i < 2000000 && nt == 0; i++) up_poll();
+    if (nt != 1 || nq[0][0] != 0xA5 || nq[0][1] != 0 || nq[0][2] != FL_SLOTS) { printf("FAIL: erase-all answer\n"); bad++; }
+    for (uint32_t n = 1; n <= FL_SLOTS; n++) if (mem[FL_SLOT_BASE(n) + FL_SLOT_REC] != 0xFF || mem[FL_SLOT_BASE(n)] != 0x55) { printf("FAIL: erase-all slot %u\n", n); bad++; break; }
+    if (!up_idle()) { printf("FAIL: erase-all leaves up busy\n"); bad++; }
   }
   printf(bad ? "%d FAILED\n" : "ALL OK\n", bad);
   return bad != 0;

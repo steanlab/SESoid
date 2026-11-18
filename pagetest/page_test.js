@@ -440,7 +440,7 @@ const MOCK = `
   await pg.evaluate(() => { window.__tag.wp = true; });
   await pg.click('#bNfcWr'); await pg.waitForTimeout(700);
   const wa = await pg.evaluate(() => window.__tag.writeArgs);
-  ok(wa && wa.length === 4 && wa[2] === 2 && wa[3] === 0xA5, 'nfc write: commit is armed and counts blocks');
+  ok(wa && wa.length === 4 && wa[2] === 7 && wa[3] === 0xA5, 'nfc write: commit is armed and counts blocks');
   ok((await pg.textContent('#nfcOut2')).includes('не совпали') && (await pg.textContent('#nfcOut2')).includes('Снять блокировку'), 'nfc write: ignored write explained, unlock suggested');
   ok(await pg.evaluate(() => document.getElementById('bNfcUnlock').disabled), 'unlock: needs its own confirmation');
   await pg.check('#nfcUnOk'); await pg.waitForTimeout(100);

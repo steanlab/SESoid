@@ -131,7 +131,7 @@
 <!-- ============================ СЛОТЫ ============================ -->
 <section class="tab" id="t-slots">
   <div class="card">
-    <div class="row"><button id="bSlots" disabled>Обновить список с метки</button><button id="bNext" disabled>Показать следующий сейчас</button>
+    <div class="row"><button id="bSlots" disabled>Обновить список с метки</button><button id="bNext" disabled>Показать следующий сейчас</button><button id="bEraseAll" class="d" disabled>Стереть все слайды</button>
       <span id="slideInfo" class="n" style="margin:0"></span></div>
     <p class="n">Десять слотов во внешней flash метки без сжатия (слот n лежит по адресу (n − 1) × 0xC000, запись о кадре — в его конце). Картинки на странице запоминаются в браузере (IndexedDB): по контрольной сумме видно, совпадает ли запомненная картинка с тем, что лежит в метке. Галочка «в слайдшоу» сохраняется в метке сама.</p>
     <div class="slots" id="slotGrid"></div>
@@ -532,6 +532,11 @@ const EN_JS = new Map([
   ['Забыть запомненную картинку слота ','Forget the remembered picture of slot '],
   ['? В метке она останется.','? It stays in the tag.'],
   ['следующий','next'],
+  ['все слайды стёрты','all slides erased'],
+  ['стереть нельзя: идёт загрузка, обновление экрана или другая операция с flash','cannot erase: an upload, a screen update or another flash operation is running'],
+  ['ошибка стирания, стёрто слотов: ','erase error, slots erased: '],
+  ['стирание слайдов','erasing slides'],
+  ['Стереть все 10 слайдов в метке? Это нельзя отменить (картинки, запомненные в браузере, останутся). Потребуется приложить телефон к метке (NFC).','Erase all 10 slides in the tag? This cannot be undone (pictures remembered in the browser stay). You will need to tap the phone on the tag (NFC).'],
   ['Перезагрузить метку? Соединение прервётся, на экране снова появится заставка (около 30 с).','Reboot the tag? The connection will drop and the splash will appear on the screen again (about 30 s).'],
   ['перезагрузка','reboot'],
   [' мин',' min'],
@@ -907,6 +912,7 @@ const EN_HTML = new Map([
   ["Просмотр","View"],
   ["Обновить список с метки","Refresh list from the tag"],
   ["Показать следующий сейчас","Show the next one now"],
+  ["Стереть все слайды","Erase all slides"],
   ["Десять слотов во внешней flash метки без сжатия (слот n лежит по адресу (n − 1) × 0xC000, запись о кадре — в его конце). Картинки на странице запоминаются в браузере (IndexedDB): по контрольной сумме видно, совпадает ли запомненная картинка с тем, что лежит в метке. Галочка «в слайдшоу» сохраняется в метке сама.","Ten slots in the tag's external flash, uncompressed (slot n lies at address (n − 1) × 0xC000, the frame record is at its end). Pictures on the page are remembered in the browser (IndexedDB): the checksum shows whether the remembered picture matches what lies in the tag. The \"in slideshow\" tick is saved in the tag itself."],
   ["Слайдшоу и радио","Slideshow and radio"],
   ["Автосмена","Auto change"],
@@ -1652,6 +1658,10 @@ function handle(a) {
     case 0xA1: case 0xA2: {
       const names = [TT('успешно'), TT('BUSY не снялся за 3 с'), TT('сектор не пуст после стирания'), TT('бит записи (WEL) не установился'), TT('данные не совпали при чтении'), TT('неверные параметры или flash занята')];
       if (!busy) log((a[0] === 0xA1 ? TT('стирание: ') : TT('запись страницы: ')) + (names[a[1]] || a[1]) + '; BUSY ' + (u32(a, 2) / 1000).toFixed(1) + TT(' мс; не FF/расхождений: ') + u16(a, 9)); break; }
+    case 0xA5: {
+      const m = a[1] === 0 ? TT('все слайды стёрты') : a[1] === 1 ? TT('стереть нельзя: идёт загрузка, обновление экрана или другая операция с flash') : TT('ошибка стирания, стёрто слотов: ') + a[2];
+      toast(m, a[1] !== 0); log(m); for (let i = 1; i <= 10; i++) if (a[1] === 0 || i <= a[2]) { tag.slots[i] = { valid: false, show: false, inList: false, cur: false, total: 0, crc: 0 }; if (tag.verify && tag.verify.slot === i) tag.verify = null; }
+      renderSlots(); setTimeout(() => { if (!busy) cmd([0x31]); }, 400); break; }
     case 0xA3: if (!busy) log(TT('чтение: результат ') + a[1] + TT(', байт не равных FF: ') + (a.length >= 6 ? u32(a, 2) : '-')); break;
     case 0xA4: {
       const st = [TT('flash совпадает с записью (CRC верный)'), TT('в слоте нет действительной записи'), TT('CRC flash НЕ совпал с записью')][a[2]] || (TT('занято/ошибка ') + a[2]);
@@ -1679,7 +1689,7 @@ function onDisc() { log(TT('соединение закрыто')); setConn(fals
 function setConn(on) {
   $('connPill').classList.toggle('on', on); $('connTxt').textContent = on ? TT('подключено: ') + (dev ? dev.name : '') : TT('не подключено');
   $('bConn').disabled = $('bConnAll').disabled = on; $('bDisc').disabled = !on;
-  for (const id of ['bSlots', 'bNext', 'bCfg', 'bCfgGet', 'bShowNext', 'bSplash', 'bReboot', 'bHw', 'bPing', 'bStat', 'bReset', 'bRam', 'bPdiag', 'bPdiagGet', 'bClk', 'bClkGet', 'bPm1', 'bPm2', 'bPm3', 'bPmStop', 'bPmClr', 'bScan', 'bScanPwr', 'bScanStop', 'bScanGet', 'bNfcSnap', 'bNfcLive', 'bNfcStop', 'bNfcGet', 'bNfcBk', 'bNfcWr', 'bNfcRestore', 'bNfcUnlock', 'bNfcFind', 'bNfcRescue', 'bFInfo', 'bFErase', 'bFProg', 'bFScan', 'bVer']) $(id).disabled = !on;
+  for (const id of ['bSlots', 'bNext', 'bEraseAll', 'bCfg', 'bCfgGet', 'bShowNext', 'bSplash', 'bReboot', 'bHw', 'bPing', 'bStat', 'bReset', 'bRam', 'bPdiag', 'bPdiagGet', 'bClk', 'bClkGet', 'bPm1', 'bPm2', 'bPm3', 'bPmStop', 'bPmClr', 'bScan', 'bScanPwr', 'bScanStop', 'bScanGet', 'bNfcSnap', 'bNfcLive', 'bNfcStop', 'bNfcGet', 'bNfcBk', 'bNfcWr', 'bNfcRestore', 'bNfcUnlock', 'bNfcFind', 'bNfcRescue', 'bFInfo', 'bFErase', 'bFProg', 'bFScan', 'bVer']) $(id).disabled = !on;
   nfcButtons();
   document.querySelectorAll('.fill').forEach(b => b.disabled = !on);
   updateUpButtons(); renderSlots();
@@ -1771,6 +1781,7 @@ function downloadRec(rec) {
   cv.toBlob(b => download(b, 'slot-' + rec.slot + '.png'));
 }
 $('bSlots').onclick = () => cmd([0x31]);
+$('bEraseAll').onclick = () => { if (confirm(TT('Стереть все 10 слайдов в метке? Это нельзя отменить (картинки, запомненные в браузере, останутся). Потребуется приложить телефон к метке (NFC).'))) cmd([0x25, 0xA5], TT('стирание слайдов')); };
 $('bNext').onclick = () => cmd([0x33], TT('следующий'));
 $('bShowNext').onclick = () => cmd([0x33], TT('следующий'));
 $('bSplash').onclick = () => cmd([0x39], TT('заставка'));
@@ -2200,7 +2211,7 @@ function nfcStock() {
   return d.slice(0, 2 + d[1] + 1);
 }
 async function nfcWriteNdef(ndef, what) {
-  const n = Math.ceil(ndef.length / 16);
+  const n = what === 'restore' ? Math.ceil(ndef.length / 16) : 7;           // a new record overwrites the whole user memory (7 blocks): nothing of the old record stays behind the terminator
   if (!connected() || NFC.bkBusy) return;
   NFC.bkBusy = true; NFC.op = { what }; NFC.st = null; nfcPending = true; nfcButtons();
   $('nfcOut2').textContent = TT('метка записывает ') + n + TT(' блок(а) и проверяет чтением …');

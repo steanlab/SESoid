@@ -55,7 +55,7 @@ static void queue_result(uint8_t op, uint8_t status)
 bool ctl_gate(const uint8_t *v, uint8_t len)
 {
   if (len == 0) return false;
-  bool danger = v[0] == 0x36 || v[0] == 0x21 || v[0] == 0x22 ||
+  bool danger = v[0] == 0x36 || v[0] == 0x25 || v[0] == 0x21 || v[0] == 0x22 ||
                 (v[0] == 0x3F && len >= 2 && (v[1] == 0x21 || v[1] == 0x22 || v[1] == 0x31 || v[1] == 0x05));
   if (!danger || acc_danger_ok(slide_uptime_s())) return false;
   queue_result(v[0], SLR_LOCKED);
