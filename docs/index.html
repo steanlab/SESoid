@@ -717,6 +717,8 @@ const EN_JS = new Map([
   ['не принял байт данных ','did not accept data byte '],
   [': поле телефона ',': phone field '],
   ['ЕСТЬ','PRESENT'],
+  [', чип сейчас записывает EEPROM ',', the chip is writing its EEPROM now '], [', память закреплена за I²C ',', memory held by I²C '],
+  ['чип занят записью EEPROM дольше обычного: подождите несколько секунд и повторите; если повторяется, проверьте заряд батареи метки (чип питается от неё)','the chip is busy writing its EEPROM longer than usual: wait a few seconds and try again; if it repeats, check the tag battery (the chip is powered from it)'],
   [', память занята со стороны NFC ',', memory busy from the NFC side '],
   ['ДА','YES'],
   [', ошибка записи EEPROM ',', EEPROM write error '],
@@ -2108,9 +2110,9 @@ function nfcWhy(st) {
   const L = [];
   if (st.fail !== 0xFF && st.fail < 18) L.push(st.fail === 0 ? TT('не ответил на адрес') : st.fail === 1 ? TT('не принял номер блока') : TT('не принял байт данных ') + (st.fail - 2));
   if (st.ns_valid) {
-    const ns = st.ns, f = ns & 1, lk = ns >> 6 & 1;
-    L.push('NS_REG=0x' + ns.toString(16).toUpperCase().padStart(2, '0') + TT(': поле телефона ') + (f ? TT('ЕСТЬ') : TT('нет')) + TT(', память занята со стороны NFC ') + (lk ? TT('ДА') : TT('нет')) + TT(', ошибка записи EEPROM ') + (ns >> 2 & 1));
-    L.push(f || lk ? TT('уберите телефон от метки (лучше дальше 30 см, NFC на телефоне на время записи можно выключить) и повторите') : TT('поля и занятости нет: похоже, запись защищена настройкой чипа; пришлите эту строку'));
+    const ns = st.ns, f = ns & 1, busy = ns >> 1 & 1, rflk = ns >> 5 & 1, i2lk = ns >> 6 & 1;
+    L.push('NS_REG=0x' + ns.toString(16).toUpperCase().padStart(2, '0') + TT(': поле телефона ') + (f ? TT('ЕСТЬ') : TT('нет')) + TT(', память занята со стороны NFC ') + (rflk ? TT('ДА') : TT('нет')) + TT(', чип сейчас записывает EEPROM ') + (busy ? TT('ДА') : TT('нет')) + TT(', ошибка записи EEPROM ') + (ns >> 2 & 1) + TT(', память закреплена за I²C ') + (i2lk ? TT('да') : TT('нет')));
+    L.push(f || rflk ? TT('уберите телефон от метки (лучше дальше 30 см, NFC на телефоне на время записи можно выключить) и повторите') : busy ? TT('чип занят записью EEPROM дольше обычного: подождите несколько секунд и повторите; если повторяется, проверьте заряд батареи метки (чип питается от неё)') : TT('поля и занятости нет: похоже, запись защищена настройкой чипа; пришлите эту строку'));
   } else L.push(TT('регистр NS_REG прочитать не удалось'));
   return '; ' + L.join('; ');
 }

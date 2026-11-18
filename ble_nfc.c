@@ -7,7 +7,7 @@
 #define ADDR          0x55u
 #define NONE          0xFFu         // no address (a 7-bit address is at most 0x7F; address 0 is a real one)
 #define HALF_US       5u            // half a clock period: about 60 kHz, the same as the scanner that found the chip
-#define STRETCH_US    200u
+#define STRETCH_US    8000u         // the chip holds SCL low while its EEPROM stores a block (about 4 ms) or the NFC side has the memory; 200 us was too short
 #define PWRUP_US      30000u        // after the supply is switched on
 #define PACE_US       1000u
 #define LIVE_PERIOD_US 200000u
@@ -182,7 +182,7 @@ static bool ack_poll(void)                                          // the chip 
   i2c_start();
   bool ok = i2c_wbyte((uint8_t)(addr << 1));
   i2c_stop();
-  return ok;
+  return ok && !bus_err;
 }
 
 // ---- power and pins
