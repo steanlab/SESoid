@@ -8,6 +8,7 @@ Everything we found out about this tag, from the firmware and the tests on real 
 |---|---|
 | Marking | EDG3-0590A (SES-imagotag V300), 5.9" e-paper, 4 colours |
 | MCU | Silicon Labs EFR32FG22 (Cortex-M33, 38.4 MHz, 256 KB flash, 32 KB RAM); pyOCD target `efr32fg22c121f256gm40` |
+| Crystals | HFXO 38.4 MHz (radio and core) and LFXO 32.768 kHz, both present on the board (photo); LFXO frequency measured by the owner: 32.76909 kHz |
 | Radio | Bluetooth LE through Silicon Labs RAIL (own link layer, no Bluetooth stack); TX power up to 6 dBm is reported by the tag |
 | Panel | PDi "BWRY Medium", controller ID 0x0D04, 720 x 256 pixels, black / white / yellow / red |
 | External flash | Winbond SPI NOR, JEDEC EF 40 13 (512 KiB) |
@@ -64,7 +65,9 @@ The flash is a separate chip: unlocking the MCU does not erase it.
 ## Power and clocks
 
 * Five CR2450 in parallel. Battery voltage = the chip's own supply, read by the IADC (AVDD/4 input, internal 1.21 V reference, no calibration, about +-2 %), measured a few seconds after power-up and then every 10 minutes while the panel is idle. Default thresholds: warning 2.7 V, critical 2.5 V (at critical the firmware stops automatic slide changes and cleaning cycles; manual ones still work).
-* HFXO 38.4 MHz runs the core and the radio. Watchdog about 8 s from the 1 kHz ULFRCO. Deep sleep (EM2) is optional and off by default: the sleep timer then runs from the LFRCO; RAIL time stops in EM2 and is corrected after the sleep. Whether this board has a 32.768 kHz crystal can be tested with the page ("Crystal test"); its result for this tag is not recorded here.
+* HFXO 38.4 MHz (SMD crystal next to the MCU, marked 38.4) runs the core and the radio.
+* **LFXO: a 32.768 kHz crystal is fitted** (the larger SMD crystal at the right of the MCU); the owner measured 32.76909 kHz (about 33 ppm above nominal; measured value as reported, method not recorded). The current firmware does **not use it**: the build replaces the SDK's LFXO clock by the internal LFRCO (`sed` in `.github/workflows/build.yml`), because the crystal's presence was not known when it was written. Switching to the crystal would make the sleep timer (slide interval, EM2 wake-ups) far more accurate than the RC oscillator.
+* Watchdog about 8 s from the 1 kHz ULFRCO. Deep sleep (EM2) is optional and off by default: the sleep timer then runs from the LFRCO; RAIL time stops in EM2 and is corrected after the sleep.
 * On the bench the tag is powered from the debug probe, not from the cells.
 
 ## Factory tag and SWD
@@ -74,6 +77,5 @@ A factory tag is **debug-locked**: over SWD no core is found. The status read th
 ## Open questions
 
 * Panel temperature sensor: command 0x40 answer not confirmed.
-* Presence and accuracy of a 32.768 kHz crystal on this board.
 * Real current consumption (no measurements yet; deep sleep is estimated to extend battery life but has not been measured).
 * Antenna type and radiated power: only the configured TX power is known.
