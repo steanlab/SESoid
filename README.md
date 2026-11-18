@@ -62,3 +62,7 @@ The host tests build the firmware modules on a PC; the page test runs the page i
 ## Status
 
 Slideshow, upload, NFC window, battery and panel update are used on a real tag. The unlock script, deep sleep (EM2), OpenDisplay and the demo tour are new and not yet confirmed on hardware.
+
+## Licence
+
+Copyright (c) 2026 Siarhei Besarab (steanlab). Source code, page and documents: GNU GPL version 3 or later, see `LICENSE`. A separate commercial licence is available on request (contact steanlab on GitHub). Builds of this code contain parts of the Silicon Labs Gecko SDK, which keep their own licence (Silicon Labs Master Software License Agreement); the SDK itself is not part of this repository.
