@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "ble_slide.h"
+#include "ble_demo.h"
 #include "ble_batt.h"
 #include "ble_panel.h"
 #include "ble_flash.h"
@@ -69,7 +70,7 @@ static void pmodel(void) { if (pbusy && (int32_t)(now_us - panel_end_us) >= 0) {
 bool panel_busy(void) { pmodel(); return pbusy; }
 bool panel_show_slot(uint8_t s, uint32_t crc) { (void)crc; pmodel(); if (pbusy) return false; pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_SLOT; pshown = s; last_shown_slot = s; shows++; return true; }
 static int fills; static uint8_t last_fill; static int demos; static uint8_t last_demo;
-bool panel_show_demo(uint8_t n) { pmodel(); if (pbusy || (n >= 9 && n != 100)) return false;   /* same rule as ble_panel.c: 0..8 and DEMO_PAT_HW */ pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_DEMO; pshown = n; last_demo = n; demos++; return true; }
+bool panel_show_demo(uint8_t n) { pmodel(); if (pbusy || (n >= DEMO_COUNT && n != DEMO_PAT_HW)) return false;   /* same rule as ble_panel.c */ pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_DEMO; pshown = n; last_demo = n; demos++; return true; }
 bool panel_show_fill(uint8_t code) { pmodel(); if (pbusy) return false; pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_FILL; pshown = code; last_fill = code; fills++; return true; }
 static char hw_l[9][16], hw_v[9][47];
 void demo_hw_clear(void) { memset(hw_l, 0, sizeof hw_l); memset(hw_v, 0, sizeof hw_v); }
@@ -238,7 +239,7 @@ int main(void)
     CHECK(strncmp(hw_v[6], "BLE 2.4 GHz, TX ", 16) == 0, "radio line: %s", hw_v[6]);
     CHECK(strcmp(hw_v[5], "38.4 MHz, 32.768 kHz (+33 ppm)") == 0, "crystals line: %s", hw_v[5]);
     CHECK(clk_starts >= 1, "the crystal test is started with the tour");
-    d0 = demos; CHECK(slide_demo(0xFF, 0x31FF, 0) == SLR_OK, "second tour"); tick(41000); tick(41000); tick(41000);
+    d0 = demos; CHECK(slide_demo(0xFF, 0x3FFF, 0) == SLR_OK, "second tour"); tick(41000); tick(41000); tick(41000);
     CHECK(slide_demo_active() && slide_demo(0, 0, 0) == SLR_OK, "stop"); for (int k = 0; k < 6; k++) tick(41000);
     CHECK(!slide_demo_active() && demos - d0 <= 4, "tour stopped (%d pictures)", demos - d0);
     tick(41000); tick(41000); tick(31000); y.enabled = en0; y.interval_min = iv0; slide_set_cfg(&y); tick(200);

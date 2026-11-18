@@ -1,6 +1,7 @@
 // SES V300: demo pictures (see ble_demo.h). Integer arithmetic only.
 #include "ble_demo.h"
 #include "ble_splash.h"
+#include "ble_demo_data.h"
 #include <string.h>
 
 extern const uint8_t demo_font7x14[95][14];
@@ -232,6 +233,44 @@ static uint8_t px_newton(int u, int v)                       // Newton fractal o
   }
   return K;
 }
+static uint8_t px_nova(int u, int v)                         // Nova fractal: z <- z - (z^3-1)/(3 z^2) + c, z0 = 1, c = pixel, Q20 fixed point
+{
+  const int Q = 20;
+  const int64_t st = (int64_t)(3.4 / 720 * (1 << Q) + 0.5);
+  const int64_t cr = (int64_t)(-0.2 * (1 << Q)) + (u - 360) * st, ci = (v - 128) * st;
+  int64_t zr = 1 << Q, zi = 0;
+  for (int it = 0; it < 60; it++) {
+    int64_t sr = (zr * zr - zi * zi) >> Q, si = (2 * zr * zi) >> Q;      // z^2
+    int64_t den = (sr * sr + si * si) >> Q;                              // |z^2|^2
+    if (den < 64) return K;
+    int64_t ir = (sr << Q) / den, ii = (-si << Q) / den;                 // 1 / z^2
+    int64_t nr = (2 * zr + ir) / 3 + cr, ni = (2 * zi + ii) / 3 + ci;    // z - (z^3 - 1) / (3 z^2) = (2 z + 1 / z^2) / 3
+    int64_t dr = nr - zr, di = ni - zi;
+    zr = nr; zi = ni;
+    if (zr > (50 << Q) || zr < -(50 << Q) || zi > (50 << Q) || zi < -(50 << Q)) return K;
+    if (dr * dr + di * di < 10995) { int r = it % 3; return r == 0 ? Y : (r == 1 ? R : W); }   // |dz| < 1e-4 (Q40)
+  }
+  return K;
+}
+static uint8_t px_hilbert(int u, int v)                      // generalized Hilbert curve over the whole panel: 89 x 31 cells of 8 px, line 2 px wide
+{
+  int x = u - 4, y = v - 4;
+  if (x < 0 || y < 0) return W;
+  int cx = x / HIL_CELL, cy = y / HIL_CELL;
+  if (cx >= HIL_GW || cy >= HIL_GH) return W;
+  uint8_t t = hil_tab[cy * HIL_GW + cx];
+  int dx = x % HIL_CELL, dy = y % HIL_CELL;
+  int cxh = (dx == 3 || dx == 4), cyh = (dy == 3 || dy == 4);
+  int on = (cxh && cyh) || ((t & 1) && dx >= 3 && cyh) || ((t & 4) && dx <= 4 && cyh) || ((t & 2) && dy >= 3 && cxh) || ((t & 8) && dy <= 4 && cxh);
+  return on ? (((t >> 4) & 1) ? R : K) : W;
+}
+static uint8_t px_fern(int u, int v)                         // Barnsley fern, lying: stem on the left, tip on the right (1-bit bitmap from tools/make_demo_data.py)
+{
+  int x = u - FERN_X0, y = v - FERN_Y0;
+  if (x < 0 || y < 0 || x >= FERN_W || y >= FERN_H) return W;
+  int i = y * FERN_W + x;
+  return ((fern_bm[i >> 3] >> (i & 7)) & 1) ? K : W;
+}
 static uint8_t px_carpet(int u, int v)
 {
   int x = u + 24, y = v;                                   // 81 x 81 cells tiled: 27-pixel squares, three levels (27, 9, 3) and the pixel level
@@ -251,7 +290,10 @@ uint8_t demo_px(uint8_t pattern, int u, int v)
     case 5: return px_truchet(u, v);
     case 6: return px_tv(u, v);
     case 7: return px_carpet(u, v);
-    default: return px_newton(u, v);
+    case 8: return px_newton(u, v);
+    case 9: return px_nova(u, v);
+    case 10: return px_hilbert(u, v);
+    default: return px_fern(u, v);
   }
 }
 

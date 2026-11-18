@@ -9,7 +9,6 @@ https://github.com/user-attachments/assets/186bc194-f564-40d1-857a-5786471e9222
 
 
 Control page ("Gecko Slide"): https://steanlab.github.io/SESoid (source: `docs/index.html`).
-This repository is neither `badge154` nor `badge154-src`.
 
 ## What it does
 

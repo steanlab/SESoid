@@ -1,4 +1,4 @@
-# SES-imagotag V300 5.9" BWRY tag: hardware notes
+# SES-imagotag V300 5.9" BWRY (GU510) tag: hardware notes
 
 Everything we found out about this tag, from the firmware and the tests on real hardware. What was **measured or verified on the tag** is stated plainly; what is only assumed is marked *(not verified)*. The tag's unique ID and the contents of its serial/UserData pages are deliberately not published here.
 
@@ -6,7 +6,7 @@ Everything we found out about this tag, from the firmware and the tests on real 
 
 | Part | What it is |
 |---|---|
-| Marking | EDG3-0590A (SES-imagotag V300), 5.9" e-paper, 4 colours |
+| Marking | SES-imagotag V300, 5.9" BWRY (black, white, yellow, red) e-paper, model GU510; board marking EDG3-0590A |
 | MCU | Silicon Labs EFR32FG22 (Cortex-M33, 38.4 MHz, 256 KB flash, 32 KB RAM); pyOCD target `efr32fg22c121f256gm40` |
 | Crystals | HFXO 38.4 MHz (radio and core) and LFXO 32.768 kHz, both present on the board (photo); LFXO frequency measured by the owner: 32.76909 kHz |
 | Radio | Bluetooth LE through Silicon Labs RAIL (own link layer, no Bluetooth stack); TX power up to 6 dBm is reported by the tag |

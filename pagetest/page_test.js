@@ -484,6 +484,17 @@ const MOCK = `
   await pg.screenshot({ path: path.join(OUT, 'shot_mobile.png') });
 
 
+  // --- demo tour: the command and the texts it produces (English mode must not show Russian)
+  { await pg.click('[data-t=tag]'); await pg.evaluate(() => { window.__tag.sent = []; });
+    await pg.evaluate(() => { document.getElementById('bDemo2').disabled = false; document.getElementById('bDemo2').click(); });
+    await pg.waitForTimeout(400);
+    const dem = await pg.evaluate(() => ({ toast: document.getElementById('toast').textContent, log: document.getElementById('log').textContent }));
+    ok(!/[А-Яа-яЁё]/.test(dem.toast) || process.env.LOC !== 'en-US', 'demo start: toast has no Russian in English mode (' + dem.toast + ')');
+    ok(!/Демо начнётся|Ничего не выбрано/.test(dem.log) || process.env.LOC !== 'en-US', 'demo start: log has no Russian in English mode');
+    await pg.evaluate(() => { document.getElementById('bDemoStop').disabled = false; document.getElementById('bDemoStop').click(); });
+    await pg.waitForTimeout(300);
+  }
+
   // --- i18n scan: leftover Cyrillic in the visible texts, attributes and the log (en mode)
   if (process.env.SCAN) {
     if (process.env.SCAN === 'switch') { await pg.click('#bLang'); await pg.waitForTimeout(500); }

@@ -32,7 +32,8 @@ int main(int argc, char **argv)
       }
     }
     printf("pattern %d: K %ld W %ld Y %ld R %ld\n", p, cnt[0], cnt[1], cnt[2], cnt[3]);
-    if (p != 1 && p != 2 && p != 3) { for (int c = 0; c < 4; c++) CHECK(cnt[c] > 1000, "a colour is (almost) missing"); }
+    if (p != 1 && p != 2 && p != 3 && p != 10 && p != 11) {   // these draw in two or three colours only
+       for (int c = 0; c < 4; c++) CHECK(cnt[c] > 1000, "a colour is (almost) missing"); }
     CHECK(cnt[0] + cnt[1] > 20000, "too little black/white");
     if (argc > 1) {                                  // dump: 720x256 index bytes
       char name[256]; snprintf(name, sizeof name, "%s/demo%d.idx", argv[1], p);

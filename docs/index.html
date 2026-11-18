@@ -400,6 +400,9 @@ const EN_JS = new Map([
   ['flash не отвечает при выводе слайда','flash does not respond while a slide is being sent'],
   ['заставка','splash'],
   ['демо','demo'],
+  ['Ничего не выбрано','Nothing selected'],
+  ['Демо начнётся через 10 секунд, страница отключится','The demo starts in 10 seconds, the page disconnects'],
+  ['Демо: ','Demo: '],
   ['Калибровочная таблица','Calibration chart'],
   ['Шахматки','Chessboards'],
   ['Множество Жюлиа','Julia set'],
@@ -409,6 +412,9 @@ const EN_JS = new Map([
   ['ТВ-таблица','TV test chart'],
   ['Ковёр Серпинского','Sierpinski carpet'],
   ['Фрактал Ньютона','Newton fractal'],
+  ['Фрактал Нова','Nova fractal'],
+  ['Кривая Гильберта','Hilbert curve'],
+  ['Папоротник Барнсли','Barnsley fern'],
   ['слот','slot'],
   ['заливка','fill'],
   ['запущено (около 30 с)','started (about 30 s)'],
@@ -993,8 +999,6 @@ const EN_HTML = new Map([
   ["Заставка","Splash"],
   ["Демо-тур","Demo tour"],
   ["Демо-режим","Demo mode"],
-  ["Демо начнётся через 10 секунд, страница отключится","The demo starts in 10 seconds, the page disconnects"],
-  ["Ничего не выбрано","Nothing selected"],
   ["экран с данными железа","hardware data screen"],
   ["заставка","splash"],
   ["(для съёмки): из чего он состоит, выбирается галочками: заставка, картинки, слайд, экран TAG HARDWARE с данными метки; в конце метка возвращает прежний слайд. Картинки рисует сама метка. Через 10 секунд после запуска страница отключается и тур начинается, чтобы в кадре осталась одна метка; касание метки останавливает тур после текущего экрана. Обычная смена слайдов на время тура ждёт.","(for filming): what it consists of is chosen with the checkboxes: splash, pictures, slide, the TAG HARDWARE screen with the tag's data; at the end the tag puts the earlier slide back. The tag draws the pictures itself. 10 seconds after the start the page disconnects and the tour begins, so that only the tag is in the frame; a touch of the tag stops the tour after the current screen. The normal slide change waits during the tour."],
@@ -1687,7 +1691,7 @@ function handle(a) {
       if (a[1] === 0x3F && a[2] !== 0 && nfcPending) { nfcPending = false; const wasOp = !!NFC.op; NFC.bkBusy = false; NFC.op = null; nfcButtons(); const t = TT('метка не приняла команду (код ') + a[2] + TT('): нужна прошивка 1.7 или новее, либо неверные параметры.'); $(wasOp || NFC.bk.length ? 'nfcOut2' : 'nfcOut').textContent = t; break; }
       if (a[1] === 0x3F && a[2] !== 0) { $('scOut').textContent = TT('метка не приняла команду сканера: нужно от 2 до 6 свободных выводов (при подаче питания 2–4 вывода сканирования и хотя бы один отдельный вывод питания) и прошивка 1.5 или новее.'); toast(TT('Сканер I²C: метка отклонила команду')); break; }
       if (a[1] === 0x3E && a[2] !== 0) { tag.pmAck = true; $('pmStat').textContent = TT('метка отклонила команду монитора (код ') + a[2] + TT('). Для выбора выводов нужна прошивка 1.2.'); toast(TT('Монитор выводов: метка отклонила команду')); break; }
-      toast(({ 0x32: TT('Показ слота: '), 0x33: TT('Следующий слайд: '), 0x38: TT('Заливка: '), 0x39: TT('Заставка: '), 0x3A: TT('Диагностика панели: '), 0x3C: TT('Тест кварцев: '), 0x3E: TT('Монитор выводов: '), 0x3F: TT('Сканер I²C / NFC-чип: ') }[a[1]] || TT('Команда: ')) + (TT(RES_TXT[a[2]]) || a[2])); setTimeout(() => { if (!busy) cmd([0x30]); }, 400); break;
+      toast(({ 0x32: TT('Показ слота: '), 0x33: TT('Следующий слайд: '), 0x38: TT('Заливка: '), 0x39: TT('Заставка: '), 0x3A: TT('Диагностика панели: '), 0x3C: TT('Тест кварцев: '), 0x3E: TT('Монитор выводов: '), 0x3F: demoSent ? TT('Демо: ') : TT('Сканер I²C / NFC-чип: ') }[a[1]] || TT('Команда: ')) + (TT(RES_TXT[a[2]]) || a[2])); if (a[1] === 0x3F) demoSent = false; setTimeout(() => { if (!busy) cmd([0x30]); }, 400); break;
     case 0xB4:
       tag.cfg = { en: !!a[2], mode: a[3], interval: u16(a, 4), mask: a[6] | (a.length > 13 ? a[13] << 8 : 0), clean: a.length > 14 ? a[14] : undefined, cleanMode: a.length > 15 ? a[15] : undefined, temp: (a[7] << 24) >> 24, tx: (a[8] << 24) >> 24, txAct: ((a[9] | a[10] << 8) << 16) >> 16, nfc: a.length > 11 ? !!a[11] : undefined, taps: a.length > 12 ? a[12] : 0, flags: a.length > 16 ? a[16] : undefined };
       fillCfg(); renderSlots(); renderSlideInfo(); break;
@@ -1842,17 +1846,18 @@ $('bEraseAll').onclick = () => { if (confirm(TT('Стереть все 10 сла
 $('bNext').onclick = () => cmd([0x33], TT('следующий'));
 $('bShowNext').onclick = () => cmd([0x33], TT('следующий'));
 $('bSplash').onclick = () => cmd([0x39], TT('заставка'));
-const DEMO_PICS = [[0, 'Калибровочная таблица'], [1, 'Шахматки'], [2, 'Множество Жюлиа'], [3, 'Треугольник Серпинского'], [4, 'Градиенты тонов'], [5, 'Дуги Трюше'], [6, 'ТВ-таблица'], [7, 'Ковёр Серпинского'], [8, 'Фрактал Ньютона']];
+let demoSent = false;      // the next 0x3F result is the answer to the demo command
+const DEMO_PICS = [[0, 'Калибровочная таблица'], [1, 'Шахматки'], [2, 'Множество Жюлиа'], [3, 'Треугольник Серпинского'], [4, 'Градиенты тонов'], [5, 'Дуги Трюше'], [6, 'ТВ-таблица'], [7, 'Ковёр Серпинского'], [8, 'Фрактал Ньютона'], [9, 'Фрактал Нова'], [10, 'Кривая Гильберта'], [11, 'Папоротник Барнсли']];
 for (const [id, name] of DEMO_PICS) { const l = document.createElement('label'); l.style.marginRight = '12px'; const c = document.createElement('input'); c.type = 'checkbox'; c.dataset.demo = id; c.checked = true; l.append(c, ' ' + TT(name)); $('demoPics').append(l); }
 $('bDemo2').onclick = () => {
   let m = 0; document.querySelectorAll('#demoPics input').forEach(c => { if (c.checked) m |= 1 << +c.dataset.demo; });
   if ($('demoSplash').checked) m |= 0x1000; if ($('demoHw').checked) m |= 0x2000;
   if (!m && !+$('demoSlot').value) { toast(TT('Ничего не выбрано'), true); return; }
-  cmd([0x3F, 0x40, 0xFF, m & 255, m >> 8 & 255, +$('demoSlot').value], TT('демо'));
+  demoSent = true; cmd([0x3F, 0x40, 0xFF, m & 255, m >> 8 & 255, +$('demoSlot').value], TT('демо'));
   toast(TT('Демо начнётся через 10 секунд, страница отключится'));
   setTimeout(() => { if (connected()) dev.gatt.disconnect(); }, 10000);
 };
-$('bDemoStop').onclick = () => cmd([0x3F, 0x40, 0], TT('демо'));
+$('bDemoStop').onclick = () => { demoSent = true; cmd([0x3F, 0x40, 0], TT('демо')); };
 document.querySelectorAll('.fill').forEach(b => b.onclick = () => cmd([0x38, +b.dataset.c], TT('заливка')));
 $('bReboot').onclick = () => { if (confirm(TT('Перезагрузить метку? Соединение прервётся, на экране снова появится заставка (около 30 с).'))) cmd([0x36, 0xA5], TT('перезагрузка')); };
 $('bHw').onclick = async () => { tag.hw = {}; renderHw(); await cmd([0x37], 'hw'); };

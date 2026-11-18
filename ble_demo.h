@@ -4,9 +4,9 @@
 
 #include <stdint.h>
 
-#define DEMO_COUNT 9
+#define DEMO_COUNT 12
 #define DEMO_PAT_HW 100   // the TAG HARDWARE screen (text from demo_hw_set)
-// 0 calibration chart, 1 chessboards, 2 Julia set, 3 Sierpinski / XOR, 4 dithered tone ramps, 5 Truchet arcs, 6 TV test chart, 7 Sierpinski carpet, 8 Newton fractal
+// 0 calibration chart, 1 chessboards, 2 Julia set, 3 Sierpinski / XOR, 4 dithered tone ramps, 5 Truchet arcs, 6 TV test chart, 7 Sierpinski carpet, 8 Newton fractal, 9 Nova fractal, 10 Hilbert curve, 11 Barnsley fern
 // line = panel line 0..719, same mapping as the boot splash (ble_splash.h); out = 64 bytes, 2 bits per pixel, 00 black 01 white 10 yellow 11 red
 void demo_gen_line(uint8_t pattern, int line, uint8_t *out);
 uint8_t demo_px(uint8_t pattern, int u, int v);   // picture pixel u = column 0..719, v = row 0..255 (for the host test)
