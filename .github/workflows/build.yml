@@ -136,9 +136,11 @@ jobs:
           # The generated makefile does not allow C define overrides; harmless, but keep the same patch as upstream.
           sed -i 's/C_DEFS   =/C_DEFS ?=/' v300_ble_probe.Makefile
 
-          # The SDK insists on the 32.768 kHz crystal (LFXO). Whether the V300 has one is not known: use the internal LFRCO.
-          sed -i 's/, LFXO/, LFRCO/' autogen/sl_device_init_clocks.c
-          sed -i 's/ sl_device_init_lfxo/\/\/ sl_device_init_lfxo/' autogen/sl_event_handler.c
+          # The V300 has a 32.768 kHz crystal (LFXO, PD0/PD1, found on the board photo, measured 32.76909 kHz): the SDK's own LFXO setup is used
+          # (sleep timer and EM2 wake-ups run from the crystal). Earlier builds replaced it by the internal LFRCO because the crystal was not known.
+          # If a tag ever hangs at start because the crystal does not oscillate, put these two lines back:
+          #   sed -i 's/, LFXO/, LFRCO/' autogen/sl_device_init_clocks.c
+          #   sed -i 's/ sl_device_init_lfxo/\/\/ sl_device_init_lfxo/' autogen/sl_event_handler.c
 
           # The generated makefile takes the compiler from ARM_GCC_DIR; with this image it came out empty ("/bin/arm-none-eabi-gcc: not found").
           # Give it the real directory in every way at once: variables on the make command line and links in /bin.
