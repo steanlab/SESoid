@@ -90,6 +90,19 @@
   .pmc.chg { border-color:var(--ok); box-shadow:0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent); }
   #prog { position:sticky; top:0; z-index:6; background:var(--bg); border-bottom:1px solid var(--line); padding:4px 16px 6px; display:none; } #prog.on { display:block; } #prog.busy { background:var(--box); }
   #pst { font-weight:600; } #pbar { height:14px; background:var(--line); border-radius:7px; overflow:hidden; margin:6px 0 2px; } #pbar i { display:block; height:100%; width:0; background:var(--acc); } #pdet { font-size:14px; min-height:20px; font-variant-numeric:tabular-nums; }
+  nav { position:sticky; top:0; z-index:5; background:var(--bg); }
+  #hint { max-width:1100px; margin:6px auto 4px; padding:10px 14px; border:1px solid var(--acc); border-radius:10px; background:var(--box); font-size:14px; }
+  #hwLine { flex-basis:100%; font-size:13px; color:var(--mut); } #hwLine[hidden] { display:none; }
+  #hint[hidden] { display:none; } #hint button { margin-top:6px; }
+  @media (max-width:600px) {
+    header h1 small { display:none; }
+    #t-cfg .ctl.sel { grid-template-columns:minmax(0,1fr); gap:2px; margin:9px 0; } #t-cfg .ctl.sel > span:first-child { font-weight:600; }
+    nav { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; } nav button { white-space:nowrap; flex:none; }
+  }
+  @media (pointer:coarse) {
+    button, select, input[type=number], input[type=text] { min-height:44px; }
+    input[type=range] { height:30px; } input[type=checkbox] { width:22px; height:22px; }
+  }
 </style>
 </head>
 <body>
@@ -97,8 +110,10 @@
   <h1>Gecko Slide <small>Страница управления электронными метками SES Imagotag. Проверено на V300 5.9″ BWRY</small></h1>
   <span class="pill" id="connPill"><span class="dot"></span><span id="connTxt">не подключено</span></span>
   <span class="pill" id="battPill" hidden></span><span class="pill" id="tempPill" hidden></span>
-  <button id="bLang" title="Language / Язык">EN</button><button class="p" id="bConn">Подключиться</button><button id="bConnAll" title="Показать в окне выбора все Bluetooth-устройства без фильтра по имени: если метка видна только так, дело в имени в рекламе">Все устройства</button><button id="bDisc" disabled>Отключиться</button><button id="bInstall" hidden title="Установить как приложение: откроется в своём окне и будет работать без интернета">Установить приложение</button><span class="pill" id="pwaPill" hidden title="Страница сохранена в браузере и откроется без интернета"><span class="dot"></span>работает офлайн</span>
+  <div id="hwLine" hidden></div>
+  <button id="bLang" title="Language / Язык">EN</button><button class="p" id="bConn">Подключиться</button><button id="bDisc" hidden disabled>Отключиться</button><button id="bInstall" hidden title="Установить как приложение: откроется в своём окне и будет работать без интернета">Установить приложение</button><span class="pill" id="pwaPill" hidden title="Страница сохранена в браузере и откроется без интернета"><span class="dot"></span>работает офлайн</span>
 </header>
+<div id="hint" role="note"><b>Как подключиться.</b> Приложите телефон к метке (NFC) и сразу нажмите «Подключиться»: Bluetooth метки открыт 2 минуты после включения, 90 секунд после касания телефоном и 30 секунд после разрыва соединения. Кнопки управления станут доступны после подключения. <button id="bConnAll" title="Показать в окне выбора все Bluetooth-устройства без фильтра по имени: если метка видна только так, дело в имени в рекламе">Все устройства</button></div>
 <div id="prog" aria-live="polite"><div id="pst"></div><div id="pbar"><i></i></div><div id="pdet"></div></div>
 <nav id="tabs">
   <button data-t="edit" class="act">Изображение</button><button data-t="slots">Слоты и слайдшоу</button><button data-t="cfg">Настройки</button><button data-t="tag">Метка</button><button data-t="tools">Инструменты</button><button data-t="logt">Журнал</button>
@@ -121,6 +136,17 @@
           <button id="bPng" disabled>Скачать PNG</button><button id="bBin" disabled>Скачать кадр (.bin)</button>
           <span class="n" id="cvInfo" style="margin:0"></span>
         </div>
+      </div>
+      <div class="card" id="textCard">
+        <h2>Текст на слайд</h2>
+        <textarea id="txtIn" rows="3" style="width:100%;font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg)" placeholder="Введите текст (можно несколько строк)"></textarea>
+        <div class="ctl sel"><span>Шрифт</span><select id="txtFont"><option value="sans-serif">Без засечек</option><option value="serif">С засечками</option><option value="monospace">Моноширинный</option><option value="Impact, 'Arial Black', sans-serif">Плакатный</option></select></div>
+        <div class="ctl sel"><span>Начертание</span><select id="txtWeight"><option value="bold">Жирный</option><option value="normal">Обычный</option></select></div>
+        <div class="ctl"><span>Размер</span><input type="range" id="txtSize" min="0" max="220" value="0"><output id="txtSizeOut">авто</output></div>
+        <div class="ctl sel"><span>Выравнивание</span><select id="txtAlign"><option value="center">По центру</option><option value="left">Слева</option><option value="right">Справа</option></select></div>
+        <div class="ctl sel"><span>Цвет текста</span><select id="txtFg"><option value="0">Чёрный</option><option value="1">Белый</option><option value="2">Жёлтый</option><option value="3">Красный</option></select></div>
+        <div class="ctl sel"><span>Цвет фона</span><select id="txtBg"><option value="1">Белый</option><option value="0">Чёрный</option><option value="2">Жёлтый</option><option value="3">Красный</option></select></div>
+        <div class="row"><button class="p" id="bText">Поместить в предпросмотр</button><span class="n" style="margin:0">Дальше обычная загрузка в метку. Текст рисуется чётко, без растра, в четырёх цветах панели.</span></div>
       </div>
       <div class="card">
         <h2>Загрузка в метку</h2>
@@ -169,7 +195,7 @@
     <div class="ctl sel"><span>Автосмена</span><label><input type="checkbox" id="cEn"> менять слайды сами</label></div>
     <div class="ctl sel"><span>Порядок</span><select id="cMode"><option value="0">по кругу (1 → 2 → 3 …)</option><option value="1">случайно</option></select></div>
     <div class="ctl sel"><span>Интервал</span><span class="sub"><select id="cInt"></select><span id="cIntCustomWrap" hidden><input type="number" id="cIntCustom" min="1" max="1440" style="width:80px"> мин</span></span></div>
-    <div class="ctl sel"><span>Температура панели</span><span class="sub"><input type="number" id="cTemp" min="-20" max="60" style="width:80px"> °C <span class="n" style="margin:0">от неё метка выбирает режим обновления панели</span></span></div>
+    <div class="ctl sel"><span>Температура вручную</span><span class="sub"><input type="number" id="cTemp" min="-20" max="60" style="width:80px"> °C <span class="n" style="margin:0">запасное значение: нужно, если не включено «температуру для экрана брать с датчика панели»</span></span></div>
     <div class="ctl sel"><span></span><span class="sub"><span id="cTempInfo" class="n" style="margin:0"></span></span></div>
     <div class="ctl sel"><span>Полная перерисовка</span><span class="sub"><input type="number" id="cClean" min="0" max="250" style="width:80px" disabled> смен <select id="cCleanMode" disabled><option value="0">белый</option><option value="1">чёрный + белый</option><option value="2">полный цикл (~2 мин)</option></select> <span class="n" style="margin:0">после стольких смен слайда экран сначала очищается выбранной серией заливок (убирает «призраки»); 0 — никогда. Полный цикл: чёрный, белый, красный, жёлтый, белый</span></span></div>
     <div class="ctl sel"><span>Мощность Bluetooth</span><span class="sub"><select id="cTx"></select><span id="cTxAct" class="n" style="margin:0"></span></span></div>
@@ -191,7 +217,7 @@
       <div class="bar"><div id="pnBar"></div></div>
       <div class="kv" id="pnKv"></div>
       <h3>Управление</h3>
-      <div class="row"><button id="bShowNext" disabled>Следующий слайд</button><button id="bSplash" disabled>Заставка</button></div>
+      <div class="row"><button id="bShowNext" disabled>Следующий слайд</button><button id="bSplash" disabled>Заставка</button><button id="bHwScreen" disabled title="Метка нарисует на экране свои данные: процессор, панель, температуру, батарею, flash, кварцы, радио, NFC, прошивку">Экран «Tag hardware»</button></div>
       <div id="demoBox" style="margin:18px 0 14px;padding:12px 14px;border:2px solid var(--acc);border-radius:10px;background:var(--box)">
       <h3 style="margin:0 0 8px;color:var(--acc);font-size:14px">Демо-режим</h3>
       <div class="n" style="margin-top:0"><b>Демо-тур</b> (для съёмки): из чего он состоит, выбирается галочками: заставка, картинки, слайд, экран TAG HARDWARE с данными метки; в конце метка возвращает прежний слайд. Картинки рисует сама метка. Через 10 секунд после запуска страница отключается и тур начинается, чтобы в кадре осталась одна метка; касание метки останавливает тур после текущего экрана. Обычная смена слайдов на время тура ждёт.</div>
@@ -437,6 +463,15 @@ const EN_JS = new Map([
   ['Ковёр Серпинского','Sierpinski carpet'],
   ['Фрактал Ньютона','Newton fractal'],
   ['Фрактал Нова','Nova fractal'],
+  ['Введите текст','Enter some text'], ['авто','auto'], ['текст','text'],
+  ['Процессор 38,4 МГц','Processor 38.4 MHz'],
+  [' · флеш для слайдов: занято ',' · slide flash: used '], [' из 10 (',' of 10 ('], [' КиБ), свободно ',' KiB), free '], [' КиБ из 450 КиБ',' KiB of 450 KiB'],
+  ['Частота ядра задана прошивкой (кварц 38,4 МГц), она не измеряется. Флеш: десять слотов по 45 КиБ во внешней флеш метки.','The core clock is set by the firmware (38.4 MHz crystal), it is not measured. Flash: ten slots of 45 KiB in the tag\'s external flash.'],
+  ['Устройство не выбрано. Если метки нет в списке: приложите телефон к метке (NFC) и повторите сразу, Bluetooth метки открыт ограниченное время','No device chosen. If the tag is not in the list: tap the phone on the tag (NFC) and try again at once, the tag\'s Bluetooth is open only for a limited time'],
+  ['. Приложите телефон к метке (NFC) и повторите: Bluetooth метки открыт ограниченное время','. Tap the phone on the tag (NFC) and try again: the tag\'s Bluetooth is open only for a limited time'],
+  ['Интервал, минут','Interval, minutes'], ['Полная перерисовка, смен','Full redraw, changes'], ['Режим перерисовки','Redraw mode'],
+  ['Порог предупреждения, В','Warning threshold, V'], ['Критический порог, В','Critical threshold, V'],
+  ['Измеряю кварцы, затем метка нарисует экран с данными железа','Measuring the crystals, then the tag draws the hardware data screen'],
   ['батарея ','battery '],
   ['измерено ','measured '],
   [' В',' V'],
@@ -938,6 +973,14 @@ const EN_HTML = new Map([
   ["Страница управления электронными метками SES Imagotag. Проверено на V300 5.9″ BWRY","Control page for SES Imagotag e-paper tags. Tested with V300 5.9″ BWRY"],
   ["не подключено","not connected"],
   ["Подключиться","Connect"],
+  ["Как подключиться.","How to connect."],
+  ["Текст на слайд","Text on a slide"], ["Введите текст (можно несколько строк)","Enter text (several lines allowed)"],
+  ["Шрифт","Font"], ["Без засечек","Sans-serif"], ["С засечками","Serif"], ["Моноширинный","Monospace"], ["Плакатный","Poster"],
+  ["Начертание","Weight"], ["Жирный","Bold"], ["Обычный","Regular"], ["Размер","Size"], ["авто","auto"],
+  ["Выравнивание","Alignment"], ["По центру","Centre"], ["Слева","Left"], ["Справа","Right"],
+  ["Цвет текста","Text colour"], ["Цвет фона","Background colour"], ["Поместить в предпросмотр","Put into the preview"],
+  ["Дальше обычная загрузка в метку. Текст рисуется чётко, без растра, в четырёх цветах панели.","Then the normal upload to the tag. The text is drawn sharp, without dithering, in the four panel colours."],
+  ["Приложите телефон к метке (NFC) и сразу нажмите «Подключиться»: Bluetooth метки открыт 2 минуты после включения, 90 секунд после касания телефоном и 30 секунд после разрыва соединения. Кнопки управления станут доступны после подключения.","Tap the phone on the tag (NFC) and press \"Connect\" right away: the tag's Bluetooth is open for 2 minutes after power-up, 90 seconds after a phone tap and 30 seconds after a connection ends. The control buttons become available once connected."],
   ["Отключиться","Disconnect"],
   ["Установить приложение","Install app"],
   ["работает офлайн","works offline"],
@@ -996,8 +1039,8 @@ const EN_HTML = new Map([
   ["случайно","random"],
   ["Интервал","Interval"],
   ["мин","min"],
-  ["Температура панели","Panel temperature"],
-  ["от неё метка выбирает режим обновления панели","the tag chooses the panel update mode from it"],
+  ["Температура вручную","Manual temperature"],
+  ["запасное значение: нужно, если не включено «температуру для экрана брать с датчика панели»","fallback value: used when \"take the screen temperature from the panel's sensor\" is off"],
   ["Мощность Bluetooth","Bluetooth power"],
   ["NFC-касание","NFC tap"],
   ["касание телефоном листает слайд","a phone tap flips the slide"],
@@ -1031,7 +1074,9 @@ const EN_HTML = new Map([
   ["Заставка","Splash"],
   ["Демо-тур","Demo tour"],
   ["Демо-режим","Demo mode"],
+  ["Экран «Tag hardware»","Screen \"Tag hardware\""],
   ["экран с данными железа","hardware data screen"],
+  ["Метка нарисует на экране свои данные: процессор, панель, температуру, батарею, flash, кварцы, радио, NFC, прошивку","The tag draws its own data on the screen: processor, panel, temperature, battery, flash, crystals, radio, NFC, firmware"],
   ["заставка","splash"],
   ["(для съёмки): из чего он состоит, выбирается галочками: заставка, картинки, слайд, экран TAG HARDWARE с данными метки; в конце метка возвращает прежний слайд. Картинки рисует сама метка. Через 10 секунд после запуска страница отключается и тур начинается, чтобы в кадре осталась одна метка; касание метки останавливает тур после текущего экрана. Обычная смена слайдов на время тура ждёт.","(for filming): what it consists of is chosen with the checkboxes: splash, pictures, slide, the TAG HARDWARE screen with the tag's data; at the end the tag puts the earlier slide back. The tag draws the pictures itself. 10 seconds after the start the page disconnects and the tour begins, so that only the tag is in the frame; a touch of the tag stops the tour after the current screen. The normal slide change waits during the tour."],
   ["Слайд в туре","Slide in the tour"],
@@ -1622,6 +1667,44 @@ function tvIdx() {
   for (const [x, y] of [[2, 2], [W - 16, 2], [2, H - 16], [W - 16, H - 16]]) rect(x, y, 14, 14, 3);        // красные угловые квадраты
   return idx;
 }
+/* ---- текст на слайд: рисуем в картинку 720 x 256 цветами панели, дальше обычный путь «как есть» ---- */
+function textCanvas() {
+  const I = PALETTES.ideal.c, col = k => 'rgb(' + I[k].join(',') + ')';
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const mk = document.createElement('canvas'); mk.width = W; mk.height = H; const g = mk.getContext('2d', { willReadFrequently: true });      // text is drawn black on white here, then cut hard (no grey edge pixels)
+  g.fillStyle = '#fff'; g.fillRect(0, 0, W, H);
+  const text = $('txtIn').value.replace(/\r/g, ''), fam = $('txtFont').value, wt = $('txtWeight').value, al = $('txtAlign').value, manual = +$('txtSize').value;
+  const mx = 18, my = 12, maxW = W - 2 * mx, maxH = H - 2 * my;
+  const wrap = size => {                                   // word wrap at this size; null if a single word is wider than the screen
+    g.font = wt + ' ' + size + 'px ' + fam; const out = [];
+    for (const para of text.split('\n')) {
+      if (!para.trim()) { out.push(''); continue; }
+      let line = '';
+      for (const w of para.split(/\s+/).filter(Boolean)) {
+        const t = line ? line + ' ' + w : w;
+        if (g.measureText(t).width <= maxW) line = t; else { if (!line || g.measureText(w).width > maxW) return null; out.push(line); line = w; }
+      }
+      out.push(line);
+    }
+    return out;
+  };
+  let size = manual || 220, lines = null;
+  for (; size >= 8; size -= manual ? 1 : 2) { lines = wrap(size); if (lines && lines.length * size * 1.18 <= maxH) break; lines = null; if (manual && size === manual) { /* too big: keep shrinking */ } }
+  if (!lines) { size = 8; lines = wrap(8) || [text]; }
+  g.font = wt + ' ' + size + 'px ' + fam; g.textBaseline = 'middle'; g.fillStyle = '#000'; g.textAlign = al;
+  const lh = size * 1.18, y0 = H / 2 - (lines.length - 1) * lh / 2, x = al === 'left' ? mx : al === 'right' ? W - mx : W / 2;
+  lines.forEach((l, i) => g.fillText(l, x, y0 + i * lh));
+  const md = g.getImageData(0, 0, W, H).data, c2 = cv.getContext('2d'), out = c2.createImageData(W, H), fg = I[+$('txtFg').value], bg = I[+$('txtBg').value];
+  for (let i = 0; i < W * H; i++) { const c = md[i * 4] < 128 ? fg : bg; out.data[i * 4] = c[0]; out.data[i * 4 + 1] = c[1]; out.data[i * 4 + 2] = c[2]; out.data[i * 4 + 3] = 255; }
+  c2.putImageData(out, 0, 0);
+  return cv;
+}
+$('txtSize').oninput = () => { $('txtSizeOut').textContent = +$('txtSize').value ? $('txtSize').value + ' px' : TT('авто'); };
+$('bText').onclick = async () => {
+  if (!$('txtIn').value.trim()) { toast(TT('Введите текст'), true); return; }
+  Object.assign(P, JSON.parse(JSON.stringify(PRESETS.exact.v)), { preset: 'exact', fit: 'cover', zoom: 1, panX: 0, panY: 0, rot: 0, flipH: false, flipV: false, bg: 0 });
+  writeCtls(); setSource(await createImageBitmap(textCanvas()), TT('текст')); saveParams();
+};
 $('bTv').onclick = async () => {
   Object.assign(P, JSON.parse(JSON.stringify(PRESETS.exact.v)), { preset: 'exact', fit: 'cover', zoom: 1, panX: 0, panY: 0, rot: 0, flipH: false, flipV: false, bg: 0 });
   writeCtls(); setSource(await createImageBitmap(idxToCanvas(tvIdx(), PALETTES.ideal.c)), TT('ТВ-таблица')); saveParams();
@@ -1718,7 +1801,7 @@ function handle(a) {
     case 0xB1: {
       const s = a[1]; if (s < 1 || s > 10) break;
       tag.slots[s] = { valid: !!(a[2] & 1), show: !!(a[2] & 2), inList: !!(a[2] & 4), cur: !!(a[2] & 8), total: u32(a, 3), crc: u32(a, 7) };
-      renderSlots(); break; }
+      renderSlots(); renderHwLine(); break; }
     case 0xB3: if (a[2] === 4) { nfcPending = false; NFC.bkBusy = false; NFC.op = null; nfcButtons(); toast(TT(RES_TXT[4]), true); log(TT(RES_TXT[4])); break; }       // опасная команда заблокирована
       if (a[1] === 0x3F && a[2] !== 0 && nfcPending) { nfcPending = false; const wasOp = !!NFC.op; NFC.bkBusy = false; NFC.op = null; nfcButtons(); const t = TT('метка не приняла команду (код ') + a[2] + TT('): нужна прошивка 1.7 или новее, либо неверные параметры.'); $(wasOp || NFC.bk.length ? 'nfcOut2' : 'nfcOut').textContent = t; break; }
       if (a[1] === 0x3F && a[2] !== 0) { $('scOut').textContent = TT('метка не приняла команду сканера: нужно от 2 до 6 свободных выводов (при подаче питания 2–4 вывода сканирования и хотя бы один отдельный вывод питания) и прошивка 1.5 или новее.'); toast(TT('Сканер I²C: метка отклонила команду')); break; }
@@ -1776,15 +1859,20 @@ async function connect(all) {
     await tx.startNotifications();
     setConn(true); log(TT('готово'));
     await sleep(150); await cmd([0x35]); await sleep(150); await cmd([0x31]); await sleep(150); await cmd([0x30]);
-  } catch (e) { log(TT('ошибка подключения: ') + e); toast(TT('Не удалось подключиться: ') + (e.message || e)); }
+  } catch (e) {
+    log(TT('ошибка подключения: ') + e);
+    if (e && e.name === 'NotFoundError') toast(TT('Устройство не выбрано. Если метки нет в списке: приложите телефон к метке (NFC) и повторите сразу, Bluetooth метки открыт ограниченное время'));
+    else toast(TT('Не удалось подключиться: ') + (e.message || e) + TT('. Приложите телефон к метке (NFC) и повторите: Bluetooth метки открыт ограниченное время'));
+  }
 }
 function onDisc() { log(TT('соединение закрыто')); setConn(false); if (tag.pm) { tag.pm.mode = 0; renderPins(null); } }
 function setConn(on) {
   $('connPill').classList.toggle('on', on); $('connTxt').textContent = on ? TT('подключено: ') + (dev ? dev.name : '') : TT('не подключено');
   $('bConn').disabled = $('bConnAll').disabled = on; $('bDisc').disabled = !on;
-  for (const id of ['bSlots', 'bNext', 'bEraseAll', 'bCfg', 'bCfgGet', 'bShowNext', 'bSplash', 'bDemo2', 'bDemoStop', 'bReboot', 'bHw', 'bPing', 'bStat', 'bReset', 'bRam', 'bPdiag', 'bPdiagGet', 'bClk', 'bClkGet', 'bPm1', 'bPm2', 'bPm3', 'bPmStop', 'bPmClr', 'bScan', 'bScanPwr', 'bScanStop', 'bScanGet', 'bNfcSnap', 'bNfcLive', 'bNfcStop', 'bNfcGet', 'bNfcBk', 'bNfcWr', 'bNfcRestore', 'bNfcUnlock', 'bNfcFind', 'bNfcRescue', 'bFInfo', 'bFErase', 'bFProg', 'bFScan', 'bVer']) $(id).disabled = !on;
+  for (const id of ['bSlots', 'bNext', 'bEraseAll', 'bHwScreen', 'bCfg', 'bCfgGet', 'bShowNext', 'bSplash', 'bDemo2', 'bDemoStop', 'bReboot', 'bHw', 'bPing', 'bStat', 'bReset', 'bRam', 'bPdiag', 'bPdiagGet', 'bClk', 'bClkGet', 'bPm1', 'bPm2', 'bPm3', 'bPmStop', 'bPmClr', 'bScan', 'bScanPwr', 'bScanStop', 'bScanGet', 'bNfcSnap', 'bNfcLive', 'bNfcStop', 'bNfcGet', 'bNfcBk', 'bNfcWr', 'bNfcRestore', 'bNfcUnlock', 'bNfcFind', 'bNfcRescue', 'bFInfo', 'bFErase', 'bFProg', 'bFScan', 'bVer']) $(id).disabled = !on;
   nfcButtons();
   document.querySelectorAll('.fill').forEach(b => b.disabled = !on);
+  $('hint').hidden = on; $('bDisc').hidden = !on;
   updateUpButtons(); renderSlots(); renderHeadPills();
 }
 $('bConn').onclick = () => connect();
@@ -1848,6 +1936,10 @@ function renderSlots() {
     const hd = document.createElement('div'); hd.className = 'hd'; hd.innerHTML = TT('<span>Слот ') + s + '</span><span></span>';
     for (const [x, c] of badges) { const b = document.createElement('span'); b.className = 'badge ' + c; b.textContent = x; hd.lastChild.appendChild(b); hd.lastChild.appendChild(document.createTextNode(' ')); }
     card.appendChild(hd);
+    const pick = () => { $('upSlot').value = s; lsSet('gs.slot', s); document.querySelector('[data-t=edit]').click(); toast(TT('Слот ') + s + TT(' выбран для загрузки')); };
+    if ((!t || !t.valid) && !rec) {                                    // an empty slot with nothing remembered: one short line and the upload button
+      const r0 = document.createElement('div'); r0.className = 'row'; const bu = document.createElement('button'); bu.textContent = TT('Загрузить сюда'); bu.onclick = pick; r0.appendChild(bu); card.appendChild(r0); g.appendChild(card); continue;
+    }
     if (rec && rec.thumb && (match || !t || !t.show)) { const im = document.createElement('img'); im.src = rec.thumb; im.style.cssText = 'width:100%;aspect-ratio:720/256;border-radius:6px;background:#000;image-rendering:pixelated;display:block'; card.appendChild(im); }
     else { const e = document.createElement('div'); e.className = 'empty'; e.textContent = t && t.show ? (rec ? TT('в метке другая картинка, запомненная здесь не совпадает') : TT('картинка загружена не с этой страницы')) : TT('пусто'); card.appendChild(e); }
     const meta = document.createElement('div'); meta.className = 'n'; meta.textContent = (rec ? rec.name + ' · ' : '') + (t && t.valid ? t.total + TT(' Б, CRC ') + h8(t.crc) : ''); card.appendChild(meta);
@@ -1857,7 +1949,7 @@ function renderSlots() {
     const r2 = document.createElement('div'); r2.className = 'row';
     const mk = (txt, fn, dis, cls) => { const b = document.createElement('button'); b.textContent = txt; b.disabled = dis; if (cls) b.className = cls; b.onclick = fn; r2.appendChild(b); };
     mk(TT('Показать'), () => cmd([0x32, s], TT('показ')), !connected() || !t || !t.show);
-    mk(TT('Загрузить сюда'), () => { $('upSlot').value = s; lsSet('gs.slot', s); document.querySelector('[data-t=edit]').click(); toast(TT('Слот ') + s + TT(' выбран для загрузки')); }, false);
+    mk(TT('Загрузить сюда'), pick, false);
     mk(TT('Проверить'), () => cmd([0x24, s], TT('проверка')), !connected() || !t || !t.valid);
     mk('PNG', () => rec && downloadRec(rec), !rec);
     mk(TT('Забыть'), async () => { if (rec && confirm(TT('Забыть запомненную картинку слота ') + s + TT('? В метке она останется.'))) { await LIB.del(s); renderSlots(); } }, !rec, 'd');
@@ -1879,6 +1971,13 @@ $('bEraseAll').onclick = () => { if (confirm(TT('Стереть все 10 сла
 $('bNext').onclick = () => cmd([0x33], TT('следующий'));
 $('bShowNext').onclick = () => cmd([0x33], TT('следующий'));
 $('bSplash').onclick = () => cmd([0x39], TT('заставка'));
+$('bHwScreen').onclick = async () => {                       // first the crystal test (1-3 s), so the screen shows the measured crystal error
+  $('bHwScreen').disabled = true;
+  toast(TT('Измеряю кварцы, затем метка нарисует экран с данными железа'));
+  await cmd([0x3C]); await sleep(3500);
+  if (connected()) { demoSent = true; await cmd([0x3F, 0x40, 0xFE], TT('экран с данными железа')); }
+  $('bHwScreen').disabled = !connected();
+};
 let demoSent = false;      // the next 0x3F result is the answer to the demo command
 const DEMO_PICS = [[0, 'Калибровочная таблица'], [1, 'Шахматки'], [2, 'Множество Жюлиа'], [3, 'Треугольник Серпинского'], [4, 'Градиенты тонов'], [5, 'Дуги Трюше'], [6, 'ТВ-таблица'], [7, 'Ковёр Серпинского'], [8, 'Фрактал Ньютона'], [9, 'Фрактал Нова'], [10, 'Кривая Гильберта'], [11, 'Папоротник Барнсли']];
 for (const [id, name] of DEMO_PICS) { const l = document.createElement('label'); l.style.marginRight = '12px'; const c = document.createElement('input'); c.type = 'checkbox'; c.dataset.demo = id; c.checked = true; l.append(c, ' ' + TT(name)); $('demoPics').append(l); }
@@ -1917,7 +2016,29 @@ function fillCfg() {
   $('cNfc').disabled = c.nfc === undefined; $('cNfc').checked = !!c.nfc;
   $('cNfcInfo').textContent = c.nfc === undefined ? TT('нужна прошивка 1.7 или новее') : TT('касаний с запуска метки: ') + c.taps + TT('. Касание телефоном всегда включает Bluetooth метки на 90 секунд; с галочкой оно ещё и листает слайд.');
 }
-function renderHeadPills() {                      // battery and panel temperature in the header, only while connected
+function labelCtls() {                              // visible captions become accessible names of the controls
+  const by = { cIntCustom: 'Интервал, минут', cClean: 'Полная перерисовка, смен', cCleanMode: 'Режим перерисовки', cBattLow: 'Порог предупреждения, В', cBattCrit: 'Критический порог, В' };
+  document.querySelectorAll('.ctl').forEach(row => {
+    const cap = row.firstElementChild && row.firstElementChild.textContent.trim();
+    row.querySelectorAll('input,select').forEach(el => {
+      if (el.closest('label') || (el.id && document.querySelector('label[for="' + el.id + '"]'))) return;
+      const t = by[el.id] ? TT(by[el.id]) : cap; if (t) el.setAttribute('aria-label', t);
+    });
+  });
+}
+function renderHwLine() {                            // processor clock and flash use as a line of text in the header
+  const el = $('hwLine'), known = Object.keys(tag.slots).length;
+  el.hidden = !connected(); if (el.hidden) return;
+  let t = TT('Процессор 38,4 МГц');
+  if (known >= 10) {
+    const used = Object.values(tag.slots).filter(x => x && x.valid).length, KIB = 45;          // one frame = 46 080 bytes = 45 KiB
+    t += TT(' · флеш для слайдов: занято ') + used + TT(' из 10 (') + used * KIB + TT(' КиБ), свободно ') + (10 - used) * KIB + TT(' КиБ из 450 КиБ');
+  }
+  el.textContent = t;
+  el.title = TT('Частота ядра задана прошивкой (кварц 38,4 МГц), она не измеряется. Флеш: десять слотов по 45 КиБ во внешней флеш метки.');
+}
+function renderHeadPills() {
+  renderHwLine();                      // battery and panel temperature in the header, only while connected
   const bp = $('battPill'), tp = $('tempPill'), b = connected() ? tag.batt : null;
   bp.hidden = tp.hidden = !b;
   if (!b) return;
@@ -2565,7 +2686,7 @@ function applyLang() {
   ok(renderSlots); ok(renderTag); ok(renderSlideInfo); ok(renderHw);
   ok(() => setConn(connected()));
   for (const [op, fn] of [[0xB8, renderPdiag], [0xB9, renderClock], [0xBA, renderPins], [0xBB, renderScan]]) if (LAST[op]) ok(() => fn(LAST[op]));
-  ok(renderNfc); ok(nfcButtons);
+  ok(renderNfc); ok(nfcButtons); ok(labelCtls);
   ok(() => { const rev = new Map(); for (const [r, e] of EN_JS) rev.set(e, r); const ru = rev.get(srcName) || srcName; srcName = TT(ru); if (src) { $('srcName').textContent = srcName + ' · ' + (src.width || src.naturalWidth) + '×' + (src.height || src.naturalHeight); schedule(); } });
 }
 $('bLang').onclick = () => { lang = lang === 'ru' ? 'en' : 'ru'; try { localStorage.setItem('gs.lang', lang); } catch (e) { /* ignore */ } applyLang(); };

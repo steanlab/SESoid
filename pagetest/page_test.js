@@ -70,6 +70,7 @@ const MOCK = `
     else if (op === 0x3D) N(clkPkt(true));
     else if (op === 0x3E && tag.old11 && v.length !== 2) N([0xB3, 0x3E, 2]);
     else if (op === 0x3E) { tag.pmMask = v.length >= 6 ? (v[2] | v[3] << 8 | v[4] << 16 | v[5] << 24) >>> 0 : 0xFFFFFFFF; tag.pmLen = v.length; tag.pm = { mode: v[1] & 3, swd: v[1] & 0x80, level: 0, hi: 0, lo: 0, edges: 0, last: 255, el: 0 }; tag.pmBase(); N(pmPkt()); }
+    else if (op === 0x3F && v[1] === 0x40) { tag.demoArgs = Array.from(v); N([0xB3, 0x3F, 0]); }
     else if (op === 0x3F && v[1] === 0x14) { tag.nfcCmd = 0x14; tag.nfcMode = 3; nfcInit(); N([0xB3, 0x3F, tag.nfcOk === false ? 2 : 0]); if (tag.nfcOk !== false) setTimeout(() => { for (let i = 0; i < 59; i++) N([0xBF, i, ...tag.chip[i]]); nfcSend(); }, 60); }
     else if (op === 0x3F && v[1] === 0x20 && v.length !== 19) N([0xB3, 0x3F, 1]);
     else if (op === 0x3F && v[1] === 0x20) { tag.wbuf = tag.wbuf || []; tag.wbuf[v[2]] = Array.from(v.slice(3, 19)); tag.wbufN = (tag.wbufN || 0) + 1; }
@@ -487,13 +488,33 @@ const MOCK = `
   await pg.screenshot({ path: path.join(OUT, 'shot_mobile.png') });
 
 
+  // --- text on a slide: drawn sharp in panel colours, only the four colours appear, no dithering noise
+  { await pg.click('[data-t=edit]');
+    await pg.fill('#txtIn', 'Привет, мир!\nHello world'); await pg.selectOption('#txtFg', '3'); await pg.click('#bText'); await pg.waitForTimeout(600);
+    const tx = await pg.evaluate(() => { const c = document.getElementById('pv'), d = c.getContext('2d').getImageData(0, 0, 720, 256).data, m = new Map(); for (let i = 0; i < d.length; i += 4) { const k = d[i] + ',' + d[i + 1] + ',' + d[i + 2]; m.set(k, (m.get(k) || 0) + 1); } return { n: m.size, top: [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3), name: document.getElementById('srcName').textContent }; });
+    ok(tx.n <= 4 && tx.top.length >= 2 && tx.top[1][1] > 800, 'text slide: sharp, <= 4 colours, text pixels present: ' + JSON.stringify(tx.top) + ' colours=' + tx.n);
+    ok(/720×256/.test(tx.name), 'text slide became the source picture: ' + tx.name);
+    await pg.fill('#txtIn', 'x'.repeat(400)); await pg.click('#bText'); await pg.waitForTimeout(400);
+    ok(!(await pg.evaluate(() => document.getElementById('log').textContent)).includes('Error'), 'very long text does not break the page');
+  }
+
   // --- demo tour: the command and the texts it produces (English mode must not show Russian)
   { await pg.click('[data-t=tag]'); await pg.evaluate(() => { window.__tag.sent = []; });
     await pg.evaluate(() => { document.getElementById('bDemo2').disabled = false; document.getElementById('bDemo2').click(); });
     await pg.waitForTimeout(400);
+    ok(JSON.stringify(await pg.evaluate(() => window.__tag.demoArgs)) === JSON.stringify([0x3F, 0x40, 0xFF, 0xFF, 0x3F, 0]), 'tour command: 12 pictures + splash + hardware screen (mask 0x3FFF): ' + await pg.evaluate(() => JSON.stringify(window.__tag.demoArgs)));
     const dem = await pg.evaluate(() => ({ toast: document.getElementById('toast').textContent, log: document.getElementById('log').textContent }));
     ok(!/[А-Яа-яЁё]/.test(dem.toast) || process.env.LOC !== 'en-US', 'demo start: toast has no Russian in English mode (' + dem.toast + ')');
     ok(!/Демо начнётся|Ничего не выбрано/.test(dem.log) || process.env.LOC !== 'en-US', 'demo start: log has no Russian in English mode');
+    await pg.evaluate(() => { window.__tag.demoArgs = null; document.getElementById('bHwScreen').disabled = false; document.getElementById('bHwScreen').click(); });
+    await pg.waitForTimeout(4200);
+    ok(JSON.stringify(await pg.evaluate(() => window.__tag.demoArgs)) === JSON.stringify([0x3F, 0x40, 0xFE]), 'Tag hardware button sends the hardware screen command after the crystal test: ' + await pg.evaluate(() => JSON.stringify(window.__tag.demoArgs)));
+    const hl = await pg.evaluate(() => ({ t: document.getElementById('hwLine').hidden ? null : document.getElementById('hwLine').textContent }));
+    ok(hl.t && /38[.,]4/.test(hl.t) && /\b\d+/.test(hl.t) && (process.env.LOC === 'en-US' ? !/[А-Яа-яЁё]/.test(hl.t) : true), 'header line with clock and flash use: ' + hl.t);
+    await pg.click('[data-t=slots]');
+    const cards = await pg.evaluate(() => [...document.querySelectorAll('#slotGrid .slot')].map(c => c.querySelectorAll('button').length));
+    ok(cards.length === 10 && cards.some(n => n === 1) && cards.some(n => n > 1), 'empty slots collapse to one button, filled ones keep the full set: ' + cards.join(','));
+    await pg.click('[data-t=tag]');
     await pg.evaluate(() => { document.getElementById('bDemoStop').disabled = false; document.getElementById('bDemoStop').click(); });
     await pg.waitForTimeout(300);
   }
