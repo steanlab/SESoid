@@ -112,7 +112,8 @@ bool ctl_write(const uint8_t *v, uint8_t len)
       else queue_result(0x3E, SLR_BAD_SLOT);
       break;
     case 0x3F:
-      if (((v[1] >= 0x10 && v[1] <= 0x16) || (v[1] >= 0x20 && v[1] <= 0x22) || v[1] == 0x30 || v[1] == 0x31)) {              // NFC chip (ble_nfc.h)
+      if (len == 3 && v[1] == 0x40) queue_result(0x3F, slide_demo(v[2]));      // demo pictures: [0x3F, 0x40, n]
+      else if (((v[1] >= 0x10 && v[1] <= 0x16) || (v[1] >= 0x20 && v[1] <= 0x22) || v[1] == 0x30 || v[1] == 0x31)) {              // NFC chip (ble_nfc.h)
         uint8_t ok = SLR_OK;
         bool start = false;
         if (v[1] == 0x10 || v[1] == 0x11 || v[1] == 0x14 || v[1] == 0x21 || v[1] == 0x22 || v[1] == 0x30 || v[1] == 0x31) { hwtest_scan_abort(); hwtest_pins_start(PM_MODE_OFF, 0xFFFFFFFFu); }   // they share the pins

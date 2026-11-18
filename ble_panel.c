@@ -5,6 +5,7 @@
 #include <string.h>
 #include "ble_panel.h"
 #include "ble_splash.h"
+#include "ble_demo.h"
 #include "ble_diag.h"
 #include "ble_ll.h"
 #include "ble_flash.h"
@@ -65,7 +66,7 @@ static uint32_t t_start, t_refresh;
 // what is drawn
 static panel_src_t src = PSRC_NONE;
 static panel_status_t status = PST_IDLE;
-static uint8_t slot_no, fill_code, shown;
+static uint8_t slot_no, fill_code, demo_pat, shown;
 static uint32_t slot_crc, run_crc, n_done, last_ms;
 static int8_t temp_c = 25;
 static bool auto_temp;           // take the temperature from the chip sensor
@@ -245,6 +246,9 @@ static bool get_line(int l, uint8_t *out)
       run_crc = up_crc32(run_crc, out, PANEL_LINE_BYTES);
       return true;
     }
+    case PSRC_DEMO:
+      demo_gen_line(demo_pat, l, out);
+      return true;
     case PSRC_FILL:
       memset(out, (int)(fill_code & 3u) * 0x55, PANEL_LINE_BYTES);
       return true;
@@ -560,6 +564,15 @@ bool panel_show_slot(uint8_t slot, uint32_t crc)
   slot_no = slot; slot_crc = crc;
   if (!begin(PSRC_SLOT)) return false;
   shown = slot;
+  return true;
+}
+
+bool panel_show_demo(uint8_t pattern)
+{
+  if (pattern >= DEMO_COUNT) return false;
+  demo_pat = pattern;
+  if (!begin(PSRC_DEMO)) return false;
+  shown = pattern;
   return true;
 }
 

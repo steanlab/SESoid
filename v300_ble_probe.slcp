@@ -15,6 +15,7 @@ source:
 - {path: ble_flash.c}
 - {path: ble_panel.c}
 - {path: ble_splash.c}
+- {path: ble_demo.c}
 - {path: ble_slide.c}
 - {path: ble_ctl.c}
 - {path: ble_sys.c}
@@ -32,6 +33,7 @@ include:
   - {path: ble_up.h}
   - {path: ble_flash.h}
   - {path: ble_panel.h}
+  - {path: ble_demo.h}
   - {path: ble_splash.h}
   - {path: ble_splash_data.h}
   - {path: ble_slide.h}

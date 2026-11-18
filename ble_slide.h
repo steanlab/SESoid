@@ -45,6 +45,7 @@ void slide_poll(void);                           // main loop
 const slide_cfg_t *slide_cfg(void);
 void slide_set_cfg(const slide_cfg_t *c);        // takes effect now, saved in the background
 uint8_t slide_show(uint8_t slot);                // SLR_*
+uint8_t slide_demo(uint8_t n);                    // SLR_*: demo pictures. 0 = stop a running tour, 1..8 = that picture, 0xFF = tour through all of them (10 s apart); the slideshow waits meanwhile
 uint8_t slide_clean(uint8_t mode);                // SLR_*: runs a cleaning sequence now (mode as in clean_mode), the slide stays off until the next change
 uint8_t slide_next(void);                        // SLR_*: the next slide of the playlist
 void slide_rescan(void);                         // read the slot records again (e.g. after an upload)

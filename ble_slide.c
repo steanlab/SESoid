@@ -3,6 +3,7 @@
 #include "ble_slide.h"
 #include "ble_batt.h"
 #include "ble_panel.h"
+#include "ble_demo.h"
 #include "ble_flash.h"
 #include "ble_up.h"
 #include "ble_ll.h"
@@ -19,6 +20,9 @@ static slot_info_t slots[FL_SLOTS + 1];     // index 1..10
 static uint8_t cur_slot;
 static uint8_t clean_seq[5];               // fill colour codes of the running cleaning sequence
 static uint8_t clean_len, clean_pos;       // sequence length / next step (clean_len 0 = none running)
+static bool demo_tour;                    // a demo tour is running: the pictures follow each other, the slideshow waits
+static uint8_t demo_idx;                   // next picture of the tour
+static uint32_t demo_gap_s;                // the next picture of the tour is shown at this uptime
 static uint8_t clean_slot;                 // a white full-screen update is running; this slide follows it (0 = none)
 static uint8_t changes;                    // slide changes since the last full-screen update
 static uint32_t log_next;                  // index of the first free log entry (LOG_ENTRIES = full)
@@ -268,6 +272,18 @@ static uint8_t start_show(uint8_t slot)
 
 uint8_t slide_show(uint8_t slot) { return start_show(slot); }
 
+uint8_t slide_demo(uint8_t n)
+{
+  if (n == 0) { demo_tour = false; return SLR_OK; }
+  if (n != 0xFFu && n > DEMO_COUNT) return SLR_BAD_SLOT;
+  if (panel_busy()) return SLR_PANEL_BUSY;
+  if (!up_idle() || ps != P_IDLE || fl_busy() || slide_scanning() || clean_len || clean_slot) return SLR_FLASH_BUSY;
+  if (batt_level() == BATT_CRIT) return SLR_BAD_SLOT;
+  if (!panel_show_demo(n == 0xFFu ? 0u : (uint8_t)(n - 1u))) return SLR_PANEL_BUSY;
+  demo_tour = n == 0xFFu; demo_idx = 1; demo_gap_s = 0;
+  return SLR_OK;
+}
+
 uint8_t slide_clean(uint8_t mode)
 {
   if (mode > 2u) mode = 0u;
@@ -345,6 +361,7 @@ void slide_poll(void)
     ev_status = (uint8_t)panel_status(); ev_err = panel_error(); ev_src = (uint8_t)panel_source(); ev_shown = panel_shown();
     event_pending = true;
     due_s = cfg.enabled ? uptime_s + (uint32_t)cfg.interval_min * 60u : 0xFFFFFFFFu;
+    demo_gap_s = uptime_s + 10u;
   }
   was_busy = busy;
   if (clean_len && !busy) {                            // the cleaning sequence goes on step by step, then the slide follows
@@ -353,6 +370,10 @@ void slide_poll(void)
     } else {
       clean_len = 0; clean_pos = 0;
     }
+  }
+  if (demo_tour && !busy && (int32_t)(uptime_s - demo_gap_s) >= 0) {   // the demo tour goes on with the next picture
+    if (demo_idx >= DEMO_COUNT || batt_level() == BATT_CRIT) demo_tour = false;
+    else if (up_idle() && !fl_busy() && panel_show_demo(demo_idx)) demo_idx++;
   }
   if (clean_slot && !busy && !clean_len) {             // the cleaning is done: now the slide itself
     if (start_show(clean_slot) == SLR_OK) clean_slot = 0;
@@ -368,7 +389,7 @@ void slide_poll(void)
   scan_poll();
 
   batt_poll(uptime_s, !busy && ps == P_IDLE && up_idle() && !fl_busy() && !clean_len && (!ll_connected() || ll_free_us() > 2000u));       // not inside a connection event
-  if (cfg.enabled && due_s != 0xFFFFFFFFu && (int32_t)(uptime_s - due_s) >= 0 && !busy && batt_level() != BATT_CRIT) {
+  if (!demo_tour && cfg.enabled && due_s != 0xFFFFFFFFu && (int32_t)(uptime_s - due_s) >= 0 && !busy && batt_level() != BATT_CRIT) {
     if (slide_next() != SLR_OK) due_s = uptime_s + 30u;           // nothing to show or the flash is in use: look again soon
   }
   g_diag.sl_due_s = slide_next_in_s();

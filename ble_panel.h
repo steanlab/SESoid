@@ -19,13 +19,14 @@
 
 #define PANEL_FRAME_BYTES 46080u
 
-typedef enum { PSRC_NONE = 0, PSRC_SPLASH = 1, PSRC_SLOT = 2, PSRC_FILL = 3 } panel_src_t;
+typedef enum { PSRC_NONE = 0, PSRC_SPLASH = 1, PSRC_SLOT = 2, PSRC_FILL = 3, PSRC_DEMO = 4 } panel_src_t;
 typedef enum { PST_IDLE = 0, PST_RUNNING = 1, PST_DONE_OK = 2, PST_DONE_ERR = 3 } panel_status_t;
 
 void panel_start(void);                              // main context, once after RAIL init: the boot splash
 void panel_poll(void);                               // main context, as often as possible
 bool panel_show_splash(void);                        // each returns false when an update is already running
 bool panel_show_slot(uint8_t slot, uint32_t crc);    // slot 1..7 of the flash; crc = the record's CRC (checked while streaming)
+bool panel_show_demo(uint8_t pattern);                // demo picture 0..DEMO_COUNT-1 (ble_demo.h), generated line by line
 bool panel_show_fill(uint8_t code);                  // 0 black, 1 white, 2 yellow, 3 red
 void panel_set_auto_temp(bool on);                   // on: before every update the chip temperature (EMU sensor) is handed to the panel instead of the set value
 int8_t panel_temp_used(void);                        // the value handed to the panel by the last update (command 0xE6)
