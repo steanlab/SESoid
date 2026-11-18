@@ -70,7 +70,7 @@
 #include <stdbool.h>
 
 void ctl_reset(void);                              // new connection / disconnect
-bool ctl_gate(const uint8_t *v, uint8_t len);      // true = the command is dangerous and locked (answered here with result SLR_LOCKED, must not run): reboot 0x36, flash test erase/program 0x21/0x22, erase all slots 0x25, NFC chip write/unlock/rescue 0x3F 0x21/0x22/0x31, pin scanner with power on the pins 0x3F 0x05; they work for 60 s after a tap
+bool ctl_gate(const uint8_t *v, uint8_t len);      // true = the command is dangerous and locked (answered here with result SLR_LOCKED, must not run): reboot 0x36, flash test erase/program 0x21/0x22, erase all slots 0x25, NFC chip unlock/rescue 0x3F 0x22/0x31 (a plain NFC write 0x3F 0x21 is not gated), pin scanner with power on the pins 0x3F 0x05; they work for 60 s after a tap
 bool ctl_write(const uint8_t *v, uint8_t len);     // a write to the RX characteristic; true if the opcode belongs to this module
 void ctl_poll(void);                               // main loop (also runs the hardware tests)
 

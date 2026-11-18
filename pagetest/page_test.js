@@ -400,18 +400,15 @@ const MOCK = `
   ok((await pg.evaluate(() => window.__tag.fdArgs)).length === 2 && !(await pg.textContent('#nfcOut')).includes('Поиск вывода FD'), 'fd: plain live run sends no mask');
 
   // --- NFC: backup, write, restore, unlock
-  ok(await pg.evaluate(() => document.getElementById('bNfcWr').disabled && document.getElementById('bNfcUnlock').disabled && document.getElementById('bNfcDl').disabled), 'nfc write: locked until a backup exists');
+  ok(await pg.evaluate(() => !document.getElementById('bNfcWr').disabled && document.getElementById('bNfcUnlock').disabled && document.getElementById('bNfcDl').disabled), 'nfc write: available without a backup, unlock and download locked');
   await pg.click('#bNfcBk'); await pg.waitForTimeout(900);
   ok((await pg.textContent('#nfcOut2')).includes('прочитано блоков 59 из 59') && !(await pg.textContent('#nfcOut2')).includes('AA BB'), 'backup: complete and the serial data is not shown');
   ok(await pg.evaluate(() => !document.getElementById('bNfcDl').disabled), 'backup: download enabled');
   const dl = pg.waitForEvent('download'); await pg.click('#bNfcDl'); const dlf = await dl;
   const dlp = await dlf.path(); const dlb = require('fs').readFileSync(dlp);
   ok(dlf.suggestedFilename() === 'nfc_chip_backup.bin' && dlb.length === 944 && dlb[0] === 0xAA && dlb[16] === 0x03, 'backup: file is 59x16 bytes in block order');
-  ok(await pg.evaluate(() => document.getElementById('bNfcWr').disabled), 'nfc write: still locked until the confirmation box is ticked');
-  await pg.check('#nfcWrOk'); await pg.waitForTimeout(100);
-  ok(await pg.evaluate(() => !document.getElementById('bNfcWr').disabled), 'nfc write: enabled after backup and confirmation');
   ok((await pg.inputValue('#nfcUrl')).startsWith('https://') , 'nfc write: default URL is filled');
-  await pg.fill('#nfcUrl', 'ftp://x'); await pg.waitForTimeout(100);
+  await pg.click('[data-t=tag]'); await pg.fill('#nfcUrl', 'ftp://x'); await pg.waitForTimeout(100);
   ok(await pg.evaluate(() => document.getElementById('bNfcWr').disabled) && (await pg.textContent('#nfcUrlInfo')).includes('http'), 'nfc write: bad scheme refused');
   await pg.fill('#nfcUrl', 'https://example.org/app/'); await pg.waitForTimeout(100);
   // text and Wi-Fi records
@@ -433,17 +430,17 @@ const MOCK = `
   ok(await pg.evaluate(() => document.getElementById('bNfcWr').disabled) && (await pg.textContent('#nfcUrlInfo')).includes('слишком длинная'), 'nfc write: too long refused');
   await pg.fill('#nfcUrl', 'https://example.org/app/'); await pg.waitForTimeout(100);
   await pg.evaluate(() => { window.__tag.lockNak = true; });
-  await pg.click('#bNfcWr'); await pg.waitForTimeout(700);
+  await pg.click('[data-t=tag]'); await pg.click('#bNfcWr'); await pg.waitForTimeout(700);
   const wt = await pg.textContent('#nfcOut2');
   ok(wt.includes('не принял номер блока') && wt.includes('NS_REG=0x61') && wt.includes('память занята со стороны NFC ДА') && wt.includes('уберите телефон'), 'nfc write: refused write explained with NS_REG and the phone hint');
   await pg.evaluate(() => { window.__tag.lockNak = false; window.__tag.nfcNsValid = false; window.__tag.nfcNs = undefined; window.__tag.nfcFail = 0; });
   await pg.evaluate(() => { window.__tag.wp = true; });
-  await pg.click('#bNfcWr'); await pg.waitForTimeout(700);
+  await pg.click('[data-t=tag]'); await pg.click('#bNfcWr'); await pg.waitForTimeout(700);
   const wa = await pg.evaluate(() => window.__tag.writeArgs);
   ok(wa && wa.length === 4 && wa[2] === 7 && wa[3] === 0xA5, 'nfc write: commit is armed and counts blocks');
   ok((await pg.textContent('#nfcOut2')).includes('не совпали') && (await pg.textContent('#nfcOut2')).includes('Снять блокировку'), 'nfc write: ignored write explained, unlock suggested');
   ok(await pg.evaluate(() => document.getElementById('bNfcUnlock').disabled), 'unlock: needs its own confirmation');
-  await pg.check('#nfcUnOk'); await pg.waitForTimeout(100);
+  await pg.click('[data-t=tools]'); await pg.check('#nfcUnOk'); await pg.waitForTimeout(100);
   ok(await pg.evaluate(() => document.getElementById('bNfcUnlock').disabled), 'unlock: stays off until the rescue has found the byte-0 value');
   await pg.evaluate(() => { window.__tag.chipAddr = 0x55; });
   ok(await pg.evaluate(() => document.getElementById('bNfcRescue').disabled), 'rescue: needs its confirmation');
@@ -462,12 +459,12 @@ const MOCK = `
   ok(await pg.evaluate(() => !document.getElementById('bNfcUnlock').disabled), 'unlock: enabled once the value is known');
   await pg.click('#bNfcUnlock'); await pg.waitForTimeout(500);
   ok((await pg.evaluate(() => window.__tag.unlockArgs)).join() === '63,34,165,66' && (await pg.textContent('#nfcOut2')).includes('Снятие блокировки: выполнено'), 'unlock: armed command with the byte-0 value, success shown');
-  await pg.click('#bNfcWr'); await pg.waitForTimeout(700);
+  await pg.click('[data-t=tag]'); await pg.click('#bNfcWr'); await pg.waitForTimeout(700);
   const ch = await pg.evaluate(() => window.__tag.chip);
   const wantTxt = Array.from('https://example.org/app/').slice(8).map(c => c.charCodeAt(0));
   ok(ch[1].slice(0, 7).join() === [3, 4 + 1 + wantTxt.length, 0xD1, 1, 1 + wantTxt.length, 0x55, 4].join() && ch[1][7] === wantTxt[0] && ch[2].includes(0xFE), 'nfc write: NDEF record built correctly');
   ok((await pg.textContent('#nfcOut2')).includes('Запись ссылки: выполнено'), 'nfc write: success shown');
-  await pg.click('#bNfcRestore'); await pg.waitForTimeout(700);
+  await pg.click('[data-t=tools]'); await pg.click('#bNfcRestore'); await pg.waitForTimeout(700);
   const ch2 = await pg.evaluate(() => window.__tag.chip);
   ok(ch2[1].join() === [0x03, 0x1D, 0xD1, 0x01, 0x19, 0x55, 0x04, ...Array.from('nfc.example.com/EE285D4B').map(c => c.charCodeAt(0)).slice(0, 9)].join() && ch2[2][14] === 0xFE || ch2[2].includes(0xFE), 'restore: stock record written back from the backup');
   await pg.evaluate(() => { window.__tag.nfcOk = false; });

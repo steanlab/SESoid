@@ -179,6 +179,21 @@
       <div class="row"><button id="bHw" disabled>Прочитать</button><span class="n" style="margin:0">уникальный ID виден только здесь, на экране; не публикуйте его и не кладите в репозиторий</span></div>
       <div class="kv" id="hwKv"><div>—</div><div>нажмите «Прочитать»</div></div>
     </div>
+    <div class="card">
+      <h2>Запись в NFC-метку</h2>
+      <p class="n">Что увидит телефон, если приложить его к метке. На время записи уберите телефон от метки дальше чем на 30 см.</p>
+    <label style="display:block;margin:8px 0 2px">Что записать: <select id="nfcKind"><option value="url">ссылка</option><option value="text">текст</option><option value="wifi">Wi‑Fi (подключение к сети)</option></select></label>
+    <label style="display:block;margin:8px 0 2px" id="nfcUrlLbl"><span id="nfcUrlCap">Ссылка для записи в чип (только латиница):</span> <input type="text" id="nfcUrl" style="width:100%;box-sizing:border-box" spellcheck="false"></label>
+    <div id="nfcWifiBox" hidden>
+      <label style="display:block;margin:8px 0 2px">Имя сети (SSID): <input type="text" id="nfcSsid" style="width:100%;box-sizing:border-box" spellcheck="false" autocomplete="off"></label>
+      <label style="display:block;margin:8px 0 2px">Пароль: <input type="text" id="nfcPass" style="width:100%;box-sizing:border-box" spellcheck="false" autocomplete="off"></label>
+      <label style="display:block;margin:8px 0 2px">Защита: <select id="nfcAuth"><option value="wpa2">WPA2 (пароль)</option><option value="mixed">WPA / WPA2 (пароль)</option><option value="open">открытая сеть</option></select></label>
+      <p class="n">Пароль записывается в чип открытым текстом: любой телефон, прикоснувшийся к метке, получит его. Запись понимают телефоны Android; на iPhone Wi‑Fi через NFC-метку не подключается.</p>
+    </div>
+    <div class="n" id="nfcUrlInfo" style="margin:0 0 6px"></div>
+      <div class="row"><button id="bNfcWr" disabled>Записать в чип</button></div>
+      <pre id="nfcOut2" class="n" style="white-space:pre-wrap;margin:8px 0 0"></pre>
+    </div>
   </div>
 </section>
 
@@ -227,34 +242,24 @@
     <pre id="scOut" class="n" style="white-space:pre-wrap;margin:8px 0 0"></pre>
   </div>
   <div class="card">
-    <h2>NFC-чип (прошивка 1.6, только чтение)</h2>
+    <h2>NFC-чип: диагностика и восстановление (для опытных)</h2>
     <p class="n">Чип питается от вывода PC5, линии I²C: SDA на PD2, SCL на PD3, адрес 0x55. Кнопки ничего в чип не записывают: метка включает питание, читает блоки памяти и служебные регистры и выключает питание. «Следить за полем» опрашивает чип 5 раз в секунду (две минуты): поднесите телефон с включённым NFC, и строка «Поле телефона» должна смениться на «ЕСТЬ». Серийные данные чипа и конец ссылки по умолчанию скрыты.</p>
     <label style="display:block;margin:6px 0"><input type="checkbox" id="nfcShow"> показывать серийные данные (не публиковать)</label>
     <label style="display:block;margin:6px 0"><input type="checkbox" id="nfcFd"> при слежении искать вывод FD (на девяти свободных выводах включится подтяжка вверх; в поле телефон надо подносить и убирать)</label>
     <div class="row"><button id="bNfcSnap" disabled>Прочитать чип</button><button id="bNfcLive" disabled>Следить за полем (2 мин)</button><button id="bNfcStop" disabled>Выключить</button><button id="bNfcGet" disabled>Показать отчёт</button></div>
     <pre id="nfcOut" class="n" style="white-space:pre-wrap;margin:8px 0 0"></pre>
-    <h3 style="margin:14px 0 4px;font-size:1rem">Копия, своя ссылка, снятие блокировки</h3>
-    <p class="n">Запись идёт со стороны процессора (I²C) и проверяется обратным чтением. На время записи держите метку не ближе 30 см от телефона: пока телефон держит чип по NFC, чип может отказываться принимать запись по I²C. Сначала сохраните копию чипа: без неё кнопки записи недоступны. Файл копии содержит серийные данные чипа, не публикуйте его.</p>
-    <div class="row"><button id="bNfcBk" disabled>1. Сохранить копию чипа</button><button id="bNfcDl" disabled>Скачать копию (файл)</button></div>
-    <label style="display:block;margin:8px 0 2px">Что записать: <select id="nfcKind"><option value="url">ссылка</option><option value="text">текст</option><option value="wifi">Wi‑Fi (подключение к сети)</option></select></label>
-    <label style="display:block;margin:8px 0 2px" id="nfcUrlLbl"><span id="nfcUrlCap">Ссылка для записи в чип (только латиница):</span> <input type="text" id="nfcUrl" style="width:100%;box-sizing:border-box" spellcheck="false"></label>
-    <div id="nfcWifiBox" hidden>
-      <label style="display:block;margin:8px 0 2px">Имя сети (SSID): <input type="text" id="nfcSsid" style="width:100%;box-sizing:border-box" spellcheck="false" autocomplete="off"></label>
-      <label style="display:block;margin:8px 0 2px">Пароль: <input type="text" id="nfcPass" style="width:100%;box-sizing:border-box" spellcheck="false" autocomplete="off"></label>
-      <label style="display:block;margin:8px 0 2px">Защита: <select id="nfcAuth"><option value="wpa2">WPA2 (пароль)</option><option value="mixed">WPA / WPA2 (пароль)</option><option value="open">открытая сеть</option></select></label>
-      <p class="n">Пароль записывается в чип открытым текстом: любой телефон, прикоснувшийся к метке, получит его. Запись понимают телефоны Android; на iPhone Wi‑Fi через NFC-метку не подключается.</p>
-    </div>
-    <div class="n" id="nfcUrlInfo" style="margin:0 0 6px"></div>
-    <label style="display:block;margin:4px 0"><input type="checkbox" id="nfcWrOk"> понимаю: запись в чипе будет заменена, копия сохранена</label>
-    <div class="row"><button id="bNfcWr" disabled>2. Записать в чип</button><button id="bNfcRestore" disabled>Вернуть исходную запись из копии</button></div>
+    <h3 style="margin:14px 0 4px;font-size:1rem">Копия чипа и возврат исходной записи</h3>
+    <p class="n">Для обычной записи копия не нужна. Она нужна только для «Вернуть исходную запись» и «Снять блокировку». Файл копии содержит серийные данные чипа, не публикуйте его.</p>
+    <div class="row"><button id="bNfcBk" disabled>Сохранить копию чипа</button><button id="bNfcDl" disabled>Скачать копию (файл)</button></div>
+    <div class="row"><button id="bNfcRestore" disabled>Вернуть исходную запись из копии</button></div>
     <h3 style="margin:14px 0 4px;font-size:1rem">Адрес чипа на шине I²C</h3>
     <p class="n">Запись в нулевой байт блока 0 меняет I²C-адрес чипа (по описанию NXP, чтение этого байта всегда даёт 04). Если после неудачной операции чип «пропал» (чтение пишет, что чип не ответил), нажмите «Найти»: метка проверит все адреса 0x00–0x7F. Если чип нашёлся не на 0x55, «Вернуть адрес 0x55» подбирает значение нулевого байта, пока чип не вернётся (до 260 записей блока 0, обычно намного меньше). Найденное значение нужно для «Снять блокировку».</p>
     <div class="row"><button id="bNfcFind" disabled>Найти чип по всем адресам</button></div>
     <label style="display:block;margin:6px 0"><input type="checkbox" id="nfcRsOk"> понимаю: метка будет записывать нулевой блок чипа (остальные байты блока записываются как прочитаны)</label>
     <div class="row"><button id="bNfcRescue" disabled>Вернуть адрес 0x55</button></div>
     <label style="display:block;margin:10px 0 4px"><input type="checkbox" id="nfcUnOk"> понимаю: будут записаны служебные блоки 00 и 38 чипа (байты блокировки сбрасываются в 0); доступно после «Вернуть адрес 0x55»</label>
-    <div class="row"><button id="bNfcUnlock" disabled>3. Снять блокировку записи (нужно, только если ссылка не записалась)</button></div>
-    <pre id="nfcOut2" class="n" style="white-space:pre-wrap;margin:8px 0 0"></pre>
+    <div class="row"><button id="bNfcUnlock" disabled>Снять блокировку записи (нужно, только если ссылка не записалась)</button></div>
+    <p class="n">Результат этих операций показывается в карточке «Запись в NFC-метку» на вкладке «Метка».</p>
   </div>
   <div class="card">
     <h2>Внешняя flash</h2>
@@ -912,6 +917,15 @@ const EN_HTML = new Map([
   ["Просмотр","View"],
   ["Обновить список с метки","Refresh list from the tag"],
   ["Показать следующий сейчас","Show the next one now"],
+  ["Запись в NFC-метку","Write to the NFC tag"],
+  ["Что увидит телефон, если приложить его к метке. На время записи уберите телефон от метки дальше чем на 30 см.","What a phone shows when it is held to the tag. Keep the phone more than 30 cm away from the tag while writing."],
+  ["Записать в чип","Write to the chip"],
+  ["NFC-чип: диагностика и восстановление (для опытных)","NFC chip: diagnostics and recovery (advanced)"],
+  ["Копия чипа и возврат исходной записи","Chip backup and restoring the original record"],
+  ["Для обычной записи копия не нужна. Она нужна только для «Вернуть исходную запись» и «Снять блокировку». Файл копии содержит серийные данные чипа, не публикуйте его.","A backup is not needed for a normal write. It is only needed for “Restore the original record” and “Remove write protection”. The backup file contains the chip's serial data, do not publish it."],
+  ["Сохранить копию чипа","Save a chip backup"],
+  ["Снять блокировку записи (нужно, только если ссылка не записалась)","Remove write protection (only needed if the link did not write)"],
+  ["Результат этих операций показывается в карточке «Запись в NFC-метку» на вкладке «Метка».","The result of these operations is shown in the “Write to the NFC tag” card on the Tag tab."],
   ["Стереть все слайды","Erase all slides"],
   ["Десять слотов во внешней flash метки без сжатия (слот n лежит по адресу (n − 1) × 0xC000, запись о кадре — в его конце). Картинки на странице запоминаются в браузере (IndexedDB): по контрольной сумме видно, совпадает ли запомненная картинка с тем, что лежит в метке. Галочка «в слайдшоу» сохраняется в метке сама.","Ten slots in the tag's external flash, uncompressed (slot n lies at address (n − 1) × 0xC000, the frame record is at its end). Pictures on the page are remembered in the browser (IndexedDB): the checksum shows whether the remembered picture matches what lies in the tag. The \"in slideshow\" tick is saved in the tag itself."],
   ["Слайдшоу и радио","Slideshow and radio"],
@@ -2145,8 +2159,8 @@ function nfcButtons() {
   set('bNfcDl', full);
   const u = nfcBuildAny();
   $('nfcUrlInfo').textContent = u.err ? u.err : TT('в чип запишется ') + u.ndef.length + TT(' байт (') + u.blocks + TT(' блоков из 7 доступных).');
-  set('bNfcWr', on && full && !busy && $('nfcWrOk').checked && !u.err);
-  set('bNfcRestore', on && full && !busy && $('nfcWrOk').checked && !!nfcStock());
+  set('bNfcWr', on && !busy && !u.err);
+  set('bNfcRestore', on && full && !busy && !!nfcStock());
   set('bNfcUnlock', on && full && !busy && $('nfcUnOk').checked && NFC.b0 !== undefined);
   set('bNfcFind', on && !busy);
   set('bNfcRescue', on && !busy && $('nfcRsOk').checked);
@@ -2250,7 +2264,7 @@ $('bNfcRescue').onclick = () => {
   $('nfcOut2').textContent = TT('метка ищет чип и подбирает значение; это может занять до нескольких секунд, не отключайтесь …');
   cmd([0x3F, 0x31, 0xA5], TT('возврат адреса'));
 };
-for (const id of ['nfcUrl', 'nfcSsid', 'nfcPass', 'nfcAuth', 'nfcWrOk', 'nfcUnOk', 'nfcRsOk']) $(id).addEventListener('input', nfcButtons);
+for (const id of ['nfcUrl', 'nfcSsid', 'nfcPass', 'nfcAuth', 'nfcUnOk', 'nfcRsOk']) $(id).addEventListener('input', nfcButtons);
 $('nfcKind').addEventListener('change', nfcKindUi);
 $('nfcUrl').value = (() => { try { if (/^https?:$/.test(location.protocol)) return location.origin + location.pathname.replace(/index\.html$/, ''); } catch (e) { /* без адреса страницы */ } return 'https://steanlab.github.io/SESoid/'; })();
 nfcButtons();
