@@ -13,6 +13,7 @@ Everything we found out about this tag, from the firmware and the tests on real 
 | Panel | PDi "BWRY Medium", controller ID 0x0D04, 720 x 256 pixels, black / white / yellow / red |
 | External flash | Winbond SPI NOR, JEDEC EF 40 13 (512 KiB) |
 | NFC | NXP NTAG I2C plus (NT3H2111 / NT3H2211 family), I2C address 0x55, FD (field detect) output wired to the MCU |
+| Antenna | printed PCB trace antenna (F / inverted-F shape) at the left short edge of the board, outside the ground plane; fed from the MCU's RF pin through a small matching network (a row of 0402-size pads, some positions look unpopulated) and one blue SMD part that is not identified (from the board photo; tuning and gain not measured) |
 | Power | five CR2450 coin cells **in parallel**; the MCU runs directly from the cells (no schematic available) |
 | LED / buttons | none |
 | Debug | SWD pads; the factory chip is debug-locked (see below) |
@@ -78,4 +79,4 @@ A factory tag is **debug-locked**: over SWD no core is found. The status read th
 
 * Panel temperature sensor: command 0x40 answer not confirmed.
 * Real current consumption (no measurements yet; deep sleep is estimated to extend battery life but has not been measured).
-* Antenna type and radiated power: only the configured TX power is known.
+* Antenna tuning (S11, resonance) and radiated power: only the configured TX power is known; the antenna type is read from the board photo. The blue SMD part next to the matching network and the large dark-green rectangle marked "RFRT x035B" (imagotag, Graz) are not identified.
