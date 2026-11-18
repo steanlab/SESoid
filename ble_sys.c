@@ -53,3 +53,12 @@ uint32_t sys_mem_kb(void)
   uint32_t m = DEVINFO->MSIZE;
   return (m & 0xFFFFu) | (((m >> 16) & 0x7FFu) << 16);
 }
+
+// EFR32xG22: EMU->TEMP holds the die temperature in 0.25 K steps (bits 10:0), 0 = no measurement yet. The die is the tag's ambient temperature
+// while the tag sleeps; a few tenths warmer right after radio or panel activity.
+int16_t sys_temp_dc(void)
+{
+  uint32_t v = EMU->TEMP & 0x7FFu;
+  if (v == 0u) return SYS_TEMP_NA;
+  return (int16_t)(((int32_t)v * 10 + 2) / 4 - 2731);        // tenths of K minus 273.15 K, rounded
+}

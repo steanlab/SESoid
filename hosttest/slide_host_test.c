@@ -70,6 +70,7 @@ static int fills; static uint8_t last_fill;
 bool panel_show_fill(uint8_t code) { pmodel(); if (pbusy) return false; pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_FILL; pshown = code; last_fill = code; fills++; return true; }
 bool panel_show_splash(void) { pmodel(); if (pbusy) return false; pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_SPLASH; return true; }
 void panel_set_temp(int8_t c) { (void)c; }
+void panel_set_auto_temp(bool on) { (void)on; }
 panel_status_t panel_status(void) { return pbusy ? PST_RUNNING : PST_DONE_OK; }
 uint8_t panel_error(void) { return perr; }
 panel_src_t panel_source(void) { return psrc; }
@@ -174,7 +175,7 @@ int main(void)
   // out of range values are clamped
   slide_cfg_t bad = { 2, 3, 5000, 0xFFFF, 120, 100, 0, 9, 255, 255, 255, 255 }; bad.clean_n = 255; bad.flags = 0xFF; slide_set_cfg(&bad);
   CHECK(slide_cfg()->enabled == 1 && slide_cfg()->mode == 1 && slide_cfg()->interval_min == 1440 && slide_cfg()->mask == 0x7FE && slide_cfg()->temp_c == 60 && slide_cfg()->tx_dbm == 20 && slide_cfg()->clean_n == 250, "clamping");
-  CHECK(slide_cfg()->flags == 3, "flags clamped to the two defined bits: %u", slide_cfg()->flags);
+  CHECK(slide_cfg()->flags == 7, "flags clamped to the three defined bits: %u", slide_cfg()->flags);
   bad.nfc = 7; slide_set_cfg(&bad); CHECK(slide_cfg()->nfc == 1, "nfc flag clamped to 1");
   // auto mode off
   bad.enabled = 0; bad.interval_min = 1; slide_set_cfg(&bad); CHECK(slide_next_in_s() == 0xFFFFFFFFu, "auto off must disable the countdown");

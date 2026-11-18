@@ -137,7 +137,7 @@ const MOCK = `
     const fl = tag.xtal ? 0x01 | 0x04 | 0x10 | 0x20 | 0x40 : 0x01 | 0x80 | 0x20 | 0x40;
     return [0xB9, 2, fl, 3 | (1 << 3) | (1 << 5), 0x8C, 0x7A, 0x8C, 0x7A, tag.xtal ? 0x93 : 0xFF, tag.xtal ? 0x01 : 0xFF, c & 255, c >> 8 & 255, c >> 16, r & 255, r >> 8 & 255, r >> 16, u & 255, u >> 8 & 255, u >> 16, 0x30];
   }
-  function sendBatt() { const b = tag.batt || [70, 50]; N([0xC0, tag.battLevel || 0, 0x68, 0x0B, b[0], b[1], 120, 0]); }
+  function sendBatt() { const b = tag.batt || [70, 50]; N([0xC0, tag.battLevel || 0, 0x68, 0x0B, b[0], b[1], 120, 0, 0xEB, 0x00, 24]); }
   function sendCfg() { const c = tag.cfg; N([0xB4, 1, c.en, c.mode, c.iv & 255, c.iv >> 8, c.mask & 255, c.temp & 255, c.tx & 255, 60, 0, ...(tag.cfgOld ? [] : [c.nfc ? 1 : 0, 3, c.mask >> 8, c.clean, c.cmode || 0, c.flags || 0])]); }
   const chr = { addEventListener: (n, f) => { notify = f; }, startNotifications: async () => {}, writeValueWithResponse: async v => handle(new Uint8Array(v.buffer ? v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength) : v)), writeValueWithoutResponse: async v => handle(new Uint8Array(v.buffer ? v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength) : v)) };
   const svc = { getCharacteristic: async () => chr };
@@ -238,13 +238,14 @@ const MOCK = `
   await pg.selectOption('#cInt', '5'); await pg.selectOption('#cMode', '1'); await pg.selectOption('#cTx', '-10'); await pg.fill('#cTemp', '24'); await pg.fill('#cClean', '7'); await pg.selectOption('#cCleanMode', '2');
   await pg.waitForTimeout(300);
   ok((await pg.textContent('#cBattInfo')).includes('2.92') && (await pg.inputValue('#cBattLow')) === '2.70' && (await pg.inputValue('#cBattCrit')) === '2.50', 'battery report shown: ' + await pg.textContent('#cBattInfo'));
-  await pg.check('#cDeep'); await pg.check('#cOd');
+  await pg.check('#cDeep'); await pg.check('#cOd'); await pg.check('#cTAuto');
   await pg.fill('#cBattLow', '2.8'); await pg.fill('#cBattCrit', '2.6');
   await pg.click('#bCfg'); await pg.waitForTimeout(600);
   ok((await pg.evaluate(() => window.__tag.batt)).join() === '80,60', 'battery thresholds reached the tag (14-byte message): ' + await pg.evaluate(() => window.__tag.batt));
   const cfg = await pg.evaluate(() => window.__tag.cfg);  const cfgLen = await pg.evaluate(() => window.__tag.cfgLen);
-  ok(cfg.clean === 7 && cfg.cmode === 2 && cfgLen === 15 && cfg.flags === 3, 'full-redraw period, cleaning mode and the two mode flags reached the tag (15-byte message): ' + JSON.stringify(cfg));
+  ok(cfg.clean === 7 && cfg.cmode === 2 && cfgLen === 15 && cfg.flags === 7, 'full-redraw period, cleaning mode and the three mode flags reached the tag (15-byte message): ' + JSON.stringify(cfg));
   ok(cfg.iv === 5 && cfg.mode === 1 && cfg.tx === -10 && cfg.temp === 24 && cfg.en === 1 && (cfg.mask & 8), 'settings reached the tag: ' + JSON.stringify(cfg));
+  { const ti = await pg.textContent('#cTempInfo'); ok(ti.includes('23.5') && ti.includes('24'), 'chip temperature and the value sent to the panel are shown: ' + ti); }
   await pg.screenshot({ path: path.join(OUT, 'shot_cfg.png') });
 
   // --- tag tab, hw

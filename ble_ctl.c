@@ -273,17 +273,19 @@ static void send_cfg(void)
   att_notify(r, 17);
 }
 
-// battery report: 0xC0 level mv(2) low_thr crit_thr age_s(2)   level 0 ok, 1 low, 2 critical; mv 0 = not measured yet; thresholds 2000 + 10 * value mV
+// battery report: 0xC0 level mv(2) low_thr crit_thr age_s(2) [chip_temp_dc(2) temp_used]   level 0 ok, 1 low, 2 critical; mv 0 = not measured yet; thresholds 2000 + 10 * value mV
 static void send_batt(void)
 {
-  uint8_t r[8];
+  uint8_t r[11];
   uint32_t age = batt_age_s(slide_uptime_s());
   uint16_t mv = batt_mv();
   r[0] = 0xC0; r[1] = batt_level(); r[2] = (uint8_t)mv; r[3] = (uint8_t)(mv >> 8);
   r[4] = slide_cfg()->batt_low; r[5] = slide_cfg()->batt_crit;
   if (age > 0xFFFFu) age = 0xFFFFu;
   r[6] = (uint8_t)age; r[7] = (uint8_t)(age >> 8);
-  att_notify(r, 8);
+  int16_t t = sys_temp_dc();                                    // chip temperature in tenths of a degree, 0x8000 = not ready
+  r[8] = (uint8_t)t; r[9] = (uint8_t)((uint16_t)t >> 8); r[10] = (uint8_t)panel_temp_used();
+  att_notify(r, 11);
 }
 
 static void send_slot(uint8_t s)

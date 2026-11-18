@@ -28,6 +28,8 @@ static uint32_t dummy_demcr, dummy_dwtctrl;
 volatile ble_diag_t g_diag;
 static bool g_connected;
 static uint32_t g_free_us;
+static int16_t g_chip_dc = -32768;                // simulated chip temperature (tenths of a degree), -32768 = not ready
+int16_t sys_temp_dc(void) { return g_chip_dc; }
 bool ll_connected(void) { return g_connected; }
 uint32_t ll_free_us(void) { return g_connected ? g_free_us : 1000000u; }
 // flash model for the slot source
@@ -292,6 +294,16 @@ int main(void)
   bad += run_diag("healthy", false, false);
   bad += run_diag("healthy_conn", true, false);
   bad += run_diag("dead", false, true);
+  {   // temperature handed to the panel: the set value, or the chip sensor in auto mode (rounded, clamped, falls back when not ready)
+    struct { int16_t dc; bool au; int8_t set; int8_t want; } tc[] = { { 234, false, 21, 21 }, { 234, true, 21, 23 }, { 236, true, 21, 24 }, { -35, true, 21, -4 },
+                                                                    { -32768, true, 18, 18 }, { 900, true, 21, 60 }, { -900, true, 21, -20 } };
+    for (unsigned i = 0; i < sizeof(tc) / sizeof(*tc); i++) {
+      g_chip_dc = tc[i].dc; panel_set_auto_temp(tc[i].au); panel_set_temp(tc[i].set);
+      bad += run_once("temp_case", false, 0, K_FILL_WHITE);
+      if (panel_temp_used() != tc[i].want) { printf("FAIL temp case %u: used %d, wanted %d\n", i, panel_temp_used(), tc[i].want); bad++; }
+    }
+    g_chip_dc = -32768; panel_set_auto_temp(false); panel_set_temp(25);
+  }
   printf("%s\n", bad ? "FAILED" : "ALL OK");
   return bad != 0;
 }

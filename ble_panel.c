@@ -9,6 +9,7 @@
 #include "ble_ll.h"
 #include "ble_flash.h"
 #include "ble_up.h"
+#include "ble_sys.h"
 #include "rail.h"
 #include "em_device.h"
 
@@ -67,6 +68,8 @@ static panel_status_t status = PST_IDLE;
 static uint8_t slot_no, fill_code, shown;
 static uint32_t slot_crc, run_crc, n_done, last_ms;
 static int8_t temp_c = 25;
+static bool auto_temp;           // take the temperature from the chip sensor
+static int8_t temp_used = 25;
 static uint8_t pg[256];             // slot streaming: one flash page = 4 panel lines
 static int pg_idx;
 static uint32_t t_flash_wait;       // first failed flash read of the current stall (0 = none)
@@ -317,7 +320,15 @@ static void run(void)
       break;
 
     case S_INIT_A:
-      cmd1(0xE6, (uint8_t)temp_c);
+      {
+        int8_t t = temp_c;
+        if (auto_temp) {
+          int16_t dc = sys_temp_dc();
+          if (dc != SYS_TEMP_NA) { int v = (dc + (dc >= 0 ? 5 : -5)) / 10; t = (int8_t)(v < -20 ? -20 : v > 60 ? 60 : v); }
+        }
+        temp_used = t;
+        cmd1(0xE6, (uint8_t)t);
+      }
       cmd1(0xE0, 0x02);
       cmd(0xA5, 0, 0);
       wait_busy(2000, S_INIT_B, E_A5, false);
@@ -561,6 +572,8 @@ bool panel_show_fill(uint8_t code)
 }
 
 void panel_set_temp(int8_t celsius) { temp_c = celsius; }
+void panel_set_auto_temp(bool on) { auto_temp = on; }
+int8_t panel_temp_used(void) { return temp_used; }
 
 void panel_start(void)
 {

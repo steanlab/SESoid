@@ -7,6 +7,8 @@
 
 #define FW_VERSION_MAJOR 2
 #define FW_VERSION_MINOR 0
+#define SYS_TEMP_NA ((int16_t)-32768)
+int16_t sys_temp_dc(void);       // chip temperature in tenths of a degree Celsius (EMU temperature sensor, 0.25 K steps), SYS_TEMP_NA if not ready
 #define WDOG_ENABLE 1            // 0 = no watchdog (e.g. for debugging with breakpoints)
 
 // reset cause bits as in EMU->RSTCAUSE of the chip, captured before anything else runs

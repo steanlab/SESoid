@@ -39,7 +39,8 @@ The NFC chip is **powered from a GPIO (PC5)**. The firmware switches it on only 
 * Update sequence (about 30 s in total, the refresh itself about 19 s): panel on (PC6 low) -> reset -> OTP read -> init with the temperature value (command 0xE6) -> image (0x10) -> DC/DC on (0x04) -> refresh (0x12, BUSY about 19 s) -> **mandatory DC/DC stop sequence** (0x02, 0x00 `07 2B 01`, then 0xEE writes with 4 ms / 3 ms waits, 0xFF/0xE3 toggles) -> panel off.
 * The stop sequence must run after every refresh; the firmware does it also after a failed one.
 * Full-colour cleaning cycles (fills in several colour combinations) remove ghost images; the number of changes between cleanings is a setting.
-* The panel's own temperature: the firmware passes a fixed value to the waveform selection; **temperature compensation is intentionally not touched**. A 16-bit read with command 0x40 is tried and shown by the page, but it is *(not verified)* that this controller answers it.
+* The panel's own temperature: the firmware passes a fixed value to the waveform selection; **temperature compensation is intentionally not touched**. A 16-bit read with command 0x40 is tried during the page's panel diagnostics and shown as a raw value, but it is *(not verified)* that this controller answers it.
+* **Chip temperature as a substitute:** the MCU has a die temperature sensor (EMU->TEMP, 0.25 K steps). With the setting "take the screen temperature from the tag's sensor" the firmware hands this value (rounded, limited to -20..60 C) to the panel with command 0xE6 before every update; without it the number from the page's "Panel temperature" field is used (default 25). At rest the die is close to the air temperature; right after radio or panel activity it is a little warmer. The page shows the chip temperature and the value sent at the last update.
 
 ## External flash
 
@@ -67,7 +68,7 @@ The flash is a separate chip: unlocking the MCU does not erase it.
 
 * Five CR2450 in parallel. Battery voltage = the chip's own supply, read by the IADC (AVDD/4 input, internal 1.21 V reference, no calibration, about +-2 %), measured a few seconds after power-up and then every 10 minutes while the panel is idle. Default thresholds: warning 2.7 V, critical 2.5 V (at critical the firmware stops automatic slide changes and cleaning cycles; manual ones still work).
 * HFXO 38.4 MHz (SMD crystal next to the MCU, marked 38.4) runs the core and the radio.
-* **LFXO: a 32.768 kHz crystal is fitted** (the larger SMD crystal at the right of the MCU); the owner measured 32.76909 kHz (about 33 ppm above nominal; measured value as reported, method not recorded). The current firmware does **not use it**: the build replaces the SDK's LFXO clock by the internal LFRCO (`sed` in `.github/workflows/build.yml`), because the crystal's presence was not known when it was written. Switching to the crystal would make the sleep timer (slide interval, EM2 wake-ups) far more accurate than the RC oscillator.
+* **LFXO: a 32.768 kHz crystal is fitted** (the larger SMD crystal at the right of the MCU); the owner measured 32.76909 kHz (about 33 ppm above nominal; measured value as reported, method not recorded). The firmware used the internal LFRCO instead until the crystal was found; since the build after that the SDK's own LFXO setup (CTUNE 63 by default) runs the sleep timer and the EM2 wake-ups from the crystal. The "Crystal test" of the page shows the frequency that the crystal really has with the firmware's setting.
 * Watchdog about 8 s from the 1 kHz ULFRCO. Deep sleep (EM2) is optional and off by default: the sleep timer then runs from the LFRCO; RAIL time stops in EM2 and is corrected after the sleep.
 * On the bench the tag is powered from the debug probe, not from the cells.
 
