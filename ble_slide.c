@@ -425,7 +425,7 @@ void slide_poll(void)
     ev_status = (uint8_t)panel_status(); ev_err = panel_error(); ev_src = (uint8_t)panel_source(); ev_shown = panel_shown();
     event_pending = true;
     due_s = cfg.enabled ? uptime_s + (uint32_t)cfg.interval_min * 60u : 0xFFFFFFFFu;
-    demo_gap_s = uptime_s + 10u;
+    demo_gap_s = uptime_s + 1u;                        // the next screen of a tour follows at once (the panel was busy until now)
   }
   was_busy = busy;
   if (clean_len && !busy) {                            // the cleaning sequence goes on step by step, then the slide follows

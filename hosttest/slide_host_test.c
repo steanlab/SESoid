@@ -229,6 +229,7 @@ int main(void)
     CHECK(demos - d0 == 3 + 1 && last_demo == 100, "three chosen pictures then the hardware screen (%d, last %u)", demos - d0, last_demo);
     CHECK(slot_ok ? shows - s0 >= 2 : 1, "the chosen slide is shown and the earlier slide comes back (%d shows)", shows - s0);
     CHECK(!slide_demo_active(), "tour ended");
+    tick(31000);
     CHECK(slide_demo(0xFF, 0, 0) == SLR_BAD_SLOT, "an empty tour is refused");
     CHECK(strcmp(hw_v[2], "panel 24 C, chip 25.1 C") == 0, "temperature line: %s", hw_v[2]);
     CHECK(strncmp(hw_v[3], "5 x CR2450, ", 12) == 0, "battery line: %s", hw_v[3]);

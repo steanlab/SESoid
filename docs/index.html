@@ -168,10 +168,13 @@
       <div class="kv" id="pnKv"></div>
       <h3>Управление</h3>
       <div class="row"><button id="bShowNext" disabled>Следующий слайд</button><button id="bSplash" disabled>Заставка</button></div>
-      <div class="n"><b>Демо-тур</b> (для съёмки): из чего он состоит, выбирается галочками: заставка, картинки, слайд, экран TAG HARDWARE с данными метки; в конце метка возвращает прежний слайд. Картинки рисует сама метка. Через 10 секунд после запуска страница отключается и тур начинается, чтобы в кадре осталась одна метка; касание метки останавливает тур после текущего экрана. Обычная смена слайдов на время тура ждёт.</div>
+      <div id="demoBox" style="margin:18px 0 14px;padding:12px 14px;border:2px solid var(--acc);border-radius:10px;background:var(--box)">
+      <h3 style="margin:0 0 8px;color:var(--acc);font-size:14px">Демо-режим</h3>
+      <div class="n" style="margin-top:0"><b>Демо-тур</b> (для съёмки): из чего он состоит, выбирается галочками: заставка, картинки, слайд, экран TAG HARDWARE с данными метки; в конце метка возвращает прежний слайд. Картинки рисует сама метка. Через 10 секунд после запуска страница отключается и тур начинается, чтобы в кадре осталась одна метка; касание метки останавливает тур после текущего экрана. Обычная смена слайдов на время тура ждёт.</div>
       <div class="row"><label><input type="checkbox" id="demoSplash" checked> заставка</label><label><input type="checkbox" id="demoHw" checked> экран с данными железа</label></div>
       <div class="row" id="demoPics"></div>
       <div class="row"><label>Слайд в туре <select id="demoSlot"><option value="0">без слайда</option><option value="1">слот 1</option><option value="2">слот 2</option><option value="3">слот 3</option><option value="4">слот 4</option><option value="5">слот 5</option><option value="6">слот 6</option><option value="7">слот 7</option><option value="8">слот 8</option><option value="9">слот 9</option><option value="10">слот 10</option></select></label><button id="bDemo2" disabled>Запустить тур</button><button id="bDemoStop" disabled>Остановить тур</button></div>
+      </div>
       <div class="row"><span class="n" style="margin:0">Заливка (чистит остаточные изображения):</span>
         <button class="fill" data-c="0" disabled>Чёрный</button><button class="fill" data-c="1" disabled>Белый</button><button class="fill" data-c="2" disabled>Жёлтый</button><button class="fill" data-c="3" disabled>Красный</button></div>
       <div class="row"><span class="n" style="margin:0">Очистка (серия заливок):</span>
@@ -989,6 +992,7 @@ const EN_HTML = new Map([
   ["Следующий слайд","Next slide"],
   ["Заставка","Splash"],
   ["Демо-тур","Demo tour"],
+  ["Демо-режим","Demo mode"],
   ["Демо начнётся через 10 секунд, страница отключится","The demo starts in 10 seconds, the page disconnects"],
   ["Ничего не выбрано","Nothing selected"],
   ["экран с данными железа","hardware data screen"],
