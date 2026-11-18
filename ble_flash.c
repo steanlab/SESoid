@@ -27,7 +27,7 @@ volatile bool fl_done;
 
 typedef enum { S_IDLE, S_ERASE_WAIT, S_ERASE_VERIFY, S_PROG_WAIT, S_PROG_VERIFY, S_SCAN } fl_state_t;
 static fl_state_t st;
-static uint32_t wr_lo = 0, wr_hi = FL_TEST_END;
+static uint32_t wr_lo = FL_TEST_LO, wr_hi = FL_TEST_END;
 static uint32_t cur_addr, off, t0, last_sr_us;
 static uint8_t page_buf[FL_PAGE];
 
@@ -83,7 +83,7 @@ static void wait_us(uint32_t us) { uint32_t t = RAIL_GetTime(); while ((uint32_t
 
 void fl_init(void)
 {
-  wr_lo = 0; wr_hi = FL_TEST_END;
+  wr_lo = FL_TEST_LO; wr_hi = FL_TEST_END;
   CMU->CLKEN0 |= CMU_CLKEN0_GPIO;
   pin_set(CS_PORT, CS_PIN);
   pin_clr(CLK_PORT, CLK_PIN);

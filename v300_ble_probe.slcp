@@ -20,6 +20,9 @@ source:
 - {path: ble_sys.c}
 - {path: ble_hwtest.c}
 - {path: ble_nfc.c}
+- {path: ble_acc.c}
+- {path: ble_od.c}
+- {path: ble_batt.c}
 include:
 - path: ''
   file_list:
@@ -36,6 +39,9 @@ include:
   - {path: ble_sys.h}
   - {path: ble_hwtest.h}
   - {path: ble_nfc.h}
+  - {path: ble_acc.h}
+  - {path: ble_od.h}
+  - {path: ble_batt.h}
 sdk: {id: gecko_sdk, version: 4.4.1}
 toolchain_settings:
 - {value: debug, option: optimize}
@@ -43,6 +49,7 @@ component:
 - {id: EFR32FG22C121F256GM40}
 - {id: device_init}
 - {id: power_manager}
+- {id: emlib_iadc}
 - {id: radio_config_simple_rail_singlephy}
 - instance: [inst0]
   id: rail_util_init
@@ -56,7 +63,7 @@ template_contribution:
 requires:
 - {name: a_radio_config}
 configuration:
-- {name: SL_STACK_SIZE, value: '2048'}
+- {name: SL_STACK_SIZE, value: '4096'}
 - {name: SL_HEAP_SIZE, value: '2048'}
 - {name: SL_RAIL_UTIL_INIT_INIT_COMPLETE_CALLBACK_INST0_ENABLE, value: '0'}
 - {name: SL_RAIL_UTIL_INIT_RADIO_CONFIG_SUPPORT_INST0_ENABLE, value: '0'}

@@ -18,5 +18,6 @@
 void att_reset(void);                              // new connection
 void att_rx(const uint8_t *att, uint8_t len);      // one ATT PDU received on L2CAP channel 4
 bool att_notify(const uint8_t *data, uint8_t len); // notification on the TX characteristic (len <= 20); false if not enabled/queue full
+bool att_notify_od(const uint8_t *data, uint8_t len); // notification on the OpenDisplay characteristic (len <= 20); false if not enabled
 
 #endif

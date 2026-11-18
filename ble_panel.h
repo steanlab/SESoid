@@ -48,6 +48,8 @@ typedef struct {
   uint8_t busy_rstlow, busy_10, busy_100, busy_500;  // BUSY with RST low (20 ms) and 10 / 100 / 500 ms after RST goes high
   uint8_t sda_pd_on, sda_pu_on;                      // after the ID reads, panel on and idle: SDA with pull-down / pull-up
   uint16_t busy_ms;                                  // ms after RST high until BUSY was seen high (0xFFFF = never within 3 s)
+  uint16_t temp_raw;                                 // experimental: 16 bits read after command 0x40 (UC81xx style temperature read; unconfirmed for this controller)
+  uint8_t  temp_tried;                               // 1 = the read was done
   uint16_t id1, id2, id_slow;                        // chip ID (0x0D04 expected): first read, second read 50 ms later, read with a 50 us clock half period
 } panel_diag_t;
 bool panel_diag_start(void);                         // false when an update is running

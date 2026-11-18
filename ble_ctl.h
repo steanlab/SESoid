@@ -3,15 +3,16 @@
 //
 // Phone -> tag:
 //   30                      STATUS     -> B0
-//   31                      SLOTS      -> B1 x7 (slot table is read from the flash first)
-//   32 slot                 SHOW       show slot 1..7 now (a panel update takes about 30 s)           -> B3
+//   31                      SLOTS      -> B1 x10 (slot table is read from the flash first)
+//   32 slot                 SHOW       show slot 1..10 now (a panel update takes about 30 s)           -> B3
 //   33                      NEXT       show the next slide of the playlist now                          -> B3
-//   34 en mode int(2) mask temp tx   SET SETTINGS  enabled, order (0 = in order, 1 = random), minutes (1..1440), slot mask (bit n = slot n),
+//   34 en mode int(2) mask temp tx [nfc [mask_hi clean_n]]   SET SETTINGS  enabled, order (0 = in order, 1 = random), minutes (1..1440), slot mask (bit n = slot n; mask_hi = bits 8..10),
 //                           panel temperature (signed, degrees C), Bluetooth TX power request (signed dBm)   -> B4
-//   35                      GET SETTINGS                                                                 -> B4
+//                           clean_n (fw 2.0, 11-byte form): after every clean_n-th slide change a cleaning comes first (0 = never); [clean_mode] (12-byte form), [batt_low batt_crit] (14-byte form, thresholds 2000 + 10 * value mV): 0 white, 1 black+white, 2 full cycle black/white/red/yellow/white
+//   35                      GET SETTINGS   -> B4 (16 bytes in fw 2.0: ... [13] mask_hi, [14] clean_n, [15] clean_mode)
 //   36 A5                   REBOOT     (the 0xA5 is a safety byte)                                      -> B5, then the tag resets
 //   37                      HW INFO    -> B6 x4
-//   38 code                 FILL       panel plain colour 0 black, 1 white, 2 yellow, 3 red (cleans ghost images)   -> B3
+//   38 code                 FILL       panel plain colour 0 black, 1 white, 2 yellow, 3 red (cleans ghost images); code 0x10+m runs the cleaning sequence of mode m   -> B3
 //   39                      SPLASH     show the boot picture again                                      -> B3
 //   3A                      PANEL DIAGNOSTICS  (about 5 s: panel off 3 s, on, reset, measure BUSY / SDA / chip ID)   -> B3, later B8 by itself
 //   3B                      PANEL DIAGNOSTICS REPORT  (the last one)                                     -> B8
@@ -69,6 +70,7 @@
 #include <stdbool.h>
 
 void ctl_reset(void);                              // new connection / disconnect
+bool ctl_gate(const uint8_t *v, uint8_t len);      // true = the command is dangerous and locked (answered here with result SLR_LOCKED, must not run): reboot 0x36, flash test erase/program 0x21/0x22, NFC chip write/unlock/rescue 0x3F 0x21/0x22/0x31, pin scanner with power on the pins 0x3F 0x05; they work for 60 s after a tap
 bool ctl_write(const uint8_t *v, uint8_t len);     // a write to the RX characteristic; true if the opcode belongs to this module
 void ctl_poll(void);                               // main loop (also runs the hardware tests)
 

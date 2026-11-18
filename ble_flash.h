@@ -10,9 +10,13 @@
 #define FL_SIZE        0x80000u
 #define FL_SECTOR      4096u
 #define FL_PAGE        256u
-#define FL_TEST_END    0xF000u      // default write range 0x00000..0x0EFFF (blank test area); the upload opens one slot at a time
-#define FL_CFG_SECTOR  0xF000u      // last sector of the test area: settings log of ble_slide.c (16 entries of 256 bytes)
-#define FL_SLOT_SIZE   0x10000u     // slots 1..7 at n * 64 KiB
+#define FL_SLOTS       10u          // slide slots 1..10, raw frames without compression
+#define FL_SLOT_SIZE   0xC000u      // 12 sectors per slot: slot n lies at (n-1) * 0xC000 (slots end at 0x78000)
+#define FL_SLOT_REC    0xB400u      // the record page sits right behind the 46 080 byte frame (inside the 12th sector)
+#define FL_SLOT_BASE(n) ((uint32_t)((n) - 1u) * FL_SLOT_SIZE)
+#define FL_TEST_LO     0x78000u     // blank test area 0x78000..0x7EFFF (7 sectors) used by the flash tools of the page
+#define FL_TEST_END    0x7F000u
+#define FL_CFG_SECTOR  0x7F000u     // last sector: settings log of ble_slide.c (16 entries of 256 bytes)
 
 // result codes (also sent to the phone)
 #define FLR_OK         0

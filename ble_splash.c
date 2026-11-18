@@ -1,11 +1,10 @@
-// SES V300 (not badge154): boot splash picture generator (black background, white text), see ble_splash.h.
+// SES V300 (not badge154): boot splash picture generator (black background, solid white split-style title, white text), see ble_splash.h.
 // The text is stored as two small 1-bit column bitmaps (ble_splash_data.h, made by tools/make_splash.py).
 #include "ble_splash.h"
 #include "ble_splash_data.h"
 
 #define CODE_BLACK 0u
 #define CODE_WHITE 1u
-// pixel codes 2 = yellow and 3 = red come from the per-column colour table of the title
 
 static inline uint32_t bm_get(const uint8_t *d, int hb, int du, int dv)
 {
@@ -17,12 +16,12 @@ static uint32_t pixel_code(int u, int v)
 {
   int du = u - SPL_TITLE_X, dv = v - SPL_TITLE_Y;
   if (du >= 0 && du < SPL_TITLE_W && dv >= 0 && dv < SPL_TITLE_H) {
-    return bm_get(spl_title, SPL_TITLE_HB, du, dv) ? spl_title_col[du] : CODE_BLACK;
+    return bm_get(spl_title, SPL_TITLE_HB, du, dv) ? CODE_WHITE : CODE_BLACK;
   }
-  du = u - SPL_SUB_X;
-  dv = v - SPL_SUB_Y;
-  if (du >= 0 && du < SPL_SUB_W && dv >= 0 && dv < SPL_SUB_H) {
-    return bm_get(spl_sub, SPL_SUB_HB, du, dv) ? CODE_WHITE : CODE_BLACK;
+  du = u - SPL_FOOT_X;
+  dv = v - SPL_FOOT_Y;
+  if (du >= 0 && du < SPL_FOOT_W && dv >= 0 && dv < SPL_FOOT_H) {
+    return bm_get(spl_foot, SPL_FOOT_HB, du, dv) ? CODE_WHITE : CODE_BLACK;
   }
   return CODE_BLACK;
 }
@@ -35,8 +34,8 @@ void splash_gen_line(int line, uint8_t *out)
   int u = line;
 #endif
   int in_title = (u >= SPL_TITLE_X && u < SPL_TITLE_X + SPL_TITLE_W);
-  int in_sub = (u >= SPL_SUB_X && u < SPL_SUB_X + SPL_SUB_W);
-  if (!in_title && !in_sub) {          // most lines are plain black
+  int in_foot = (u >= SPL_FOOT_X && u < SPL_FOOT_X + SPL_FOOT_W);
+  if (!in_title && !in_foot) {          // most lines are plain black
     for (int i = 0; i < PANEL_LINE_BYTES; i++) out[i] = 0;
     return;
   }

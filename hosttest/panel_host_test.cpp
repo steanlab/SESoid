@@ -221,7 +221,7 @@ static int run_once(const char *name, bool connected, uint32_t free_pattern, int
   }
   bad += (g_diag.pn_err ? 1 : 0) + (nimg != 46080);
   if (kind == K_SLOT || kind == K_SLOT_BADCRC) {
-    int diff = memcmp(img, flash_mem + 3 * 0x10000, 46080);
+    int diff = memcmp(img, flash_mem + FL_SLOT_BASE(3), 46080);
     printf("      slot frame equals flash content: %s | crc mismatch counter %u (expect %d)\n", diff ? "NO" : "yes", g_diag.pn_crc_bad, kind == K_SLOT_BADCRC);
     bad += (diff != 0) + (g_diag.pn_crc_bad != (kind == K_SLOT_BADCRC ? 1u : 0u));
   }
@@ -274,8 +274,8 @@ int main(void)
   img = (uint8_t *)malloc(46080 + 128);
   srand(7);
   memset(flash_mem, 0xFF, sizeof flash_mem);
-  for (int i = 0; i < 46080; i++) flash_mem[3 * 0x10000 + i] = (uint8_t)(rand() >> 7);
-  frame_crc = up_crc32(0, flash_mem + 3 * 0x10000, 46080);
+  for (int i = 0; i < 46080; i++) flash_mem[FL_SLOT_BASE(3) + i] = (uint8_t)(rand() >> 7);
+  frame_crc = up_crc32(0, flash_mem + FL_SLOT_BASE(3), 46080);
   int bad = 0;
   bad += run_once("splash_adv", false, 0, K_SPLASH);
   FILE *f = fopen("panel_image_adv.bin", "wb"); fwrite(img, 1, 46080, f); fclose(f);

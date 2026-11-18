@@ -65,14 +65,17 @@
   .pmc { border:1px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12.5px; line-height:1.35; background:var(--card); }
   .pmc b { font-size:13px; } .pmc.own { opacity:.55; } .pmc.hi b::after { content:' ●'; color:var(--ok); } .pmc.lo b::after { content:' ○'; color:var(--mut); }
   .pmc.chg { border-color:var(--ok); box-shadow:0 0 0 2px color-mix(in srgb, var(--ok) 30%, transparent); }
+  #prog { position:sticky; top:0; z-index:6; background:var(--bg); border-bottom:1px solid var(--line); padding:4px 16px 6px; display:none; } #prog.on { display:block; } #prog.busy { background:var(--box); }
+  #pst { font-weight:600; } #pbar { height:14px; background:var(--line); border-radius:7px; overflow:hidden; margin:6px 0 2px; } #pbar i { display:block; height:100%; width:0; background:var(--acc); } #pdet { font-size:14px; min-height:20px; font-variant-numeric:tabular-nums; }
 </style>
 </head>
 <body>
 <header>
-  <h1>Gecko Slide <small>SES V300 · e-ink 5.9″ BWRY · не badge154 · steanlab/SESoid, docs/index.html</small></h1>
+  <h1>Gecko Slide <small>Страница управления электронными метками SES Imagotag. Проверено на V300 5.9″ BWRY</small></h1>
   <span class="pill" id="connPill"><span class="dot"></span><span id="connTxt">не подключено</span></span>
   <button id="bLang" title="Language / Язык">EN</button><button class="p" id="bConn">Подключиться</button><button id="bDisc" disabled>Отключиться</button><button id="bInstall" hidden title="Установить как приложение: откроется в своём окне и будет работать без интернета">Установить приложение</button><span class="pill" id="pwaPill" hidden title="Страница сохранена в браузере и откроется без интернета"><span class="dot"></span>работает офлайн</span>
 </header>
+<div id="prog" aria-live="polite"><div id="pst"></div><div id="pbar"><i></i></div><div id="pdet"></div></div>
 <nav id="tabs">
   <button data-t="edit" class="act">Изображение</button><button data-t="slots">Слоты и слайдшоу</button><button data-t="cfg">Настройки</button><button data-t="tag">Метка</button><button data-t="tools">Инструменты</button><button data-t="logt">Журнал</button>
 </nav>
@@ -130,7 +133,7 @@
   <div class="card">
     <div class="row"><button id="bSlots" disabled>Обновить список с метки</button><button id="bNext" disabled>Показать следующий сейчас</button>
       <span id="slideInfo" class="n" style="margin:0"></span></div>
-    <p class="n">Семь слотов во внешней flash метки (слот n лежит по адресу n × 0x10000). Картинки на странице запоминаются в браузере (IndexedDB): по контрольной сумме видно, совпадает ли запомненная картинка с тем, что лежит в метке. Галочка «в слайдшоу» сохраняется в метке сама.</p>
+    <p class="n">Десять слотов во внешней flash метки без сжатия (слот n лежит по адресу (n − 1) × 0xC000, запись о кадре — в его конце). Картинки на странице запоминаются в браузере (IndexedDB): по контрольной сумме видно, совпадает ли запомненная картинка с тем, что лежит в метке. Галочка «в слайдшоу» сохраняется в метке сама.</p>
     <div class="slots" id="slotGrid"></div>
   </div>
 </section>
@@ -143,11 +146,14 @@
     <div class="ctl sel"><span>Порядок</span><select id="cMode"><option value="0">по кругу (1 → 2 → 3 …)</option><option value="1">случайно</option></select></div>
     <div class="ctl sel"><span>Интервал</span><span class="sub"><select id="cInt"></select><span id="cIntCustomWrap" hidden><input type="number" id="cIntCustom" min="1" max="1440" style="width:80px"> мин</span></span></div>
     <div class="ctl sel"><span>Температура панели</span><span class="sub"><input type="number" id="cTemp" min="-20" max="60" style="width:80px"> °C <span class="n" style="margin:0">от неё метка выбирает режим обновления панели</span></span></div>
+    <div class="ctl sel"><span>Полная перерисовка</span><span class="sub"><input type="number" id="cClean" min="0" max="250" style="width:80px" disabled> смен <select id="cCleanMode" disabled><option value="0">белый</option><option value="1">чёрный + белый</option><option value="2">полный цикл (~2 мин)</option></select> <span class="n" style="margin:0">после стольких смен слайда экран сначала очищается выбранной серией заливок (убирает «призраки»); 0 — никогда. Полный цикл: чёрный, белый, красный, жёлтый, белый</span></span></div>
     <div class="ctl sel"><span>Мощность Bluetooth</span><span class="sub"><select id="cTx"></select><span id="cTxAct" class="n" style="margin:0"></span></span></div>
+    <div class="ctl sel"><span>Режимы</span><span class="sub"><label><input type="checkbox" id="cDeep" disabled> глубокий сон EM2 (экономия батареи)</label> <label><input type="checkbox" id="cOd" disabled> совместимость с OpenDisplay</label><span id="cFlagInfo" class="n" style="margin:0"></span></span></div>
     <div class="ctl sel"><span>NFC-касание</span><span class="sub"><label><input type="checkbox" id="cNfc" disabled> касание телефоном листает слайд</label><span id="cNfcInfo" class="n" style="margin:0"></span></span></div>
+    <div class="ctl sel"><span>Батарея</span><span class="sub"><span id="cBattInfo" class="n" style="margin:0">—</span><span>предупреждение <input type="number" id="cBattLow" min="2.1" max="4" step="0.05" style="width:80px" disabled> В, критический <input type="number" id="cBattCrit" min="2.05" max="4" step="0.05" style="width:80px" disabled> В <span class="n" style="margin:0">пять CR2450 параллельно; ниже критического уровня автосмена слайдов и очистка останавливаются, ручные команды работают</span></span></span></div>
     <div class="row"><button class="p" id="bCfg" disabled>Применить и сохранить в метке</button><button id="bCfgGet" disabled>Прочитать из метки</button></div>
     <p class="n">Интервал отсчитывается от конца предыдущего обновления экрана, а само обновление длится около 30 с, поэтому разумный минимум — 1–2 минуты. Настройки хранятся во flash метки (журнал на 16 записей: стирание примерно раз в 16 сохранений) и переживают перезагрузку.
-    Слабая мощность (−10 дБм и ниже) экономит батарею, но связь обрывается при удалении; изменение вступает в силу сразу, поэтому если соединение пропало — подойдите ближе.</p>
+    Слабая мощность (−10 дБм и ниже) экономит батарею, но связь обрывается при удалении; изменение вступает в силу сразу, поэтому если соединение пропало — подойдите ближе. Bluetooth метки включён только в окне доступа: 2 минуты после включения питания, 90 секунд после каждого касания телефоном по NFC и 30 секунд после разрыва соединения; потом метка молчит и не видна. Чтобы подключиться, приложите телефон к метке и нажмите «Подключиться».</p>
   </div>
 </section>
 
@@ -163,6 +169,8 @@
       <div class="row"><button id="bShowNext" disabled>Следующий слайд</button><button id="bSplash" disabled>Заставка</button></div>
       <div class="row"><span class="n" style="margin:0">Заливка (чистит остаточные изображения):</span>
         <button class="fill" data-c="0" disabled>Чёрный</button><button class="fill" data-c="1" disabled>Белый</button><button class="fill" data-c="2" disabled>Жёлтый</button><button class="fill" data-c="3" disabled>Красный</button></div>
+      <div class="row"><span class="n" style="margin:0">Очистка (серия заливок):</span>
+        <button class="fill" data-c="16" disabled>Белый</button><button class="fill" data-c="17" disabled>Чёрный + белый</button><button class="fill" data-c="18" disabled>Полный цикл (~2 мин)</button></div>
       <p class="n">Обновление экрана длится около 30 с и мигает; во время него метка остаётся на связи.</p>
       <div class="row"><button class="d" id="bReboot" disabled>Перезагрузить метку</button></div>
     </div>
@@ -228,10 +236,17 @@
     <h3 style="margin:14px 0 4px;font-size:1rem">Копия, своя ссылка, снятие блокировки</h3>
     <p class="n">Запись идёт со стороны процессора (I²C) и проверяется обратным чтением. На время записи держите метку не ближе 30 см от телефона: пока телефон держит чип по NFC, чип может отказываться принимать запись по I²C. Сначала сохраните копию чипа: без неё кнопки записи недоступны. Файл копии содержит серийные данные чипа, не публикуйте его.</p>
     <div class="row"><button id="bNfcBk" disabled>1. Сохранить копию чипа</button><button id="bNfcDl" disabled>Скачать копию (файл)</button></div>
-    <label style="display:block;margin:8px 0 2px">Ссылка для записи в чип (только латиница): <input type="text" id="nfcUrl" style="width:100%;box-sizing:border-box" spellcheck="false"></label>
+    <label style="display:block;margin:8px 0 2px">Что записать: <select id="nfcKind"><option value="url">ссылка</option><option value="text">текст</option><option value="wifi">Wi‑Fi (подключение к сети)</option></select></label>
+    <label style="display:block;margin:8px 0 2px" id="nfcUrlLbl"><span id="nfcUrlCap">Ссылка для записи в чип (только латиница):</span> <input type="text" id="nfcUrl" style="width:100%;box-sizing:border-box" spellcheck="false"></label>
+    <div id="nfcWifiBox" hidden>
+      <label style="display:block;margin:8px 0 2px">Имя сети (SSID): <input type="text" id="nfcSsid" style="width:100%;box-sizing:border-box" spellcheck="false" autocomplete="off"></label>
+      <label style="display:block;margin:8px 0 2px">Пароль: <input type="text" id="nfcPass" style="width:100%;box-sizing:border-box" spellcheck="false" autocomplete="off"></label>
+      <label style="display:block;margin:8px 0 2px">Защита: <select id="nfcAuth"><option value="wpa2">WPA2 (пароль)</option><option value="mixed">WPA / WPA2 (пароль)</option><option value="open">открытая сеть</option></select></label>
+      <p class="n">Пароль записывается в чип открытым текстом: любой телефон, прикоснувшийся к метке, получит его. Запись понимают телефоны Android; на iPhone Wi‑Fi через NFC-метку не подключается.</p>
+    </div>
     <div class="n" id="nfcUrlInfo" style="margin:0 0 6px"></div>
-    <label style="display:block;margin:4px 0"><input type="checkbox" id="nfcWrOk"> понимаю: ссылка в чипе будет заменена, копия сохранена</label>
-    <div class="row"><button id="bNfcWr" disabled>2. Записать ссылку</button><button id="bNfcRestore" disabled>Вернуть исходную ссылку из копии</button></div>
+    <label style="display:block;margin:4px 0"><input type="checkbox" id="nfcWrOk"> понимаю: запись в чипе будет заменена, копия сохранена</label>
+    <div class="row"><button id="bNfcWr" disabled>2. Записать в чип</button><button id="bNfcRestore" disabled>Вернуть исходную запись из копии</button></div>
     <h3 style="margin:14px 0 4px;font-size:1rem">Адрес чипа на шине I²C</h3>
     <p class="n">Запись в нулевой байт блока 0 меняет I²C-адрес чипа (по описанию NXP, чтение этого байта всегда даёт 04). Если после неудачной операции чип «пропал» (чтение пишет, что чип не ответил), нажмите «Найти»: метка проверит все адреса 0x00–0x7F. Если чип нашёлся не на 0x55, «Вернуть адрес 0x55» подбирает значение нулевого байта, пока чип не вернётся (до 260 записей блока 0, обычно намного меньше). Найденное значение нужно для «Снять блокировку».</p>
     <div class="row"><button id="bNfcFind" disabled>Найти чип по всем адресам</button></div>
@@ -243,7 +258,7 @@
   </div>
   <div class="card">
     <h2>Внешняя flash</h2>
-    <p class="n">Сектор 15 (0x0F000) занят настройками, поэтому тесты стирания и записи работают с секторами 0–14.</p>
+    <p class="n">Тесты стирания и записи работают только в пустой тестовой области 0x78000–0x7EFFF (сектора 0–6); слоты и настройки (сектор 0x7F000) они не трогают.</p>
     <button id="bFInfo" disabled>Идентификатор</button>
     <label>сектор <select id="sec"></select></label>
     <button id="bFErase" disabled>Стереть</button><button id="bFProg" disabled>Записать страницу</button><button id="bFScan" disabled>Прочитать (сколько не FF)</button>
@@ -262,7 +277,15 @@
 
 /* ===== i18n: Russian is the source language, English comes from these tables (switch in the header, remembered in the browser) ===== */
 const EN_JS = new Map([
+  ['нужна прошивка 2.0','needs firmware 2.0'],
+  ['Оба режима по умолчанию выключены. Глубокий сон действует, когда окно Bluetooth закрыто; после касания телефона метка просыпается. После включения OpenDisplay метка видна приложениям OpenDisplay как экран с кадром 720 × 256.','Both modes are off by default. Deep sleep applies while the Bluetooth window is closed; the tag wakes when a phone taps it. With OpenDisplay on, OpenDisplay apps see the tag as a display with a 720 × 256 frame.'],
+  ['\nТемпература панели (опыт, команда 0x40, не подтверждена для этого контроллера): сырое ','\nPanel temperature (experimental, command 0x40, unconfirmed for this controller): raw '],
+  [' — похоже на отсутствие ответа, датчик не читается.',' — looks like no answer, the sensor is not readable.'],
+  [' — если это формат UC81xx, старший байт = ',' — if this is the UC81xx format, the high byte = '],
   ['Идеальная (максимальная насыщенность)','Ideal (maximum saturation)'],
+  ['норма','OK'], ['низкий заряд','low charge'], ['критический: автосмена остановлена','critical: automatic changes stopped'],
+  [' В — ',' V — '], [', измерено ',', measured '], [' мин назад',' min ago'], ['ещё не измерено','not measured yet'],
+  ['опасная команда заблокирована: приложите телефон к метке (NFC) и повторите в течение 60 с','dangerous command locked: tap the phone on the tag (NFC) and repeat within 60 s'],
   ['Реальная панель (по калибровочному снимку)','Real panel (from the calibration photo)'],
   ['Своя','Custom'],
   ['Нет (ближайший цвет)','None (nearest colour)'],
@@ -518,7 +541,7 @@ const EN_JS = new Map([
   ['фактически ','actual '],
   ['нужна прошивка 1.7 или новее','firmware 1.7 or newer is needed'],
   ['касаний с запуска метки: ','taps since the tag started: '],
-  ['. Метка опрашивает NFC-чип 5 раз в секунду; расход батареи пока не оптимизирован (сон добавим позже).','. The tag polls the NFC chip 5 times a second; battery use is not optimised yet (sleep will be added later).'],
+  ['. Касание телефоном всегда включает Bluetooth метки на 90 секунд; с галочкой оно ещё и листает слайд.','. A phone tap always switches the tag’s Bluetooth on for 90 seconds; with the tick it also flips the slide.'],
   ['настройки','settings'],
   ['Настройки отправлены в метку','Settings sent to the tag'],
   ['идёт диагностика, подождите около 5 секунд …','diagnostics running, wait about 5 seconds …'],
@@ -564,7 +587,7 @@ const EN_JS = new Map([
   [' (отличаются: прошивка или стек задали свои)',' (they differ: the firmware or the stack set its own)'],
   ['Низкочастотный такт для сна сейчас: ','Low-frequency clock for sleep now: '],
   [' (группа EM2/3), ',' (EM2/3 group), '],
-  [' (RTCC). Это то, что оставила начальная настройка SDK; сама эта прошивка сон пока не использует.',' (RTCC). This is what the initial SDK setup left; this firmware does not use sleep yet.'],
+  [' (RTCC). Это то, что оставила начальная настройка SDK; сама эта прошивка засыпает только в EM1 (ядро), глубокий сон EM2 не использует.',' (RTCC). This is what the initial SDK setup left; this firmware only sleeps in EM1 (the core); it does not use deep sleep EM2.'],
   ['LFXO уже был включён до теста (кем-то в прошивке), использовал как есть.','LFXO was already on before the test (someone in the firmware), used as is.'],
   ['LFXO: кварц запустился за ','LFXO: the crystal started in '],
   [', но измерить частоту не удалось',', but the frequency could not be measured'],
@@ -712,6 +735,12 @@ const EN_JS = new Map([
   [' байт (',' bytes ('],
   [' блоков из 7 доступных).',' blocks of 7 available).'],
   ['введите ссылку','enter a link'],
+  ['скрыт: приложите телефон к метке (NFC) и обновите в течение 60 с','hidden: tap the phone on the tag (NFC) and refresh within 60 s'],
+  [' Б',' B'], [' КБ',' KB'], [' мин ',' min '], ['осталось ','left '], ['Экран обновляется: ','Screen is updating: '], ['Загрузка в слот ','Uploading to slot '], ['Проверка слота чтением из flash','Checking the slot by reading it back from flash'],
+  ['введите текст','enter the text'], ['введите имя сети','enter the network name'], ['имя сети длиннее 32 байт','the network name is longer than 32 bytes'], ['пароль WPA: от 8 до 63 знаков','WPA password: 8 to 63 characters'], ['слишком длинная запись','the record is too long'],
+  ['слишком длинная запись: в чип помещается 112 байт, у этой ','the record is too long: the chip holds 112 bytes, this one is '],
+  ['слишком длинный: не больше ',"too long: at most "], [' байт в UTF-8 (русская буква занимает 2)',' bytes in UTF-8 (a Russian letter takes 2)'],
+  ['Текст для записи в чип:','Text to write into the chip:'], ['Ссылка для записи в чип (только латиница):','Link to write into the chip (Latin characters only):'],
   ['только латинские буквы, цифры и знаки без пробелов','Latin letters, digits and signs without spaces only'],
   ['ссылка должна начинаться с http:// или https://','the link must start with http:// or https://'],
   ['слишком длинная: после https:// остаётся не больше ','too long: after https:// no more than '],
@@ -795,7 +824,7 @@ const EN_JS = new Map([
   [' из flash ...',' from flash ...'],
   ['Журнал скопирован','Log copied'],
   ['Не удалось скопировать','Could not copy'],
-  ['во flash помещается не больше 61 440 байт','no more than 61,440 bytes fit into the flash'],
+  ['во flash помещается не больше 46 080 байт','no more than 46,080 bytes fit into the flash'],
   ['BEGIN: во flash, слот ','BEGIN: to flash, slot '],
   [' (метка сначала стирает слот) ...',' (the tag erases the slot first) ...'],
   ['BEGIN: в ОЗУ','BEGIN: to RAM'],
@@ -835,7 +864,7 @@ const EN_HTML = new Map([
   ["Таблица из четырёх цветов панели для калибровки: загрузите в слот и сфотографируйте","A chart of the four panel colours for calibration: upload it to a slot and photograph it"],
   ["Градиенты без коррекции растискивания (слева, A) и с ней (справа, B): загрузите в слот и сфотографируйте","Gradients without dot-gain correction (left, A) and with it (right, B): upload to a slot and photograph"],
   ["Испытательная таблица в телевизионном стиле: сетка, круг, диагонали, цветные полосы, градации, пакеты линий, шахматки","A TV-style test chart: grid, circle, diagonals, colour bars, gray steps, line bursts, checkerboards"],
-  ["SES V300 · e-ink 5.9″ BWRY · не badge154 · steanlab/SESoid, docs/index.html","SES V300 · e-ink 5.9″ BWRY · not badge154 · steanlab/SESoid, docs/index.html"],
+  ["Страница управления электронными метками SES Imagotag. Проверено на V300 5.9″ BWRY","Control page for SES Imagotag e-paper tags. Tested with V300 5.9″ BWRY"],
   ["не подключено","not connected"],
   ["Подключиться","Connect"],
   ["Отключиться","Disconnect"],
@@ -876,7 +905,7 @@ const EN_HTML = new Map([
   ["Просмотр","View"],
   ["Обновить список с метки","Refresh list from the tag"],
   ["Показать следующий сейчас","Show the next one now"],
-  ["Семь слотов во внешней flash метки (слот n лежит по адресу n × 0x10000). Картинки на странице запоминаются в браузере (IndexedDB): по контрольной сумме видно, совпадает ли запомненная картинка с тем, что лежит в метке. Галочка «в слайдшоу» сохраняется в метке сама.","Seven slots in the tag's external flash (slot n lies at address n × 0x10000). Pictures on the page are remembered in the browser (IndexedDB): the checksum shows whether the remembered picture matches what lies in the tag. The \"in slideshow\" tick is saved in the tag itself."],
+  ["Десять слотов во внешней flash метки без сжатия (слот n лежит по адресу (n − 1) × 0xC000, запись о кадре — в его конце). Картинки на странице запоминаются в браузере (IndexedDB): по контрольной сумме видно, совпадает ли запомненная картинка с тем, что лежит в метке. Галочка «в слайдшоу» сохраняется в метке сама.","Ten slots in the tag's external flash, uncompressed (slot n lies at address (n − 1) × 0xC000, the frame record is at its end). Pictures on the page are remembered in the browser (IndexedDB): the checksum shows whether the remembered picture matches what lies in the tag. The \"in slideshow\" tick is saved in the tag itself."],
   ["Слайдшоу и радио","Slideshow and radio"],
   ["Автосмена","Auto change"],
   ["менять слайды сами","change slides automatically"],
@@ -890,10 +919,30 @@ const EN_HTML = new Map([
   ["Мощность Bluetooth","Bluetooth power"],
   ["NFC-касание","NFC tap"],
   ["касание телефоном листает слайд","a phone tap flips the slide"],
+  ["Режимы","Modes"], ["глубокий сон EM2 (экономия батареи)","deep sleep EM2 (saves battery)"], ["совместимость с OpenDisplay","OpenDisplay compatibility"],
   ["Применить и сохранить в метке","Apply and save in the tag"],
   ["Прочитать из метки","Read from the tag"],
-  ["Интервал отсчитывается от конца предыдущего обновления экрана, а само обновление длится около 30 с, поэтому разумный минимум — 1–2 минуты. Настройки хранятся во flash метки (журнал на 16 записей: стирание примерно раз в 16 сохранений) и переживают перезагрузку. Слабая мощность (−10 дБм и ниже) экономит батарею, но связь обрывается при удалении; изменение вступает в силу сразу, поэтому если соединение пропало — подойдите ближе.","The interval is counted from the end of the previous screen update, and the update itself takes about 30 s, so a sensible minimum is 1–2 minutes. The settings are kept in the tag's flash (a log of 16 entries: an erase about once per 16 saves) and survive a reboot. Low power (−10 dBm and below) saves the battery, but the link drops with distance; the change takes effect at once, so if the connection is lost, move closer."],
+  ["Интервал отсчитывается от конца предыдущего обновления экрана, а само обновление длится около 30 с, поэтому разумный минимум — 1–2 минуты. Настройки хранятся во flash метки (журнал на 16 записей: стирание примерно раз в 16 сохранений) и переживают перезагрузку. Слабая мощность (−10 дБм и ниже) экономит батарею, но связь обрывается при удалении; изменение вступает в силу сразу, поэтому если соединение пропало — подойдите ближе. Bluetooth метки включён только в окне доступа: 2 минуты после включения питания, 90 секунд после каждого касания телефоном по NFC и 30 секунд после разрыва соединения; потом метка молчит и не видна. Чтобы подключиться, приложите телефон к метке и нажмите «Подключиться».","The interval is counted from the end of the previous screen update, and the update itself takes about 30 s, so a sensible minimum is 1–2 minutes. The settings are kept in the tag's flash (a log of 16 entries: an erase about once per 16 saves) and survive a reboot. Low power (−10 dBm and below) saves the battery, but the link drops with distance; the change takes effect at once, so if the connection is lost, move closer. The tag's Bluetooth is on only inside the access window: 2 minutes after power-up, 90 seconds after every phone tap on the NFC chip and 30 seconds after a connection ends; after that the tag is silent and invisible. To connect, tap the tag with the phone and press Connect."],
   ["Экран","Screen"],
+  ["Полная перерисовка","Full redraw"],
+  ["смен","changes"],
+  ["Батарея","Battery"],
+  ["предупреждение","warning"],
+  [", критический",", critical"],
+  ["В, критический","V, critical"],
+  ["В","V"],
+  ["пять CR2450 параллельно; ниже критического уровня автосмена слайдов и очистка останавливаются, ручные команды работают","five CR2450 in parallel; below the critical level automatic slide changes and cleaning stop, manual commands still work"],
+  ["после стольких смен слайда экран сначала очищается выбранной серией заливок (убирает «призраки»); 0 — никогда. Полный цикл: чёрный, белый, красный, жёлтый, белый","after this many slide changes the screen is first cleaned with the chosen series of fills (removes ghost images); 0 = never. Full cycle: black, white, red, yellow, white"],
+  ["белый","white"],
+  ["чёрный + белый","black + white"],
+  ["полный цикл (~2 мин)","full cycle (~2 min)"],
+  ["Очистка (серия заливок):","Cleaning (series of fills):"],
+  ["Чёрный + белый","Black + white"],
+  ["Полный цикл (~2 мин)","Full cycle (~2 min)"],
+  ["Что записать:","What to write:"], ["ссылка","link"], ["текст","text"], ["Wi‑Fi (подключение к сети)","Wi‑Fi (join a network)"],
+  ["Имя сети (SSID):","Network name (SSID):"], ["Пароль:","Password:"], ["Защита:","Security:"], ["WPA2 (пароль)","WPA2 (password)"], ["WPA / WPA2 (пароль)","WPA / WPA2 (password)"], ["открытая сеть","open network"],
+  ["Пароль записывается в чип открытым текстом: любой телефон, прикоснувшийся к метке, получит его. Запись понимают телефоны Android; на iPhone Wi‑Fi через NFC-метку не подключается.","The password is written into the chip as plain text: any phone that touches the tag gets it. Android phones understand the record; an iPhone does not join Wi‑Fi from an NFC tag."],
+  ["понимаю: запись в чипе будет заменена, копия сохранена","I understand: the record in the chip will be replaced, the copy is saved"], ["2. Записать в чип","2. Write to the chip"], ["Вернуть исходную запись из копии","Restore the original record from the copy"],
   ["Управление","Control"],
   ["Следующий слайд","Next slide"],
   ["Заставка","Splash"],
@@ -968,7 +1017,7 @@ const EN_HTML = new Map([
   ["понимаю: будут записаны служебные блоки 00 и 38 чипа (байты блокировки сбрасываются в 0); доступно после «Вернуть адрес 0x55»","I understand: service blocks 00 and 38 of the chip will be written (the lock bytes are reset to 0); available after \"Restore address 0x55\""],
   ["3. Снять блокировку записи (нужно, только если ссылка не записалась)","3. Clear the write lock (needed only if the link was not written)"],
   ["Внешняя flash","External flash"],
-  ["Сектор 15 (0x0F000) занят настройками, поэтому тесты стирания и записи работают с секторами 0–14.","Sector 15 (0x0F000) is taken by the settings, so the erase and write tests work with sectors 0–14."],
+  ["Тесты стирания и записи работают только в пустой тестовой области 0x78000–0x7EFFF (сектора 0–6); слоты и настройки (сектор 0x7F000) они не трогают.","The erase and write tests work only in the blank test area 0x78000–0x7EFFF (sectors 0–6); they never touch the slots or the settings (sector 0x7F000)."],
   ["Идентификатор","Identifier"],
   ["сектор","sector"],
   ["Стереть","Erase"],
@@ -1513,7 +1562,7 @@ const LIB = {
   async open() {
     try { this.db = await new Promise((res, rej) => { const r = indexedDB.open('gecko-slide', 1); r.onupgradeneeded = () => r.result.createObjectStore('slots', { keyPath: 'slot' }); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
     catch (e) { this.db = null; log(TT('библиотека: IndexedDB недоступна, картинки помню только до закрытия страницы')); }
-    for (let s = 1; s <= 7; s++) { const r = await this.get(s); if (r) this.mem.set(s, r); }
+    for (let s = 1; s <= 10; s++) { const r = await this.get(s); if (r) this.mem.set(s, r); }
   },
   tx(mode, fn) { return new Promise((res, rej) => { const t = this.db.transaction('slots', mode), r = fn(t.objectStore('slots')); t.oncomplete = () => res(r && r.result); t.onerror = () => rej(t.error); }); },
   async get(s) { if (!this.db) return this.mem.get(s) || null; try { return (await this.tx('readonly', st => st.get(s))) || null; } catch (e) { return null; } },
@@ -1554,7 +1603,7 @@ const cmd = (arr, what) => sendRetry(arr, true).catch(e => { log((what || TT('к
 const PN_STATE = ['не запускалось', 'идёт обновление', 'готово', 'ошибка'];
 const PN_ERR = { 0: 'нет', 1: 'BUSY панели не поднялся после сброса', 2: 'ID чипа панели не 0x0D04', 3: 'OTP: таймаут', 4: 'OTP: таймаут в конце', 5: 'нет метки в OTP', 6: 'BUSY после второго сброса', 7: 'инициализация: таймаут', 8: 'DC/DC: таймаут', 9: 'обновление: таймаут', 10: 'отключение DC/DC: таймаут', 11: 'flash не отвечает при выводе слайда' };
 const PN_SRC = ['—', 'заставка', 'слот', 'заливка'];
-const RES_TXT = ['запущено (около 30 с)', 'экран ещё обновляется', 'в слоте нет кадра 720×256', 'flash занята (загрузка или тест)'];
+const RES_TXT = ['запущено (около 30 с)', 'экран ещё обновляется', 'в слоте нет кадра 720×256', 'flash занята (загрузка или тест)', 'опасная команда заблокирована: приложите телефон к метке (NFC) и повторите в течение 60 с'];
 const STEP_PCT = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 25, 28, 55, 78, 80, 82, 84, 86, 90, 95, 100, 100];
 const STEP_TXT = s => s === 0 ? TT('ожидание') : s <= 8 ? TT('включение и сброс панели') : s === 9 ? TT('идентификатор панели') : s <= 13 ? TT('чтение OTP') : s <= 15 ? TT('инициализация') : s === 16 ? TT('передача изображения') : s === 17 ? TT('включение DC/DC') : s === 18 ? TT('смена изображения (≈ 19 с)') : s <= 24 ? TT('остановка DC/DC') : s <= 26 ? TT('выключение') : TT('готово');
 
@@ -1565,16 +1614,19 @@ function handle(a) {
       tag.st = { pst: a[1], perr: a[2], src: a[3], shown: a[4], step: a[5], nextS: u32(a, 6), upS: u32(a, 10), count: u16(a, 14), crcBad: a[16], auto: !!(a[17] & 1), flashIdle: !!(a[17] & 2), scanning: !!(a[17] & 4) };
       tag.statusAt = performance.now(); renderTag(); renderSlideInfo(); break; }
     case 0xB1: {
-      const s = a[1]; if (s < 1 || s > 7) break;
+      const s = a[1]; if (s < 1 || s > 10) break;
       tag.slots[s] = { valid: !!(a[2] & 1), show: !!(a[2] & 2), inList: !!(a[2] & 4), cur: !!(a[2] & 8), total: u32(a, 3), crc: u32(a, 7) };
       renderSlots(); break; }
-    case 0xB3: if (a[1] === 0x3F && a[2] !== 0 && nfcPending) { nfcPending = false; const wasOp = !!NFC.op; NFC.bkBusy = false; NFC.op = null; nfcButtons(); const t = TT('метка не приняла команду (код ') + a[2] + TT('): нужна прошивка 1.7 или новее, либо неверные параметры.'); $(wasOp || NFC.bk.length ? 'nfcOut2' : 'nfcOut').textContent = t; break; }
+    case 0xB3: if (a[2] === 4) { nfcPending = false; NFC.bkBusy = false; NFC.op = null; nfcButtons(); toast(TT(RES_TXT[4]), true); log(TT(RES_TXT[4])); break; }       // опасная команда заблокирована
+      if (a[1] === 0x3F && a[2] !== 0 && nfcPending) { nfcPending = false; const wasOp = !!NFC.op; NFC.bkBusy = false; NFC.op = null; nfcButtons(); const t = TT('метка не приняла команду (код ') + a[2] + TT('): нужна прошивка 1.7 или новее, либо неверные параметры.'); $(wasOp || NFC.bk.length ? 'nfcOut2' : 'nfcOut').textContent = t; break; }
       if (a[1] === 0x3F && a[2] !== 0) { $('scOut').textContent = TT('метка не приняла команду сканера: нужно от 2 до 6 свободных выводов (при подаче питания 2–4 вывода сканирования и хотя бы один отдельный вывод питания) и прошивка 1.5 или новее.'); toast(TT('Сканер I²C: метка отклонила команду')); break; }
       if (a[1] === 0x3E && a[2] !== 0) { tag.pmAck = true; $('pmStat').textContent = TT('метка отклонила команду монитора (код ') + a[2] + TT('). Для выбора выводов нужна прошивка 1.2.'); toast(TT('Монитор выводов: метка отклонила команду')); break; }
       toast(({ 0x32: TT('Показ слота: '), 0x33: TT('Следующий слайд: '), 0x38: TT('Заливка: '), 0x39: TT('Заставка: '), 0x3A: TT('Диагностика панели: '), 0x3C: TT('Тест кварцев: '), 0x3E: TT('Монитор выводов: '), 0x3F: TT('Сканер I²C / NFC-чип: ') }[a[1]] || TT('Команда: ')) + (TT(RES_TXT[a[2]]) || a[2])); setTimeout(() => { if (!busy) cmd([0x30]); }, 400); break;
     case 0xB4:
-      tag.cfg = { en: !!a[2], mode: a[3], interval: u16(a, 4), mask: a[6], temp: (a[7] << 24) >> 24, tx: (a[8] << 24) >> 24, txAct: ((a[9] | a[10] << 8) << 16) >> 16, nfc: a.length > 11 ? !!a[11] : undefined, taps: a.length > 12 ? a[12] : 0 };
+      tag.cfg = { en: !!a[2], mode: a[3], interval: u16(a, 4), mask: a[6] | (a.length > 13 ? a[13] << 8 : 0), clean: a.length > 14 ? a[14] : undefined, cleanMode: a.length > 15 ? a[15] : undefined, temp: (a[7] << 24) >> 24, tx: (a[8] << 24) >> 24, txAct: ((a[9] | a[10] << 8) << 16) >> 16, nfc: a.length > 11 ? !!a[11] : undefined, taps: a.length > 12 ? a[12] : 0, flags: a.length > 16 ? a[16] : undefined };
       fillCfg(); renderSlots(); renderSlideInfo(); break;
+    case 0xC1: renderDtemp(a); break;
+    case 0xC0: tag.batt = { level: a[1], mv: a[2] | a[3] << 8, low: a[4], crit: a[5], age: a[6] | a[7] << 8 }; renderBatt(); break;
     case 0xB5: toast(TT('Метка перезагружается; подключитесь заново через несколько секунд')); break;
     case 0xB6: tag.hw[a[1]] = a; renderHw(); break;
     case 0xB7:
@@ -1642,6 +1694,7 @@ function renderTagCountdown() { const e = $('kvNext'); if (e) e.textContent = fm
 function renderTag() {
   const s = tag.st; if (!s) return;
   $('pnState').innerHTML = (s.pst === 1 ? '⏳ ' : s.pst === 3 ? '⚠️ ' : s.pst === 2 ? '✔️ ' : '') + TT(PN_STATE[s.pst]) + (s.pst === 1 ? ': ' + STEP_TXT(s.step) : '');
+  if (s.pst === 1) progPct('pn', TT('Экран обновляется: ') + STEP_TXT(s.step), STEP_PCT[Math.min(s.step, 27)], 0, 0); else progOff('pn');
   $('pnBar').style.width = (s.pst === 1 ? STEP_PCT[Math.min(s.step, 27)] : s.pst === 0 ? 0 : 100) + '%';
   $('pnKv').innerHTML = '';
   const rows = [[TT('Показано'), s.src === 2 ? TT('слот ') + s.shown : s.src === 3 ? TT('заливка ') + [TT('чёрная'), TT('белая'), TT('жёлтая'), TT('красная')][s.shown & 3] : TT(PN_SRC[s.src])], [TT('Ошибка панели'), s.perr ? TT(PN_ERR[s.perr]) || s.perr : TT('нет')],
@@ -1658,7 +1711,8 @@ function renderHw() {
   const add = (k, v, cls) => { const a = document.createElement('div'), b = document.createElement('div'); a.textContent = k; if (v instanceof Node) b.appendChild(v); else b.textContent = v; if (cls) b.className = cls; kv.append(a, b); };
   if (h[0]) { const rc = u32(h[0], 4), why = RST_BITS.filter(([b]) => rc >> b & 1).map(x => TT(x[1])).join(', ') || (rc ? '0x' + rc.toString(16) : TT('не определён'));
     add(TT('Прошивка'), 'v' + h[0][2] + '.' + h[0][3] + ' (Gecko Slide)'); add(TT('Причина последнего сброса'), why); add(TT('Работает'), fmtUp(u32(h[0], 8))); add(TT('Слово PART'), '0x' + h8(u32(h[0], 12))); }
-  if (h[1]) { const id = hex(h[1].slice(2, 10)).replace(/ /g, ''), sp = document.createElement('span'); sp.textContent = id; sp.className = 'blur'; sp.title = TT('нажмите, чтобы показать'); sp.onclick = () => sp.classList.toggle('show');
+  if (h[1] && h[1].length > 14 && h[1][14] === 1) { add(TT('Уникальный ID (EUI-64)'), TT('скрыт: приложите телефон к метке (NFC) и обновите в течение 60 с')); add(TT('Память чипа'), u16(h[1], 10) + TT(' КБ flash, ') + u16(h[1], 12) + TT(' КБ ОЗУ')); }
+  else if (h[1]) { const id = hex(h[1].slice(2, 10)).replace(/ /g, ''), sp = document.createElement('span'); sp.textContent = id; sp.className = 'blur'; sp.title = TT('нажмите, чтобы показать'); sp.onclick = () => sp.classList.toggle('show');
     add(TT('Уникальный ID (EUI-64)'), sp); add(TT('Память чипа'), u16(h[1], 10) + TT(' КБ flash, ') + u16(h[1], 12) + TT(' КБ ОЗУ')); }
   if (h[2]) { const j = hex(h[2].slice(2, 5)); add(TT('Внешняя flash (JEDEC)'), j === '00 00 00' ? TT('ещё не читалась (кнопка «Идентификатор» в Инструментах)') : j + (j === 'ef 40 13' ? TT(' — Winbond, 4 Мбит (512 КиБ)') : ''));
     add(TT('Панель'), TT('ID чипа 0x') + u16(h[2], 5).toString(16).padStart(4, '0') + (u16(h[2], 5) === 0x0D04 ? ' (PDi BWRY Medium)' : '') + TT(', обновлений ') + u16(h[2], 12) + TT(', расхождений CRC ') + h[2][14]); add(TT('Последнее обновление панели'), u32(h[2], 8) ? (u32(h[2], 8) / 1000).toFixed(1) + TT(' с на смену картинки') : '—'); }
@@ -1668,16 +1722,16 @@ function renderHw() {
 /* ---------- слоты ---------- */
 function fillSelects() {
   const up = $('upSlot'), v = $('vSlot'); up.textContent = ''; v.textContent = '';
-  for (let s = 1; s <= 7; s++) { up.add(new Option(TT('слот ') + s, s)); v.add(new Option(s, s)); }
+  for (let s = 1; s <= 10; s++) { up.add(new Option(TT('слот ') + s, s)); v.add(new Option(s, s)); }
   up.value = String(lsGet('gs.slot', 1));
   up.onchange = () => lsSet('gs.slot', +up.value);
-  for (let i = 0; i < 15; i++) $('sec').add(new Option(i + '  (0x' + (i * 4096).toString(16).padStart(5, '0') + ')', i));
-  $('sec').value = 14;
+  for (let i = 0; i < 7; i++) $('sec').add(new Option(i + '  (0x' + (0x78000 + i * 4096).toString(16).padStart(5, '0') + ')', i));
+  $('sec').value = 6;
 }
 const slotCv = {};
 function renderSlots() {
   const g = $('slotGrid'); g.textContent = '';
-  for (let s = 1; s <= 7; s++) {
+  for (let s = 1; s <= 10; s++) {
     const t = tag.slots[s], rec = LIB.mem.get(s), card = document.createElement('div'); card.className = 'slot' + (t && t.cur ? ' cur' : '');
     const match = t && t.show && rec && rec.crc === t.crc && rec.total === t.total;
     const badges = [];
@@ -1691,7 +1745,7 @@ function renderSlots() {
     const meta = document.createElement('div'); meta.className = 'n'; meta.textContent = (rec ? rec.name + ' · ' : '') + (t && t.valid ? t.total + TT(' Б, CRC ') + h8(t.crc) : ''); card.appendChild(meta);
     const row = document.createElement('div'); row.className = 'row';
     const lab = document.createElement('label'), cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !!(t && t.inList); cb.disabled = !connected() || !t || !t.show;
-    cb.onchange = () => { const m = (tag.cfg ? tag.cfg.mask : 0xFE); setMask(s, cb.checked); }; lab.append(cb, TT(' в слайдшоу')); row.appendChild(lab); card.appendChild(row);
+    cb.onchange = () => { const m = (tag.cfg ? tag.cfg.mask : 0x7FE); setMask(s, cb.checked); }; lab.append(cb, TT(' в слайдшоу')); row.appendChild(lab); card.appendChild(row);
     const r2 = document.createElement('div'); r2.className = 'row';
     const mk = (txt, fn, dis, cls) => { const b = document.createElement('button'); b.textContent = txt; b.disabled = dis; if (cls) b.className = cls; b.onclick = fn; r2.appendChild(b); };
     mk(TT('Показать'), () => cmd([0x32, s], TT('показ')), !connected() || !t || !t.show);
@@ -1735,18 +1789,35 @@ function fillCfg() {
   const si = $('cInt'); if (INTERVALS.includes(c.interval)) { si.value = c.interval; $('cIntCustomWrap').hidden = true; } else { si.value = 'c'; $('cIntCustomWrap').hidden = false; $('cIntCustom').value = c.interval; }
   const st = $('cTx'); if (!TXS.includes(c.tx)) st.add(new Option(c.tx + TT(' дБм'), c.tx)); st.value = c.tx;
   $('cTxAct').textContent = TT('фактически ') + (c.txAct / 10).toFixed(1) + TT(' дБм');
+  $('cClean').disabled = c.clean === undefined; $('cClean').value = c.clean === undefined ? '' : c.clean;
+  $('cCleanMode').disabled = c.cleanMode === undefined; $('cCleanMode').value = c.cleanMode === undefined ? 0 : c.cleanMode;
+  $('cDeep').disabled = $('cOd').disabled = c.flags === undefined; $('cDeep').checked = !!(c.flags & 1); $('cOd').checked = !!(c.flags & 2);
+  $('cFlagInfo').textContent = c.flags === undefined ? TT('нужна прошивка 2.0') : TT('Оба режима по умолчанию выключены. Глубокий сон действует, когда окно Bluetooth закрыто; после касания телефона метка просыпается. После включения OpenDisplay метка видна приложениям OpenDisplay как экран с кадром 720 × 256.');
   $('cNfc').disabled = c.nfc === undefined; $('cNfc').checked = !!c.nfc;
-  $('cNfcInfo').textContent = c.nfc === undefined ? TT('нужна прошивка 1.7 или новее') : TT('касаний с запуска метки: ') + c.taps + TT('. Метка опрашивает NFC-чип 5 раз в секунду; расход батареи пока не оптимизирован (сон добавим позже).');
+  $('cNfcInfo').textContent = c.nfc === undefined ? TT('нужна прошивка 1.7 или новее') : TT('касаний с запуска метки: ') + c.taps + TT('. Касание телефоном всегда включает Bluetooth метки на 90 секунд; с галочкой оно ещё и листает слайд.');
+}
+function renderBatt() {
+  const b = tag.batt; if (!b) return;
+  $('cBattLow').disabled = $('cBattCrit').disabled = false;
+  $('cBattLow').value = ((2000 + 10 * b.low) / 1000).toFixed(2); $('cBattCrit').value = ((2000 + 10 * b.crit) / 1000).toFixed(2);
+  const L = [TT('норма'), TT('низкий заряд'), TT('критический: автосмена остановлена')];
+  $('cBattInfo').textContent = b.mv ? (b.mv / 1000).toFixed(2) + TT(' В — ') + L[b.level] + TT(', измерено ') + Math.round(b.age / 60) + TT(' мин назад') : TT('ещё не измерено');
+  $('cBattInfo').style.color = b.level === 2 ? 'var(--bad, #c00)' : b.level === 1 ? 'var(--warn, #b60)' : '';
+  $('cBattInfo').style.display = 'block';
 }
 function sendCfgObj(c) {
   const arr = [0x34, c.en ? 1 : 0, c.mode, c.interval & 255, c.interval >> 8, c.mask & 0xFE, c.temp & 255, c.tx & 255];
   if (c.nfc !== undefined) arr.push(c.nfc ? 1 : 0);                            // 9-й байт понимает прошивка 1.7+
+  if (c.clean !== undefined) arr.push((c.mask >> 8) & 7, c.clean & 255, c.cleanMode & 3);
+  const bl = c.battLow !== undefined ? c.battLow : tag.batt && tag.batt.low, bc = c.battCrit !== undefined ? c.battCrit : tag.batt && tag.batt.crit;
+  if (c.clean !== undefined && bl !== undefined && bc !== undefined) arr.push(bl & 255, bc & 255);       // 2.0: пороги батареи, 2000 + 10 * значение мВ       // 2.0: биты слотов 8..10 и период полной перерисовки (прошивка 2.0 всегда присылает и NFC)
+  if (arr.length === 14 && c.flags !== undefined) arr.push(c.flags & 3);
   return cmd(arr, TT('настройки'));
 }
 function sendCfg() {                                      // значения из формы (кнопка «Применить»)
-  const c = tag.cfg || { mask: 0xFE };
+  const c = tag.cfg || { mask: 0x7FE };
   const inter = $('cInt').value === 'c' ? clamp(+$('cIntCustom').value || 60, 1, 1440) : +$('cInt').value;
-  return sendCfgObj({ en: $('cEn').checked, mode: +$('cMode').value, interval: inter, mask: c.mask, temp: clamp(+$('cTemp').value || 0, -20, 60), tx: +$('cTx').value, nfc: c.nfc === undefined ? undefined : $('cNfc').checked });
+  return sendCfgObj({ en: $('cEn').checked, mode: +$('cMode').value, interval: inter, mask: c.mask, temp: clamp(+$('cTemp').value || 0, -20, 60), tx: +$('cTx').value, nfc: c.nfc === undefined ? undefined : $('cNfc').checked, clean: c.clean === undefined ? undefined : clamp(+$('cClean').value || 0, 0, 250), cleanMode: c.cleanMode === undefined ? 0 : +$('cCleanMode').value, battLow: tag.batt ? clamp(Math.round((+$('cBattLow').value * 1000 - 2000) / 10), 10, 200) : undefined, battCrit: tag.batt ? clamp(Math.round((+$('cBattCrit').value * 1000 - 2000) / 10), 5, 200) : undefined, flags: c.flags === undefined ? undefined : ($('cDeep').checked ? 1 : 0) | ($('cOd').checked ? 2 : 0) });
 }
 $('bCfg').onclick = async () => { await sendCfg(); toast(TT('Настройки отправлены в метку')); };
 $('bCfgGet').onclick = () => cmd([0x35]);
@@ -1784,6 +1855,16 @@ function renderPdiag(a) {
   log(TT('диагностика панели: ') + out.textContent.replace(/\n+/g, ' | '));
 }
 
+function renderDtemp(a) {
+  if (!a[1]) return;
+  const raw = a[2] | a[3] << 8, out = $('pdiagOut'), hx = '0x' + raw.toString(16).toUpperCase().padStart(4, '0');
+  let t = TT('\nТемпература панели (опыт, команда 0x40, не подтверждена для этого контроллера): сырое ') + hx;
+  if (raw === 0 || raw === 0xFFFF) t += TT(' — похоже на отсутствие ответа, датчик не читается.');
+  else { const b = raw >> 8, c = b > 127 ? b - 256 : b; t += TT(' — если это формат UC81xx, старший байт = ') + c + ' °C.'; }
+  out.textContent += t;
+  log(t.trim());
+}
+
 /* ---- тест кварцев (ответ 0xB9) ---- */
 $('bClk').onclick = () => { $('clkOut').textContent = TT('идёт тест, подождите 1–3 секунды …'); cmd([0x3C], TT('тест кварцев')); };
 $('bClkGet').onclick = () => cmd([0x3D], TT('отчёт'));
@@ -1800,7 +1881,7 @@ function renderClock(a) {
   const ppm = (v, nom) => ((v / nom - 1) * 1e6);
   const L = [];
   L.push(TT('Кварц 38,4 МГц (HFXO): ') + ((f & 1) ? TT('работает') : TT('НЕ готов')) + TT('. Тактирование ядра: ') + (sysN[sel & 7] || (sel & 7)) + TT('. Ёмкости настройки сейчас XI/XO: ') + hx(a[4]) + '/' + hx(a[5]) + TT(', заводские в памяти кристалла: ') + hx(a[6]) + '/' + hx(a[7]) + (a[4] === a[6] && a[5] === a[7] ? TT(' (совпадают)') : TT(' (отличаются: прошивка или стек задали свои)')) + '.');
-  L.push(TT('Низкочастотный такт для сна сейчас: ') + (lfN[(sel >> 3) & 3] || '?') + TT(' (группа EM2/3), ') + (lfN[(sel >> 5) & 3] || '?') + TT(' (RTCC). Это то, что оставила начальная настройка SDK; сама эта прошивка сон пока не использует.'));
+  L.push(TT('Низкочастотный такт для сна сейчас: ') + (lfN[(sel >> 3) & 3] || '?') + TT(' (группа EM2/3), ') + (lfN[(sel >> 5) & 3] || '?') + TT(' (RTCC). Это то, что оставила начальная настройка SDK; сама эта прошивка засыпает только в EM1 (ядро), глубокий сон EM2 не использует.'));
   L.push('');
   if (f & 2) L.push(TT('LFXO уже был включён до теста (кем-то в прошивке), использовал как есть.'));
   if (f & 4) L.push(TT('LFXO: кварц запустился за ') + u16(a, 8) + TT(' мс') + (f & 16 ? '' : TT(', но измерить частоту не удалось')) + '.');
@@ -2047,7 +2128,7 @@ function nfcButtons() {
   const set = (id, v) => { $(id).disabled = !v; };
   set('bNfcBk', on && !busy);
   set('bNfcDl', full);
-  const u = nfcBuild($('nfcUrl').value);
+  const u = nfcBuildAny();
   $('nfcUrlInfo').textContent = u.err ? u.err : TT('в чип запишется ') + u.ndef.length + TT(' байт (') + u.blocks + TT(' блоков из 7 доступных).');
   set('bNfcWr', on && full && !busy && $('nfcWrOk').checked && !u.err);
   set('bNfcRestore', on && full && !busy && $('nfcWrOk').checked && !!nfcStock());
@@ -2068,6 +2149,44 @@ function nfcBuild(url) {
   const rec = [0xD1, 0x01, pl, 0x55, code, ...Array.from(text, ch => ch.charCodeAt(0))];
   const ndef = [0x03, rec.length, ...rec, 0xFE];
   return { ndef, blocks: Math.ceil(ndef.length / 16) };
+}
+// NDEF-запись «текст»: D1 01 plen 54 status(язык) UTF-8
+function nfcBuildText(txt) {
+  txt = (txt || '').trim();
+  if (!txt) return { err: TT('введите текст') };
+  const body = Array.from(new TextEncoder().encode(txt)), lc = Array.from(lang === 'en' ? 'en' : 'ru', ch => ch.charCodeAt(0));
+  const pl = 1 + lc.length + body.length;
+  if (pl > 112 - 3 - 4) return { err: TT('слишком длинный: не больше ') + (112 - 3 - 4 - 3) + TT(' байт в UTF-8 (русская буква занимает 2)') };
+  const rec = [0xD1, 0x01, pl, 0x54, lc.length, ...lc, ...body];
+  const ndef = [0x03, rec.length, ...rec, 0xFE];
+  return { ndef, blocks: Math.ceil(ndef.length / 16) };
+}
+// NDEF-запись Wi-Fi (Wi-Fi Simple Configuration, application/vnd.wfa.wsc): D2 17 plen type payload; payload = 0x100E credential
+function nfcBuildWifi(ssid, pass, auth) {
+  const enc = t => Array.from(new TextEncoder().encode(t));
+  const s = enc(ssid || ''), k = enc(pass || '');
+  if (!s.length) return { err: TT('введите имя сети') };
+  if (s.length > 32) return { err: TT('имя сети длиннее 32 байт') };
+  if (auth !== 'open' && (k.length < 8 || k.length > 63)) return { err: TT('пароль WPA: от 8 до 63 знаков') };
+  const tlv = (id, v) => [id >> 8, id & 255, v.length >> 8, v.length & 255, ...v];
+  const authT = auth === 'open' ? [0x00, 0x01] : auth === 'mixed' ? [0x00, 0x22] : [0x00, 0x20], encT = auth === 'open' ? [0x00, 0x01] : [0x00, 0x08];
+  const cred = [...tlv(0x1026, [1]), ...tlv(0x1045, s), ...tlv(0x1003, authT), ...tlv(0x100F, encT), ...tlv(0x1027, auth === 'open' ? [] : k), ...tlv(0x1020, [255, 255, 255, 255, 255, 255])];
+  const payload = tlv(0x100E, cred), type = Array.from('application/vnd.wfa.wsc', ch => ch.charCodeAt(0));
+  if (payload.length > 255) return { err: TT('слишком длинная запись') };
+  const rec = [0xD2, type.length, payload.length, ...type, ...payload];
+  const ndef = [0x03, rec.length, ...rec, 0xFE];
+  if (ndef.length > 112) return { err: TT('слишком длинная запись: в чип помещается 112 байт, у этой ') + ndef.length };
+  return { ndef, blocks: Math.ceil(ndef.length / 16) };
+}
+function nfcBuildAny() {
+  const k = $('nfcKind').value;
+  return k === 'text' ? nfcBuildText($('nfcUrl').value) : k === 'wifi' ? nfcBuildWifi($('nfcSsid').value, $('nfcPass').value, $('nfcAuth').value) : nfcBuild($('nfcUrl').value);
+}
+function nfcKindUi() {
+  const k = $('nfcKind').value;
+  $('nfcUrlLbl').hidden = k === 'wifi'; $('nfcWifiBox').hidden = k !== 'wifi';
+  $('nfcUrlCap').textContent = k === 'text' ? TT('Текст для записи в чип:') : TT('Ссылка для записи в чип (только латиница):');
+  nfcButtons();
 }
 // исходная запись NDEF из копии (блоки 01..07), чтобы вернуть её как была
 function nfcStock() {
@@ -2096,7 +2215,7 @@ $('bNfcDl').onclick = () => {
   download(new Blob([buf], { type: 'application/octet-stream' }), 'nfc_chip_backup.bin');
   toast(TT('Файл содержит серийные данные чипа: храните у себя, не публикуйте.'));
 };
-$('bNfcWr').onclick = () => { const u = nfcBuild($('nfcUrl').value); if (!u.err) nfcWriteNdef(u.ndef, 'url'); };
+$('bNfcWr').onclick = () => { const u = nfcBuildAny(); if (!u.err) nfcWriteNdef(u.ndef, $('nfcKind').value); };
 $('bNfcRestore').onclick = () => { const d = nfcStock(); if (d) nfcWriteNdef(d, 'restore'); };
 $('bNfcUnlock').onclick = () => {
   if (!connected() || NFC.bkBusy) return;
@@ -2116,7 +2235,8 @@ $('bNfcRescue').onclick = () => {
   $('nfcOut2').textContent = TT('метка ищет чип и подбирает значение; это может занять до нескольких секунд, не отключайтесь …');
   cmd([0x3F, 0x31, 0xA5], TT('возврат адреса'));
 };
-for (const id of ['nfcUrl', 'nfcWrOk', 'nfcUnOk', 'nfcRsOk']) $(id).addEventListener('input', nfcButtons);
+for (const id of ['nfcUrl', 'nfcSsid', 'nfcPass', 'nfcAuth', 'nfcWrOk', 'nfcUnOk', 'nfcRsOk']) $(id).addEventListener('input', nfcButtons);
+$('nfcKind').addEventListener('change', nfcKindUi);
 $('nfcUrl').value = (() => { try { if (/^https?:$/.test(location.protocol)) return location.origin + location.pathname.replace(/index\.html$/, ''); } catch (e) { /* без адреса страницы */ } return 'https://steanlab.github.io/SESoid/'; })();
 nfcButtons();
 function renderNfc2(quiet) {
@@ -2200,7 +2320,7 @@ async function uploadData(img, mode, slot, prog) {
     await sendRetry([0x12, p & 255, p >> 8], false);
   };
   try {
-    if (mode && total > 0xF000) throw new Error(TT('во flash помещается не больше 61 440 байт'));
+    if (mode && total > 0xB400) throw new Error(TT('во flash помещается не больше 46 080 байт'));
     log(mode ? TT('BEGIN: во flash, слот ') + slot + TT(' (метка сначала стирает слот) ...') : TT('BEGIN: в ОЗУ'));
     for (let attempt = 0; ; attempt++) {
       await sendRetry(mode ? [0x10, 1, ...le32(total), slot] : [0x10, 0, ...le32(total)], true);
@@ -2234,6 +2354,21 @@ async function uploadData(img, mode, slot, prog) {
 }
 function updateUpButtons() { $('bUpload').disabled = !(connected() && lastFrame && !busy); }
 
+/* ---------- панель хода работы (как у pin16): строка состояния, полоса, детали: проценты, байты, время, остаток ---------- */
+let progT0 = 0, progOwner = '';
+const fmtB = n => n < 1024 ? n + TT(' Б') : (n / 1024).toFixed(1) + TT(' КБ');
+const fmtS = n => n < 60 ? n + TT(' с') : Math.floor(n / 60) + TT(' мин ') + (n % 60) + TT(' с');
+function progOff(owner) { if (owner && owner !== progOwner) return; progOwner = ''; progT0 = 0; $('prog').className = ''; $('pbar').firstChild.style.width = '0'; $('pdet').textContent = ''; $('pst').textContent = ''; }
+function progPct(owner, label, p, done, total) {
+  if (progOwner && owner !== progOwner) return;                     // загрузка важнее обновления экрана
+  if (progOwner !== owner) { progOwner = owner; progT0 = Date.now(); }
+  const el = Math.round((Date.now() - progT0) / 1000);
+  let d = Math.round(p) + ' %';
+  if (total) d += ' · ' + fmtB(done) + ' / ' + fmtB(total);
+  d += ' · ' + fmtS(el);
+  if (p >= 5 && p < 100 && el >= 2) d += ' (' + TT('осталось ') + fmtS(Math.max(1, Math.round(el * (100 - p) / p))) + ')';
+  $('pst').textContent = label; $('pbar').firstChild.style.width = p + '%'; $('pdet').textContent = d; $('prog').className = 'on busy';
+}
 let upRunning = false;
 $('bUpStop').onclick = () => { stopFlag = true; };
 $('bUpload').onclick = async () => {
@@ -2242,7 +2377,8 @@ $('bUpload').onclick = async () => {
   const thumbCv = idxToCanvas(lastIdx, P.simPanel ? PALETTES.panel.c : curPalette(), 240, 85);
   upRunning = true; $('bUpload').disabled = true; $('bUpStop').disabled = false; $('upRes').textContent = ''; $('upBar').style.width = '0';
   try {
-    const r = await uploadData(frame, 1, slot, f => { $('upBar').style.width = (f * 100).toFixed(0) + '%'; });
+    const r = await uploadData(frame, 1, slot, f => { $('upBar').style.width = (f * 100).toFixed(0) + '%'; progPct('up', TT('Загрузка в слот ') + slot, f * 100, Math.round(f * frame.length), frame.length); });
+    $('pst').textContent = TT('Проверка слота чтением из flash');
     let msg = (r.ok ? TT('ГОТОВО: контрольная сумма совпала. ') : TT('ОШИБКА: контрольная сумма не совпала. ')) + r.total + TT(' байт за ') + r.dt.toFixed(1) + TT(' с = ') + (r.total / r.dt / 1024).toFixed(2) + TT(' КБ/с; повторов ') + r.retried + '.';
     if (r.ok) {
       log(TT('запись завершена, проверяю чтением обратно ...')); queue = [];
@@ -2260,7 +2396,7 @@ $('bUpload').onclick = async () => {
     }
     $('upRes').textContent = msg; $('upRes').className = 'n ' + (r.ok ? 'ok' : 'bad'); toast(r.ok ? TT('Слот ') + slot + TT(' загружен') : TT('Загрузка не удалась')); log(msg);
   } catch (e) { log(TT('загрузка прервана: ') + e.message); $('upRes').textContent = TT('Прервано: ') + e.message; $('upRes').className = 'n bad'; }
-  upRunning = false; $('bUpStop').disabled = true; updateUpButtons(); renderSlots();
+  upRunning = false; progOff('up'); $('bUpStop').disabled = true; updateUpButtons(); renderSlots();
 };
 $('bRam').onclick = async () => {
   const total = +$('tSize').value, img = new Uint8Array(total); for (let i = 0; i < total; i++) img[i] = (i * 31 + (i >> 8) * 7 + 5) & 255;

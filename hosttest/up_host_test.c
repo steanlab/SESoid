@@ -10,11 +10,13 @@
 #include "ble_flash.h"
 #include "ble_slide.h"
 #include "ble_panel.h"
+#include "ble_od.h"
+bool od_busy(void) { return false; } bool od_up_sink(const uint8_t *d, uint8_t n) { (void)d; (void)n; return false; }   // OpenDisplay is tested in od_host_test.c
 bool slide_flash_busy(void) { return false; } bool panel_flash_busy(void) { return false; }   // stage 4 modules: not part of this test
 volatile ble_diag_t g_diag;
 volatile fl_result_t fl_res; volatile bool fl_done;
 static uint8_t mem[0x80000]; static uint32_t lo, hi; static int deny_pct; static unsigned rnd(void);
-void fl_init(void) { memset(mem, 0xFF, sizeof(mem)); lo = 0; hi = 0x10000; } bool fl_busy(void) { return false; } void fl_poll(void) {}
+void fl_init(void) { memset(mem, 0xFF, sizeof(mem)); lo = FL_TEST_LO; hi = FL_TEST_END; } bool fl_busy(void) { return false; } void fl_poll(void) {}
 void fl_set_range(uint32_t l, uint32_t h) { lo = l; hi = h; }
 bool fl_start_info(void){return true;}
 bool fl_start_erase(uint32_t a){ if ((int)(rnd()%100) < deny_pct) return false; if (a<lo||a>=hi||(a&4095)) { printf("ERASE OUT OF RANGE %x\n",a); exit(9);} memset(mem+a,0xFF,4096); fl_res.result=0; fl_done=true; return true;}
@@ -29,11 +31,12 @@ static unsigned rnd(void) { return (unsigned)rand(); }
 static int run(uint32_t total, int p_loss_chunk, int seed, int mode)
 {
   srand(seed);
+  const uint8_t slot = (seed == 3) ? 10 : 3;                  // the last slot too
   static uint8_t img[0x80000]; for (uint32_t i = 0; i < total; i++) img[i] = (uint8_t)(rnd() >> 8);
   uint32_t want = up_crc32(0, img, total);
   up_reset(); nh = nt = 0;
   deny_pct = mode ? 30 : 0;
-  uint8_t b[7] = { 0x10, (uint8_t)mode, total, total >> 8, total >> 16, total >> 24, 3 };
+  uint8_t b[7] = { 0x10, (uint8_t)mode, total, total >> 8, total >> 16, total >> 24, slot };
   up_write(b, mode ? 7 : 6);
   for (int i = 0; i < 100000 && nt == 0; i++) up_poll();
   if (nq[0][0] != 0x90 || nq[0][1] != 0) return 1;
@@ -70,11 +73,13 @@ static int run(uint32_t total, int p_loss_chunk, int seed, int mode)
         uint32_t crc = r[2] | (r[3] << 8) | (r[4] << 16) | ((uint32_t)r[5] << 24);
         if (r[1] != 0 || crc != want) return 3;
         if (mode) {
-          if (memcmp(mem + 3 * 0x10000, img, total) != 0) return 5;
-          nh = nt; uint8_t vv[2] = { 0x24, 3 }; up_write(vv, 2);
+          if (memcmp(mem + FL_SLOT_BASE(slot), img, total) != 0) return 5;
+          if (memcmp(mem + FL_SLOT_BASE(slot) + FL_SLOT_REC, "SLD1", 4) != 0) return 8;                 // the record sits right behind the frame
+          for (uint32_t a = 0; a < 0x80000; a++) if ((a < FL_SLOT_BASE(slot) || a >= FL_SLOT_BASE(slot) + FL_SLOT_SIZE) && mem[a] != 0xFF) return 9;   // nothing outside the slot was touched
+          nh = nt; uint8_t vv[2] = { 0x24, slot }; up_write(vv, 2);
           for (int i = 0; i < 100000 && nh == nt; i++) up_poll();
           if (nh == nt || nq[nh % 64][0] != 0xA4 || nq[nh % 64][2] != 0) return 6;
-          mem[3 * 0x10000 + total / 2] ^= 1; nh = nt; up_write(vv, 2);        // corrupt one byte: the verify must notice
+          mem[FL_SLOT_BASE(slot) + total / 2] ^= 1; nh = nt; up_write(vv, 2);        // corrupt one byte: the verify must notice
           for (int i = 0; i < 100000 && nh == nt; i++) up_poll();
           if (nh == nt || nq[nh % 64][2] != 2) return 7;
         }
@@ -91,7 +96,18 @@ int main(void)
   int bad = 0; uint32_t sizes[] = { 1, 16, 17, 255, 256, 257, 4096, 4097, 46080, 46081, 61440 };
   for (unsigned s = 0; s < sizeof(sizes) / sizeof(*sizes); s++)
     for (int loss = 0; loss <= 30; loss += 10)
-      for (int mode = 0; mode <= 1; mode++) for (int seed = 1; seed <= 3; seed++) { int r = run(sizes[s], loss, seed, mode); if (r) { printf("FAIL size %u loss %d seed %d mode %d code %d\n", sizes[s], loss, seed, mode, r); bad++; } }
+      for (int mode = 0; mode <= 1; mode++) for (int seed = 1; seed <= 3; seed++) { if (mode && sizes[s] > FL_SLOT_REC) continue; int r = run(sizes[s], loss, seed, mode); if (r) { printf("FAIL size %u loss %d seed %d mode %d code %d\n", sizes[s], loss, seed, mode, r); bad++; } }
+  { // flash BEGIN refuses what does not fit the slot or a slot out of range
+    up_reset(); nh = nt = 0;
+    uint8_t b1[7] = { 0x10, 1, 0x01, 0xB4, 0, 0, 3 };               // 46 081 bytes
+    up_write(b1, 7); if (nt != 1 || nq[0][1] != 1) { printf("FAIL: oversize accepted\n"); bad++; }
+    up_reset(); nh = nt = 0;
+    uint8_t b2[7] = { 0x10, 1, 0x00, 0xB4, 0, 0, 11 };
+    up_write(b2, 7); if (nt != 1 || nq[0][1] != 1) { printf("FAIL: slot 11 accepted\n"); bad++; }
+    up_reset(); nh = nt = 0;
+    uint8_t b3[7] = { 0x10, 1, 0x00, 0xB4, 0, 0, 0 };
+    up_write(b3, 7); if (nt != 1 || nq[0][1] != 1) { printf("FAIL: slot 0 accepted\n"); bad++; }
+  }
   printf(bad ? "%d FAILED\n" : "ALL OK\n", bad);
   return bad != 0;
 }

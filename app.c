@@ -15,6 +15,10 @@
 #include "ble_slide.h"
 #include "ble_ctl.h"
 #include "ble_sys.h"
+#include "ble_acc.h"
+#include "ble_nfc.h"
+#include "ble_up.h"
+#include "ble_od.h"
 
 volatile ble_diag_t g_diag;
 
@@ -27,10 +31,11 @@ static volatile uint8_t s_cal_needed;
 #define BLE_ADV_AA   0x8E89BED6u
 #define BLE_ADV_CRC  0x555555u
 
-// our device address (static random, LSB first): C3:DE:00:30:00:01
-static const uint8_t ADV_ADDR[6] = { 0x01, 0x00, 0x30, 0x00, 0xDE, 0xC3 };
+// our device address and name come from the chip's unique ID (ble_acc.c); the tag advertises only while the access window is open
+#define ADV_ADDR acc_addr()
 
 static RAIL_Handle_t h;
+static uint32_t s_next_adv_us;               // time of the next advertising event
 
 static void note(RAIL_Status_t st, uint32_t where)
 {
@@ -107,15 +112,23 @@ void sl_rail_util_on_event(RAIL_Handle_t rail_handle, RAIL_Events_t events)
 
 static uint32_t build_adv(uint8_t *p)
 {
-  static const uint8_t name[] = "V300-probe";
-  uint32_t n = sizeof(name) - 1;
+  const char *name = acc_name();
+  uint32_t n = acc_name_len();
   uint8_t *q = p;
   *q++ = 0x40;                    // PDU header: ADV_IND, TxAdd = 1 (random address), ChSel = 0 (channel selection algorithm #1)
   *q++ = 0;                       // length, filled in below
   memcpy(q, ADV_ADDR, 6); q += 6;
   *q++ = 0x02; *q++ = 0x01; *q++ = 0x06;          // flags: LE general discoverable, BR/EDR not supported
-  *q++ = (uint8_t)(n + 1); *q++ = 0x09;           // complete local name
-  memcpy(q, name, n); q += n;
+  if (od_enabled()) {                             // OpenDisplay: service 0x2446, the 16-byte record, a short name (31 bytes is all an advertisement holds)
+    uint8_t m[16];
+    od_msd(m);
+    *q++ = 3; *q++ = 0x03; *q++ = 0x46; *q++ = 0x24;
+    *q++ = 17; *q++ = 0xFF; memcpy(q, m, 16); q += 16;
+    *q++ = 5; *q++ = 0x08; memcpy(q, name, 4); q += 4;
+  } else {
+    *q++ = (uint8_t)(n + 1); *q++ = 0x09;         // complete local name
+    memcpy(q, name, n); q += n;
+  }
   p[1] = (uint8_t)(q - p - 2);
   return (uint32_t)(q - p);
 }
@@ -176,16 +189,18 @@ void app_init(void)
   ll_init(h);
   g_diag.stage = 2;
   slide_init();            // external flash, settings, slot table, Bluetooth TX power
+  { uint8_t eui[8]; sys_eui64(eui); acc_init(eui, slide_secret()); acc_open(0, ACC_BOOT_S); }     // identity needs the secret from the settings flash
   panel_start();           // boot splash on the e-paper panel (non-blocking, about 30 s, advertising runs meanwhile)
   sys_watchdog_start();    // from here on the main loop has to run: it feeds the watchdog
 }
+
+static uint8_t s_silent;                 // the access window is closed and the radio is idle
 
 void app_process_action(void)
 {
   static const uint8_t logical[3]  = { 37, 38, 39 };
   static const uint16_t phys[3]    = { 0, 12, 39 };   // RAIL channel numbers of the three advertising channels
   static uint8_t pdu[40];
-  static uint32_t next_us;
   static uint32_t started;
   static uint8_t was_connected;
 
@@ -193,6 +208,7 @@ void app_process_action(void)
   sys_feed();
   slide_poll();
   ctl_poll();
+  od_poll();
 
   if (ll_connected()) {
     was_connected = 1;
@@ -203,13 +219,21 @@ void app_process_action(void)
   uint32_t now = RAIL_GetTime();
   if (was_connected) {            // the link layer just gave the radio back: start advertising again right away
     was_connected = 0;
-    next_us = now;
+    s_next_adv_us = now;
+    acc_open(slide_uptime_s(), ACC_LINK_S);
+    s_silent = 0;
   }
+  if (!acc_is_open(slide_uptime_s())) {        // window closed: no radio activity at all
+    if (!s_silent) { s_silent = 1; RAIL_Idle(h, RAIL_IDLE_ABORT, true); g_diag.acc_closed++; }
+    panel_poll();
+    return;
+  }
+  if (s_silent) { s_silent = 0; s_next_adv_us = now; }
   if (!started) {
     started = 1;
-    next_us = now;
+    s_next_adv_us = now;
   }
-  if ((int32_t)(now - next_us) < 0) {
+  if ((int32_t)(now - s_next_adv_us) < 0) {
     handle_rx();
     panel_poll();
     return;
@@ -241,5 +265,25 @@ void app_process_action(void)
   g_diag.adv_rounds++;
 
   // next advertising event after 100 ms plus a little jitter (0 to ~7 ms)
-  next_us += 100000u + ((g_diag.adv_rounds * 2654435761u) >> 25) * 50u;
+  s_next_adv_us += 100000u + ((g_diag.adv_rounds * 2654435761u) >> 25) * 50u;
+}
+
+// True when the core may go to EM2 (deep sleep; the radio timer stops there, main.c puts it back): nothing is connected, the access window is
+// closed (the radio is idle, see the s_silent branch above), no panel / flash / scan / NFC job and no upload runs.
+bool app_deep_ok(void)
+{
+  if (ll_connected() || panel_busy() || slide_flash_busy() || slide_scanning() || !up_idle() || !slide_deep_ok() || !nfc_deep_ok()) return false;
+  if (acc_is_open(slide_uptime_s())) return false;
+  return s_silent;
+}
+
+// True when the main loop may sleep until the next 2 ms wake-up: nothing runs that needs the CPU all the time.
+bool app_sleep_ok(void)
+{
+  if (ll_connected() || panel_busy() || slide_flash_busy() || slide_scanning()) return false;
+  if (acc_is_open(slide_uptime_s())) {                       // advertising: do not sleep over the start of an event
+    uint32_t now = RAIL_GetTime();
+    if (s_next_adv_us && (int32_t)(s_next_adv_us - now) < 3000) return false;
+  }
+  return true;
 }

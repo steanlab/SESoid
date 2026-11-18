@@ -180,11 +180,11 @@ static uint32_t sda_pull(uint32_t up)
   return sda_in();
 }
 
-// the chip ID read of the update sequence (command 0x70, then 16 bits), CS released afterwards
-static uint16_t read_id(void)
+// a command followed by a 16-bit read (the chip ID read of the update sequence is command 0x70), CS released afterwards
+static uint16_t read_cmd16(uint8_t c)
 {
   pc_clr(CS_PIN); pc_clr(DC_PIN);
-  wbyte(0x70);
+  wbyte(c);
   pc_set(DC_PIN);
   sda_input();
   uint32_t v = (rbyte() << 8) | rbyte();
@@ -192,6 +192,7 @@ static uint16_t read_id(void)
   pc_set(CS_PIN); pc_set(DC_PIN);
   return (uint16_t)v;
 }
+static uint16_t read_id(void) { return read_cmd16(0x70); }
 
 // ---- waits
 static void wait_ms(uint32_t ms, pstate_t next)
@@ -234,7 +235,7 @@ static bool get_line(int l, uint8_t *out)
     case PSRC_SLOT: {
       int pi = l >> 2;
       if (pg_idx != pi) {
-        if (!fl_read_page((uint32_t)slot_no * FL_SLOT_SIZE + (uint32_t)pi * 256u, pg, 256u)) return false;
+        if (!fl_read_page(FL_SLOT_BASE(slot_no) + (uint32_t)pi * 256u, pg, 256u)) return false;
         pg_idx = pi;
       }
       memcpy(out, pg + (l & 3) * PANEL_LINE_BYTES, PANEL_LINE_BYTES);
@@ -483,6 +484,8 @@ static void run(void)
       half_cycles = 50u * cpu_mhz();             // 100 us clock period: about 2.4 ms for the read
       pd.id_slow = read_id();
       half_cycles = save;
+      pd.temp_raw = read_cmd16(0x40);           // read only: the temperature sensor read of UC81xx controllers; whether this one has it is not known
+      pd.temp_tried = 1;
       wait_ms(5, D_K);
       break;
     }
@@ -542,7 +545,7 @@ bool panel_show_splash(void) { shown = 0; return begin(PSRC_SPLASH); }
 
 bool panel_show_slot(uint8_t slot, uint32_t crc)
 {
-  if (slot < 1 || slot > 7 || st == S_PWR_A || (st != S_IDLE && st != S_DONE)) return false;
+  if (slot < 1 || slot > FL_SLOTS || st == S_PWR_A || (st != S_IDLE && st != S_DONE)) return false;
   slot_no = slot; slot_crc = crc;
   if (!begin(PSRC_SLOT)) return false;
   shown = slot;

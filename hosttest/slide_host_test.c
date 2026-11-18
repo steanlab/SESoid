@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "ble_slide.h"
+#include "ble_batt.h"
 #include "ble_panel.h"
 #include "ble_flash.h"
 #include "ble_up.h"
@@ -22,6 +23,8 @@ static bool g_up_idle = true, g_connected;
 static int8_t last_tx;
 
 uint32_t RAIL_GetTime(void) { return now_us; }
+static uint8_t ent_byte = 0x40;
+uint16_t RAIL_GetRadioEntropy(void *h, uint8_t *b, uint16_t n) { (void)h; for (uint16_t i = 0; i < n; i++) b[i] = (uint8_t)(ent_byte + i); ent_byte += 0x11; return n; }
 int RAIL_SetTxPowerDbm(void *h, int16_t p) { (void)h; last_tx = (int8_t)(p / 10); return 0; }
 int16_t RAIL_GetTxPowerDbm(void *h) { (void)h; return (int16_t)(last_tx * 10 > 60 ? 60 : last_tx * 10); }
 void *sl_rail_util_get_handle(int h) { (void)h; return 0; }
@@ -35,7 +38,7 @@ uint32_t up_crc32(uint32_t crc, const uint8_t *p, uint32_t n)
   crc = ~crc; while (n--) { crc ^= *p++; crc = (crc >> 4) ^ t[crc & 15u]; crc = (crc >> 4) ^ t[crc & 15u]; } return ~crc;
 }
 // flash model
-void fl_init(void) { fl_state = 0; fl_done = false; lo = 0; hi = FL_TEST_END; }
+void fl_init(void) { fl_state = 0; fl_done = false; lo = FL_TEST_LO; hi = FL_TEST_END; }
 void fl_set_range(uint32_t l, uint32_t h) { lo = l; hi = h; }
 bool fl_busy(void) { return fl_state != 0; }
 bool fl_start_erase(uint32_t a)
@@ -63,6 +66,8 @@ static uint32_t panel_end_us; static bool pbusy; static panel_src_t psrc; static
 static void pmodel(void) { if (pbusy && (int32_t)(now_us - panel_end_us) >= 0) { pbusy = false; n_done++; } }
 bool panel_busy(void) { pmodel(); return pbusy; }
 bool panel_show_slot(uint8_t s, uint32_t crc) { (void)crc; pmodel(); if (pbusy) return false; pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_SLOT; pshown = s; last_shown_slot = s; shows++; return true; }
+static int fills; static uint8_t last_fill;
+bool panel_show_fill(uint8_t code) { pmodel(); if (pbusy) return false; pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_FILL; pshown = code; last_fill = code; fills++; return true; }
 bool panel_show_splash(void) { pmodel(); if (pbusy) return false; pbusy = true; panel_end_us = now_us + 30000000u; psrc = PSRC_SPLASH; return true; }
 void panel_set_temp(int8_t c) { (void)c; }
 panel_status_t panel_status(void) { return pbusy ? PST_RUNNING : PST_DONE_OK; }
@@ -80,7 +85,7 @@ static void make_record(int slot, uint32_t total, uint32_t crc)
   uint8_t r[256]; memset(r, 0xFF, 256); memcpy(r, "SLD1", 4);
   r[4] = (uint8_t)total; r[5] = (uint8_t)(total >> 8); r[6] = (uint8_t)(total >> 16); r[7] = (uint8_t)(total >> 24);
   r[8] = (uint8_t)crc; r[9] = (uint8_t)(crc >> 8); r[10] = (uint8_t)(crc >> 16); r[11] = (uint8_t)(crc >> 24);
-  memcpy(mem + slot * 0x10000 + 0xF000, r, 256);
+  memcpy(mem + FL_SLOT_BASE(slot) + FL_SLOT_REC, r, 256);
 }
 
 int main(void)
@@ -90,18 +95,19 @@ int main(void)
   // blank flash: defaults
   slide_init();
   const slide_cfg_t *c = slide_cfg();
-  CHECK(c->enabled == 1 && c->mode == 0 && c->interval_min == 60 && c->mask == 0xFE && c->temp_c == 25 && c->tx_dbm == 6, "defaults wrong");
-  for (int i = 1; i <= 7; i++) CHECK(!slide_slot(i)->show, "slot %d should be empty", i);
+  CHECK(c->enabled == 1 && c->mode == 0 && c->interval_min == 60 && c->mask == 0x7FE && c->temp_c == 25 && c->tx_dbm == 6 && c->clean_n == 10, "defaults wrong");
+  for (int i = 1; i <= 10; i++) CHECK(!slide_slot(i)->show, "slot %d should be empty", i);
 
   // slots 2, 4, 5 are complete frames, slot 6 is a 10 KB test upload, slot 1 has a record with a bad size
-  make_record(2, 46080, 0x11111111); make_record(4, 46080, 0x22222222); make_record(5, 46080, 0x33333333); make_record(6, 10240, 0x44444444); make_record(1, 0x20000, 5);
-  slide_rescan(); tick(100);
+  make_record(2, 46080, 0x11111111); make_record(4, 46080, 0x22222222); make_record(5, 46080, 0x33333333); make_record(6, 10240, 0x44444444); make_record(1, 0x20000, 5); make_record(10, 46080, 0x55555555); make_record(8, 46081, 7);
+  slide_rescan(); tick(400);                                // the first entry (with the new secret) is being saved at the same time
   CHECK(!slide_scanning(), "scan did not finish");
   CHECK(slide_slot(2)->show && slide_slot(4)->show && slide_slot(5)->show, "complete slots not recognised");
   CHECK(slide_slot(6)->valid && !slide_slot(6)->show, "10 KB slot must be valid but not showable");
   CHECK(!slide_slot(1)->valid, "oversize record must be rejected");
   CHECK(slide_slot(4)->crc == 0x22222222, "crc not read");
-  CHECK(g_diag.sl_valid == ((1u << 2) | (1u << 4) | (1u << 5)), "diag valid mask %x", g_diag.sl_valid);
+  CHECK(slide_slot(10)->show && !slide_slot(8)->valid, "slot 10 / oversize slot 8");
+  CHECK(g_diag.sl_valid == ((1u << 2) | (1u << 4) | (1u << 5) | (1u << 10)), "diag valid mask %x", g_diag.sl_valid);
 
   // boot splash running: the countdown starts when it is finished
   panel_show_splash();
@@ -120,12 +126,13 @@ int main(void)
     seq[n++] = last_shown_slot;
     tick(31000);                                           // the update finishes
   }
-  CHECK(seq[0] == 2 && seq[1] == 4 && seq[2] == 5 && seq[3] == 2, "order %d %d %d %d", seq[0], seq[1], seq[2], seq[3]);
+  CHECK(seq[0] == 2 && seq[1] == 4 && seq[2] == 5 && seq[3] == 10, "order %d %d %d %d", seq[0], seq[1], seq[2], seq[3]);
 
   // manual commands
   tick(31000);
   CHECK(slide_show(3) == SLR_BAD_SLOT, "empty slot");
   CHECK(slide_show(9) == SLR_BAD_SLOT, "slot 9");
+  CHECK(slide_show(11) == SLR_BAD_SLOT && slide_show(0) == SLR_BAD_SLOT, "slots 0 and 11");
   g_up_idle = false; CHECK(slide_show(4) == SLR_FLASH_BUSY, "flash busy while uploading"); g_up_idle = true;
   CHECK(slide_show(4) == SLR_OK, "show 4");
   CHECK(slide_show(5) == SLR_PANEL_BUSY && slide_next() == SLR_PANEL_BUSY, "panel busy");
@@ -133,12 +140,15 @@ int main(void)
 
   // settings: save, reload, wear log
   CHECK(slide_cfg()->nfc == 0, "NFC tap is off by default");
-  slide_cfg_t n2 = *slide_cfg(); n2.nfc = 1; n2.interval_min = 5; n2.mask = (1u << 4) | (1u << 5); n2.mode = 1; n2.temp_c = -3; n2.tx_dbm = -8;
+  slide_cfg_t n2 = *slide_cfg(); n2.nfc = 1; n2.clean_n = 0; n2.interval_min = 5; n2.mask = (1u << 4) | (1u << 5); n2.mode = 1; n2.temp_c = -3; n2.tx_dbm = -8;
   slide_set_cfg(&n2); tick(200);
   CHECK(last_tx == -8, "TX power not applied (%d)", last_tx);
-  CHECK(prog_count == 1 && erase_count == 0, "first save: %d programs %d erases", prog_count, erase_count);
+  CHECK(prog_count == 2 && erase_count == 0, "first save (after the entry with the new secret): %d programs %d erases", prog_count, erase_count);
   CHECK(slide_next_in_s() <= 300 && slide_next_in_s() > 290, "countdown restarted with the new interval: %u", slide_next_in_s());
+  uint8_t sec0[8]; memcpy(sec0, slide_secret(), 8);
+  CHECK(sec0[0] == 0x40 && sec0[7] == 0x47, "secret made from the entropy source on the first start (%02x..%02x)", sec0[0], sec0[7]);
   slide_init();                                            // "reboot"
+  CHECK(!memcmp(sec0, slide_secret(), 8), "secret survives a reboot (and the settings rewrites)");
   c = slide_cfg();
   CHECK(c->interval_min == 5 && c->mask == 0x30 && c->mode == 1 && c->temp_c == -3 && c->tx_dbm == -8 && c->enabled == 1 && c->nfc == 1, "settings not reloaded");
   // random mode never repeats the current slot when there is a choice (after a reboot the splash comes first; the countdown starts after it)
@@ -159,13 +169,57 @@ int main(void)
   CHECK(slide_cfg()->interval_min != 26 && slide_cfg()->interval_min >= 10, "corrupt entry not skipped: %u", slide_cfg()->interval_min);
   // nothing outside the settings sector was written
   CHECK(range_violations == 0, "%d writes outside the allowed range", range_violations);
-  for (uint32_t a = 0; a < 0x10000; a++) if (a < 0xF000 && mem[a] != 0xFF) { CHECK(0, "test area modified at %x", a); break; }
+  for (uint32_t a = FL_TEST_LO; a < FL_TEST_END; a++) if (mem[a] != 0xFF) { CHECK(0, "test area modified at %x", a); break; }
+  for (uint32_t a = 0; a < FL_TEST_LO; a++) { uint32_t o = a % FL_SLOT_SIZE; if (mem[a] != 0xFF && !(o >= FL_SLOT_REC && o < FL_SLOT_REC + 256)) { CHECK(0, "slot area modified at %x", a); break; } }
   // out of range values are clamped
-  slide_cfg_t bad = { 2, 3, 5000, 0xFF, 120, 100, 0 }; slide_set_cfg(&bad);
-  CHECK(slide_cfg()->enabled == 1 && slide_cfg()->mode == 1 && slide_cfg()->interval_min == 1440 && slide_cfg()->mask == 0xFE && slide_cfg()->temp_c == 60 && slide_cfg()->tx_dbm == 20, "clamping");
+  slide_cfg_t bad = { 2, 3, 5000, 0xFFFF, 120, 100, 0, 9, 255, 255, 255, 255 }; bad.clean_n = 255; bad.flags = 0xFF; slide_set_cfg(&bad);
+  CHECK(slide_cfg()->enabled == 1 && slide_cfg()->mode == 1 && slide_cfg()->interval_min == 1440 && slide_cfg()->mask == 0x7FE && slide_cfg()->temp_c == 60 && slide_cfg()->tx_dbm == 20 && slide_cfg()->clean_n == 250, "clamping");
+  CHECK(slide_cfg()->flags == 3, "flags clamped to the two defined bits: %u", slide_cfg()->flags);
   bad.nfc = 7; slide_set_cfg(&bad); CHECK(slide_cfg()->nfc == 1, "nfc flag clamped to 1");
   // auto mode off
   bad.enabled = 0; bad.interval_min = 1; slide_set_cfg(&bad); CHECK(slide_next_in_s() == 0xFFFFFFFFu, "auto off must disable the countdown");
+  // full redraw every N changes
+  { slide_cfg_t x = *slide_cfg(); x.enabled = 0; x.mode = 0; x.mask = (1u << 2) | (1u << 4) | (1u << 5); x.clean_n = 3; slide_set_cfg(&x); tick(200); tick(31000);
+    int f0 = fills, s0 = shows;
+    for (int k = 0; k < 9; k++) { CHECK(slide_next() == SLR_OK, "clean test: next %d", k); tick(31000); tick(31000); }
+    CHECK(fills - f0 == 3 && shows - s0 == 9, "every third change must be preceded by a white update: fills %d shows %d", fills - f0, shows - s0);
+    CHECK(last_fill == 1, "the cleaning update is white (%u)", last_fill);
+    slide_cfg_t y = *slide_cfg(); y.clean_n = 0; slide_set_cfg(&y); tick(200); f0 = fills;
+    for (int k = 0; k < 6; k++) { slide_next(); tick(31000); }
+    CHECK(fills == f0, "clean_n 0 means never");
+    y.clean_n = 1; slide_set_cfg(&y); tick(200); f0 = fills; s0 = shows;
+    for (int k = 0; k < 3; k++) { slide_next(); tick(31000); tick(31000); }
+    CHECK(fills - f0 == 3 && shows - s0 == 3, "clean_n 1: every change is cleaned (%d fills, %d shows)", fills - f0, shows - s0);
+    // cleaning modes: 1 = black + white, 2 = black, white, red, yellow, white; the slide follows only after the last step
+    y.clean_n = 1; y.clean_mode = 1; slide_set_cfg(&y); tick(200); f0 = fills; s0 = shows;
+    slide_next(); for (int k = 0; k < 5; k++) tick(31000);
+    CHECK(fills - f0 == 2 && shows - s0 == 1 && last_fill == 1, "mode 1: two fills then the slide (%d fills, %d shows, last %u)", fills - f0, shows - s0, last_fill);
+    y.clean_mode = 2; slide_set_cfg(&y); tick(200); f0 = fills; s0 = shows;
+    slide_next(); for (int k = 0; k < 10; k++) tick(31000);
+    CHECK(fills - f0 == 5 && shows - s0 == 1 && last_fill == 1, "mode 2: five fills then the slide (%d fills, %d shows, last %u)", fills - f0, shows - s0, last_fill);
+    y.clean_mode = 9; slide_set_cfg(&y); CHECK(slide_cfg()->clean_mode == 0, "bad clean mode falls back to white");
+    y.clean_mode = 2; slide_set_cfg(&y); tick(200); f0 = fills; s0 = shows;
+    CHECK(slide_clean(2) == SLR_OK, "manual cleaning starts"); for (int k = 0; k < 10; k++) tick(31000);
+    CHECK(fills - f0 == 5 && shows == s0, "manual cleaning: five fills, no slide (%d, %d)", fills - f0, shows - s0);
+    // slot 10 takes part when its mask bit is set
+    y.clean_n = 0; y.mask = 1u << 10; slide_set_cfg(&y); tick(200);
+    CHECK(slide_next() == SLR_OK && last_shown_slot == 10, "slot 10 in the playlist (shown %d)", last_shown_slot); tick(31000);
+  }
+  // battery: critical level stops automatic changes and cleaning, manual change still works; thresholds are persisted and sanitised
+  { extern uint16_t batt_host_mv;
+    slide_cfg_t z = *slide_cfg(); z.enabled = 1; z.interval_min = 1; z.mask = (1u << 2) | (1u << 4) | (1u << 5); z.clean_n = 1; z.batt_low = 70; z.batt_crit = 50; slide_set_cfg(&z); tick(200);
+    CHECK(slide_cfg()->batt_low == 70 && slide_cfg()->batt_crit == 50, "battery thresholds kept");
+    batt_host_mv = 2400; batt_measure_now(slide_uptime_s());
+    CHECK(batt_level() == BATT_CRIT, "battery critical");
+    int s1 = shows, f1 = fills; for (int k = 0; k < 5; k++) tick(61000);
+    CHECK(shows == s1 && fills == f1, "critical battery: no automatic change (%d shows, %d fills)", shows - s1, fills - f1);
+    CHECK(slide_next() == SLR_OK, "a manual change still works"); tick(31000); tick(31000);
+    CHECK(shows - s1 == 1 && fills == f1, "manual change without cleaning (%d shows, %d fills)", shows - s1, fills - f1);
+    slide_cfg_t w = *slide_cfg(); w.batt_low = 3; w.batt_crit = 99; slide_set_cfg(&w);
+    CHECK(slide_cfg()->batt_low == 70 && slide_cfg()->batt_crit <= slide_cfg()->batt_low, "bad thresholds sanitised (%u %u)", slide_cfg()->batt_low, slide_cfg()->batt_crit);
+    batt_host_mv = 3000; batt_measure_now(slide_uptime_s()); batt_measure_now(slide_uptime_s());
+    CHECK(batt_level() == BATT_OK, "battery ok again");
+  }
   printf(fails ? "FAILED (%d)\n" : "ALL OK\n", fails);
   return fails != 0;
 }

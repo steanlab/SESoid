@@ -83,6 +83,7 @@ const uint8_t *nfc_backup_block(uint8_t blk);   // 16 bytes, valid when a backup
 bool nfc_changed(void);                     // true once when something changed that the page should be told
 
 // tap mode
+bool nfc_deep_ok(void);                      // no NFC job runs (only tap watching or nothing): EM2 is allowed between the polls
 void nfc_tap_enable(bool on);
 void nfc_hold(bool hold);                   // true while the pin monitor or the I2C scanner own the pins: the tap mode stays out
 bool nfc_tap_take(void);                    // true once per detected tap

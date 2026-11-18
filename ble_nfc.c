@@ -66,6 +66,7 @@ bool nfc_changed(void) { bool c = nf_changed; nf_changed = false; return c; }
 bool nfc_tap_take(void) { if (!tap_pending) return false; tap_pending = 0; return true; }
 uint8_t nfc_tap_count(void) { return tap_count; }
 bool nfc_tap_running(void) { return ns == NS_TAP || ns == NS_TAP_UP; }
+bool nfc_deep_ok(void) { return ns == NS_IDLE || ns == NS_TAP; }       // only watching for a tap (a short I2C read every 200 ms): the core may sleep between the reads
 void nfc_tap_enable(bool on) { tap_en = on; }
 void nfc_hold(bool hold) { tap_hold = hold; }
 

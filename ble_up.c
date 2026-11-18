@@ -6,6 +6,7 @@
 #include "ble_diag.h"
 #include "ble_slide.h"
 #include "ble_panel.h"
+#include "ble_od.h"
 
 #define PAGE   256u
 #define CHUNK  16u
@@ -16,10 +17,11 @@ typedef enum { F_NONE, F_ERASING, F_READY, F_PROG, F_REC, F_DONE, F_ERR } fstate
 typedef struct {
   bool     active;
   uint8_t  mode;
-  uint8_t  slot;                  // flash mode: slot 1..7 at slot * 64 KiB
+  uint8_t  slot;                  // flash mode: slot 1..10, see FL_SLOT_BASE
   fstate_t fs;
   uint32_t base;                  // flash address of the slot
   uint32_t es, nsec;              // erase progress
+  bool er_run;                    // an erase started by this upload is running (a stale fl_done of an aborted operation must not count)
   uint8_t  req;                   // bit n: the phone asked to commit the page in ring slot n
   uint32_t pend_page;             // page being programmed
   uint32_t total;                 // image length in bytes
@@ -28,6 +30,12 @@ typedef struct {
   uint16_t mask[WIN];             // chunks received, per ring slot
   uint8_t  buf[WIN][PAGE];
 } up_t;
+
+static bool up_notify(const uint8_t *d, uint8_t n)             // answers go to the OpenDisplay code while it runs the upload
+{
+  if (od_busy() && od_up_sink(d, n)) return true;
+  return att_notify(d, n);
+}
 
 static up_t u;
 static bool begin_ack_due;          // flash mode: the BEGIN answer is sent after the erase
@@ -110,7 +118,7 @@ static void page_done(uint32_t page)           // the page is stored: checksum, 
   u.next_page++;
   g_diag.up_bytes += n;
   r[0] = 0x92; wr16(r + 1, page); r[3] = 0;
-  att_notify(r, 4);
+  up_notify(r, 4);
   sync_diag();
 }
 
@@ -118,7 +126,7 @@ static void page_fail(uint32_t page)
 {
   uint8_t r[4] = { 0x92, (uint8_t)page, (uint8_t)(page >> 8), 2 };
   u.fs = F_ERR;
-  att_notify(r, 4);
+  up_notify(r, 4);
 }
 
 // Commit the pages the phone asked for, strictly in order. RAM sink: at once. Flash: one page at a time (program + verify).
@@ -131,7 +139,7 @@ static void commit_poll(void)
     if ((u.mask[s] & need) != need) {
       uint8_t r[5] = { 0x93, (uint8_t)page, (uint8_t)(page >> 8), (uint8_t)u.mask[s], (uint8_t)(u.mask[s] >> 8) };
       u.req &= (uint8_t)~(1u << s);
-      att_notify(r, 5);
+      up_notify(r, 5);
       DIAG_INC(up_incomplete);
       return;
     }
@@ -147,8 +155,8 @@ static void on_page(uint32_t page)
 {
   uint8_t r[6];
   r[0] = 0x92; wr16(r + 1, page);
-  if (page < u.next_page) { r[3] = 0; att_notify(r, 4); return; }                 // repeated question: already done
-  if (page >= WIN + u.next_page || page * PAGE >= u.total) { r[3] = 1; wr16(r + 4, u.next_page); att_notify(r, 6); DIAG_INC(up_ooo); return; }
+  if (page < u.next_page) { r[3] = 0; up_notify(r, 4); return; }                 // repeated question: already done
+  if (page >= WIN + u.next_page || page * PAGE >= u.total) { r[3] = 1; wr16(r + 4, u.next_page); up_notify(r, 6); DIAG_INC(up_ooo); return; }
   u.req |= (uint8_t)(1u << (page % WIN));
   commit_poll();
 }
@@ -159,14 +167,14 @@ static void end_answer(void)
   e[0] = 0x94; e[1] = (u.active && u.next_page * PAGE >= u.total && (u.mode == 0 || u.fs == F_DONE)) ? 0 : 1;
   if (u.fs == F_ERR) e[1] = 2;
   wr32(e + 2, u.crc); wr32(e + 6, u.total);
-  att_notify(e, 10);
+  up_notify(e, 10);
 }
 
 static void send_slot_answer(uint8_t slot, uint8_t status, uint32_t total, uint32_t crc)
 {
   uint8_t r[11] = { 0xA4, slot, status };
   wr32(r + 3, total); wr32(r + 7, crc);
-  att_notify(r, 11);
+  up_notify(r, 11);
 }
 
 static void send_flash_result(void)
@@ -177,14 +185,14 @@ static void send_flash_result(void)
   if (f.op == 1) {
     r[0] = 0xA0; r[1] = (uint8_t)(f.jedec >> 16); r[2] = (uint8_t)(f.jedec >> 8); r[3] = (uint8_t)f.jedec;
     r[4] = f.sr1_last; r[5] = f.sr2; r[6] = f.sr3;
-    att_notify(r, 7);
+    up_notify(r, 7);
   } else if (f.op == 2 || f.op == 3) {
     r[0] = (f.op == 2) ? 0xA1 : 0xA2; r[1] = f.result; wr32(r + 2, f.busy_us);
     r[6] = f.sr1_first; r[7] = f.sr1_last; r[8] = f.sr1_wel; wr16(r + 9, f.nonff > 0xFFFFu ? 0xFFFFu : f.nonff);
-    att_notify(r, 11);
+    up_notify(r, 11);
   } else {
     r[0] = 0xA3; r[1] = f.result; wr32(r + 2, f.nonff);
-    att_notify(r, 6);
+    up_notify(r, 6);
   }
 }
 
@@ -194,12 +202,12 @@ static void flash_try_start(void)
   uint8_t pat[PAGE];
   switch (flash_q_op) {
     case 0x20: ok = fl_start_info(); break;
-    case 0x21: ok = fl_start_erase(flash_q_arg * FL_SECTOR); break;
+    case 0x21: ok = fl_start_erase(FL_TEST_LO + flash_q_arg * FL_SECTOR); break;
     case 0x22:
       for (uint32_t i = 0; i < PAGE; i++) pat[i] = (uint8_t)(i ^ (flash_q_arg * 0x35u) ^ 0xA5u);
-      ok = fl_start_program(flash_q_arg * FL_SECTOR, pat);
+      ok = fl_start_program(FL_TEST_LO + flash_q_arg * FL_SECTOR, pat);
       break;
-    case 0x23: ok = fl_start_scan(flash_q_arg * FL_SECTOR); break;
+    case 0x23: ok = fl_start_scan(FL_TEST_LO + flash_q_arg * FL_SECTOR); break;
     default: break;
   }
   if (ok) { flash_q_op = 0; flash_pending = true; }
@@ -213,9 +221,9 @@ bool up_write(const uint8_t *v, uint8_t len)
   switch (v[0]) {
     case 0x10:   // BEGIN
       r[0] = 0x90; r[2] = len > 1 ? v[1] : 0;
-      if (flash_q_op || flash_pending || fl_busy() || vfy_active || flash_taken()) { r[1] = 1; att_notify(r, 3); return true; }
+      if (flash_q_op || flash_pending || fl_busy() || vfy_active || flash_taken()) { r[1] = 1; up_notify(r, 3); return true; }
       if ((len != 6 && len != 7) || v[1] > 1 || rd32(v + 2) == 0 || rd32(v + 2) > 0x80000u ||
-          (v[1] == 1 && (len != 7 || v[6] < 1 || v[6] > 7 || rd32(v + 2) > 0xF000u))) { r[1] = 1; att_notify(r, 3); return true; }
+          (v[1] == 1 && (len != 7 || v[6] < 1 || v[6] > FL_SLOTS || rd32(v + 2) > FL_SLOT_REC))) { r[1] = 1; up_notify(r, 3); return true; }
       memset(&u, 0, sizeof(u));
       u.active = true;
       u.mode = v[1];
@@ -225,15 +233,18 @@ bool up_write(const uint8_t *v, uint8_t len)
       end_wanted = false;
       if (u.mode == 1) {                             // erase the image sectors and the record sector first, then answer
         u.slot = v[6];
-        u.base = (uint32_t)u.slot * FL_SLOT_SIZE;
-        u.nsec = (u.total + FL_SECTOR - 1u) / FL_SECTOR + 1u;
+        u.base = FL_SLOT_BASE(u.slot);
+        {
+          uint32_t nimg = (u.total + FL_SECTOR - 1u) / FL_SECTOR;          // image sectors; the record page lies in sector 11
+          u.nsec = nimg + (nimg < FL_SLOT_REC / FL_SECTOR + 1u ? 1u : 0u);
+        }
         u.es = 0;
         u.fs = F_ERASING;
         fl_set_range(u.base, u.base + FL_SLOT_SIZE);
         begin_ack_due = true;
       } else {
         r[1] = 0;
-        att_notify(r, 3);
+        up_notify(r, 3);
       }
       sync_diag();
       return true;
@@ -259,25 +270,25 @@ bool up_write(const uint8_t *v, uint8_t len)
     case 0x14:   // ABORT
       memset(&u, 0, sizeof(u));
       begin_ack_due = end_wanted = false;
-      fl_set_range(0, FL_TEST_END);
+      fl_set_range(FL_TEST_LO, FL_TEST_END);
       sync_diag();
       return true;
     case 0x24:   // SLOT VERIFY: read the slot back from the flash and compare its CRC with the record
-      if (up_busy() || flash_q_op || flash_pending || fl_busy() || vfy_active || flash_taken() || len != 2 || v[1] < 1 || v[1] > 7) {
+      if (up_busy() || flash_q_op || flash_pending || fl_busy() || vfy_active || flash_taken() || len != 2 || v[1] < 1 || v[1] > FL_SLOTS) {
         send_slot_answer(len > 1 ? v[1] : 0, 9, 0, 0);
         return true;
       }
       vfy_active = true; vfy_slot = v[1]; vfy_off = 0xFFFFFFFFu; vfy_crc = 0;
       return true;
     case 0x20: case 0x21: case 0x22: case 0x23:
-      if (flash_q_op || flash_pending || fl_busy() || up_busy() || vfy_active || flash_taken()) { uint8_t e[3] = { 0xA3, FLR_PARAM, 0 }; att_notify(e, 3); return true; }   // one operation at a time
-      fl_set_range(0, FL_TEST_END);
+      if (flash_q_op || flash_pending || fl_busy() || up_busy() || vfy_active || flash_taken()) { uint8_t e[3] = { 0xA3, FLR_PARAM, 0 }; up_notify(e, 3); return true; }   // one operation at a time
+      fl_set_range(FL_TEST_LO, FL_TEST_END);
       flash_q_op = v[0];
       flash_q_arg = (v[0] == 0x23 && len >= 3) ? rd16(v + 1) : (len >= 2 ? v[1] : 0u);
-      if ((v[0] == 0x23 && flash_q_arg > 127u) || (v[0] != 0x23 && v[0] != 0x20 && flash_q_arg > 14u)) {
+      if ((v[0] != 0x20 && flash_q_arg > 6u)) {
         flash_q_op = 0;
         uint8_t e[3] = { 0xA3, FLR_PARAM, 0 };
-        att_notify(e, 3);
+        up_notify(e, 3);
       }
       return true;
     default:
@@ -297,12 +308,12 @@ static void record_page(uint8_t *pg)
 static void slot_verify_poll(void)
 {
   static uint8_t pg[PAGE];
-  uint32_t base = (uint32_t)vfy_slot * FL_SLOT_SIZE;
+  uint32_t base = FL_SLOT_BASE(vfy_slot);
   if (vfy_off == 0xFFFFFFFFu) {                  // first step: the record
-    if (!fl_read_page(base + 0xF000u, pg, 16)) return;
+    if (!fl_read_page(base + FL_SLOT_REC, pg, 16)) return;
     if (memcmp(pg, "SLD1", 4) != 0) { send_slot_answer(vfy_slot, 1, 0, 0); vfy_active = false; return; }
     vfy_total = rd32(pg + 4); vfy_rec_crc = rd32(pg + 8);
-    if (vfy_total == 0 || vfy_total > 0xF000u) { send_slot_answer(vfy_slot, 1, 0, 0); vfy_active = false; return; }
+    if (vfy_total == 0 || vfy_total > FL_SLOT_REC) { send_slot_answer(vfy_slot, 1, 0, 0); vfy_active = false; return; }
     vfy_off = 0; vfy_crc = 0;
     return;
   }
@@ -329,17 +340,18 @@ void up_poll(void)
     switch (u.fs) {
       case F_ERASING:
         if (!fl_busy()) {
+          if (fl_done && !u.er_run) fl_done = false;           // result of an operation that an ABORT left behind
           if (fl_done) {
-            fl_done = false;
-            if (fl_res.result != FLR_OK) { u.fs = F_ERR; uint8_t r[3] = { 0x90, 4, 1 }; att_notify(r, 3); begin_ack_due = false; break; }
+            fl_done = false; u.er_run = false;
+            if (fl_res.result != FLR_OK) { u.fs = F_ERR; uint8_t r[3] = { 0x90, 4, 1 }; up_notify(r, 3); begin_ack_due = false; break; }
             u.es++;
           }
           if (u.es >= u.nsec) {
             u.fs = F_READY;
-            if (begin_ack_due) { uint8_t r[4] = { 0x90, 0, 1, u.slot }; att_notify(r, 4); begin_ack_due = false; }
+            if (begin_ack_due) { uint8_t r[4] = { 0x90, 0, 1, u.slot }; up_notify(r, 4); begin_ack_due = false; }
           } else {
-            uint32_t sec = (u.es + 1u == u.nsec) ? 0xF000u : u.es * FL_SECTOR;     // the last one is the record sector
-            fl_start_erase(u.base + sec);
+            uint32_t sec = (u.es == 0) ? (FL_SLOT_REC / FL_SECTOR) * FL_SECTOR : (u.es - 1u) * FL_SECTOR;   // the record sector first: an interrupted erase leaves no valid record
+            if (fl_start_erase(u.base + sec)) u.er_run = true;
           }
         }
         break;
@@ -363,7 +375,7 @@ void up_poll(void)
         if (end_wanted && u.fs == F_READY && u.next_page * PAGE >= u.total) {
           uint8_t pg[PAGE];
           record_page(pg);
-          if (fl_start_program(u.base + 0xF000u, pg)) { u.fs = F_REC; end_wanted = false; }
+          if (fl_start_program(u.base + FL_SLOT_REC, pg)) { u.fs = F_REC; end_wanted = false; }
         }
         break;
       default:

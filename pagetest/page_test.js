@@ -9,12 +9,13 @@ const MOCK = `
   const crcT = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
   const crc = b => { let c = 0xFFFFFFFF; for (const x of b) c = crcT[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
   const le32 = v => [v & 255, v >>> 8 & 255, v >>> 16 & 255, v >>> 24 & 255];
-  const tag = { flash: new Uint8Array(8 * 65536).fill(255), cfg: { en: 1, mode: 0, iv: 60, mask: 0xFE, temp: 20, tx: 6, nfc: 0 }, chipAddr: 0x55, cur: 0, src: 1, shown: 0,
+  const tag = { flash: new Uint8Array(0x80000).fill(255), cfg: { en: 1, mode: 0, iv: 60, mask: 0x7FE, temp: 20, tx: 6, nfc: 0, clean: 10 }, chipAddr: 0x55, cur: 0, src: 1, shown: 0,
     up: null, log: [], dropPage: 3, dropped: false, rebooted: 0, fills: [] };
   window.__tag = tag;
   let notify = null;
   const N = a => setTimeout(() => notify && notify({ target: { value: new DataView(new Uint8Array(a).buffer) } }), 2);
-  function slotInfo(s) { const o = s * 65536 + 0xF000; const r = tag.flash.subarray(o, o + 256);
+  const base = s => (s - 1) * 0xC000;
+  function slotInfo(s) { const o = base(s) + 0xB400; const r = tag.flash.subarray(o, o + 256);
     if (r[0] !== 0x53 || r[1] !== 0x4C || r[2] !== 0x44 || r[3] !== 0x31) return { valid: 0, total: 0, crc: 0 };
     const dv = new DataView(r.buffer, r.byteOffset); return { valid: 1, total: dv.getUint32(4, true), crc: dv.getUint32(8, true) }; }
   function handle(v) {
@@ -23,7 +24,8 @@ const MOCK = `
     else if (op === 0x10) {
       const mode = v[1], total = v[2] | v[3] << 8 | v[4] << 16 | v[5] << 24 >>> 0, slot = mode ? v[6] : 0;
       tag.up = { mode, total, slot, buf: new Uint8Array(total), next: 0, mask: {}, got: 0 };
-      if (mode) { tag.flash.fill(255, slot * 65536, slot * 65536 + 65536); setTimeout(() => N([0x90, 0, 1, slot]), 300); } else N([0x90, 0, 0]);
+      if (mode && (slot < 1 || slot > 10 || total > 46080)) { N([0x90, 1, slot]); return; }
+      if (mode) { tag.flash.fill(255, base(slot), base(slot) + 0xC000); setTimeout(() => N([0x90, 0, 1, slot]), 300); } else N([0x90, 0, 0]);
     } else if (op === 0x11) {
       const idx = v[1] | v[2] << 8, u = tag.up; if (!u) return; const page = idx >> 4;
       if (page < u.next) return; u.buf.set(v.slice(3, 19).subarray(0, Math.max(0, Math.min(16, u.total - idx * 16))), idx * 16);
@@ -40,19 +42,19 @@ const MOCK = `
     } else if (op === 0x13) {
       const u = tag.up; if (!u) return;
       const ok = u.next * 256 >= u.total, c = crc(u.buf);
-      if (ok && u.mode) { const o = u.slot * 65536; tag.flash.set(u.buf, o); const rec = new Uint8Array(256).fill(255); rec.set([0x53, 0x4C, 0x44, 0x31, ...le32(u.total), ...le32(c), 1, 0, 0, 0], 0); tag.flash.set(rec, o + 0xF000); }
+      if (ok && u.mode) { const o = base(u.slot); tag.flash.set(u.buf, o); const rec = new Uint8Array(256).fill(255); rec.set([0x53, 0x4C, 0x44, 0x31, ...le32(u.total), ...le32(c), 1, 0, 0, 0], 0); tag.flash.set(rec, o + 0xB400); }
       N([0x94, ok ? 0 : 1, ...le32(c), ...le32(u.total)]);
     } else if (op === 0x24) {
       const s = v[1], i = slotInfo(s); if (!i.valid) { N([0xA4, s, 1, 0, 0, 0, 0, 0, 0, 0, 0]); return; }
-      const c = crc(tag.flash.subarray(s * 65536, s * 65536 + i.total)); N([0xA4, s, c === i.crc ? 0 : 2, ...le32(i.total), ...le32(c)]);
+      const c = crc(tag.flash.subarray(base(s), base(s) + i.total)); N([0xA4, s, c === i.crc ? 0 : 2, ...le32(i.total), ...le32(c)]);
     } else if (op === 0x30) {
       N([0xB0, 2, 0, tag.src, tag.shown, 27, ...le32(1800), ...le32(7200), 5, 0, 0, 3 | 0]);
     } else if (op === 0x31) {
-      for (let s = 1; s <= 7; s++) { const i = slotInfo(s); N([0xB1, s, (i.valid ? 1 : 0) | (i.valid && i.total === 46080 ? 2 : 0) | (tag.cfg.mask >> s & 1 ? 4 : 0) | (tag.cur === s ? 8 : 0), ...le32(i.total), ...le32(i.crc)]); }
+      for (let s = 1; s <= 10; s++) { const i = slotInfo(s); N([0xB1, s, (i.valid ? 1 : 0) | (i.valid && i.total === 46080 ? 2 : 0) | (tag.cfg.mask >> s & 1 ? 4 : 0) | (tag.cur === s ? 8 : 0), ...le32(i.total), ...le32(i.crc)]); }
     } else if (op === 0x32) { tag.cur = v[1]; tag.src = 2; tag.shown = v[1]; N([0xB3, 0x32, 0]); }
     else if (op === 0x33) N([0xB3, 0x33, 0]);
-    else if (op === 0x34) { tag.cfg = { en: v[1], mode: v[2], iv: v[3] | v[4] << 8, mask: v[5], temp: v[6] << 24 >> 24, tx: v[7] << 24 >> 24, nfc: v.length >= 9 ? v[8] : tag.cfg.nfc }; tag.cfgLen = v.length; sendCfg(); }
-    else if (op === 0x35) sendCfg();
+    else if (op === 0x34) { tag.cfg = { en: v[1], mode: v[2], iv: v[3] | v[4] << 8, mask: v.length >= 11 ? v[5] | v[9] << 8 : (tag.cfg.mask & 0xFF00) | v[5], temp: v[6] << 24 >> 24, tx: v[7] << 24 >> 24, nfc: v.length >= 9 ? v[8] : tag.cfg.nfc, clean: v.length >= 11 ? v[10] : tag.cfg.clean, cmode: v.length >= 12 ? v[11] : tag.cfg.cmode || 0, flags: v.length >= 15 ? v[14] : tag.cfg.flags || 0 }; tag.cfgLen = v.length; if (v.length >= 14) tag.batt = [v[12], v[13]]; sendCfg(); sendBatt(); }
+    else if (op === 0x35) { sendCfg(); sendBatt(); }
     else if (op === 0x36) { tag.rebooted++; N([0xB5]); }
     else if (op === 0x37) {
       N([0xB6, 0, 1, 0, 0x08, 0, 0, 0, 0x20, 0x1C, 0, 0, 0x30, 0x0F, 0x20, 0x00]);
@@ -135,7 +137,8 @@ const MOCK = `
     const fl = tag.xtal ? 0x01 | 0x04 | 0x10 | 0x20 | 0x40 : 0x01 | 0x80 | 0x20 | 0x40;
     return [0xB9, 2, fl, 3 | (1 << 3) | (1 << 5), 0x8C, 0x7A, 0x8C, 0x7A, tag.xtal ? 0x93 : 0xFF, tag.xtal ? 0x01 : 0xFF, c & 255, c >> 8 & 255, c >> 16, r & 255, r >> 8 & 255, r >> 16, u & 255, u >> 8 & 255, u >> 16, 0x30];
   }
-  function sendCfg() { const c = tag.cfg; N([0xB4, 1, c.en, c.mode, c.iv & 255, c.iv >> 8, c.mask, c.temp & 255, c.tx & 255, 60, 0, ...(tag.cfgOld ? [] : [c.nfc ? 1 : 0, 3])]); }
+  function sendBatt() { const b = tag.batt || [70, 50]; N([0xC0, tag.battLevel || 0, 0x68, 0x0B, b[0], b[1], 120, 0]); }
+  function sendCfg() { const c = tag.cfg; N([0xB4, 1, c.en, c.mode, c.iv & 255, c.iv >> 8, c.mask & 255, c.temp & 255, c.tx & 255, 60, 0, ...(tag.cfgOld ? [] : [c.nfc ? 1 : 0, 3, c.mask >> 8, c.clean, c.cmode || 0, c.flags || 0])]); }
   const chr = { addEventListener: (n, f) => { notify = f; }, startNotifications: async () => {}, writeValueWithResponse: async v => handle(new Uint8Array(v.buffer ? v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength) : v)), writeValueWithoutResponse: async v => handle(new Uint8Array(v.buffer ? v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength) : v)) };
   const svc = { getCharacteristic: async () => chr };
   const device = { name: 'V300-TEST', gatt: { connected: false, connect: async function () { this.connected = true; return { getPrimaryService: async () => svc }; }, disconnect: function () { this.connected = false; device.__d && device.__d(); } }, addEventListener: (n, f) => { device.__d = f; } };
@@ -145,7 +148,7 @@ const MOCK = `
 
 (async () => {
   const br = await chromium.launch();
-  const ctx = await br.newContext({ viewport: { width: 1200, height: 900 }, deviceScaleFactor: 1 });
+  const ctx = await br.newContext({ viewport: { width: 1200, height: 900 }, deviceScaleFactor: 1, locale: process.env.LOC || 'ru-RU' });
   const pg = await ctx.newPage();
   const errs = [];
   pg.on('console', m => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
@@ -205,15 +208,19 @@ const MOCK = `
   const want = await pg.evaluate(() => window.__gs.crc32(window.__gs.lastFrame));
   const t0 = Date.now();
   await pg.click('#bUpload');
-  await pg.waitForFunction(() => /ГОТОВО|ОШИБКА|Прервано/.test(document.querySelector('#upRes').textContent), null, { timeout: 90000 });
+  await pg.waitForFunction(() => document.getElementById('prog').classList.contains('on') && /%/.test(document.getElementById('pdet').textContent), null, { timeout: 20000 });
+  const pd = await pg.textContent('#pdet'), ps = await pg.textContent('#pst');
+  ok(/^\d+ % · [\d.]+ (КБ|KB|Б|B) \/ 45\.0 (КБ|KB) · \d+ (с|s)/.test(pd) && /слот|slot/i.test(ps), 'progress panel while uploading: ' + ps + ' | ' + pd);
+  await pg.waitForFunction(() => /ГОТОВО|DONE|ОШИБКА|ERROR|Прервано|Aborted/.test(document.querySelector('#upRes').textContent), null, { timeout: 90000 });
   const res = await pg.textContent('#upRes');
   console.log('upload:', res, (Date.now() - t0) + ' ms');
   ok(/ГОТОВО/.test(res) && /CRC совпал/.test(res), 'upload ok incl. read-back verify');
-  const fl = await pg.evaluate(() => { const t = window.__tag; return { cur: t.cur, mask: t.cfg.mask, dropped: t.dropped, crcFlash: (() => { const o = 3 * 65536; return Array.from(t.flash.subarray(o, o + 46080)).length; })() }; });
+  ok(await pg.evaluate(() => !document.getElementById('prog').classList.contains('on')), 'progress panel hidden after the upload');
+  const fl = await pg.evaluate(() => { const t = window.__tag; return { cur: t.cur, mask: t.cfg.mask, dropped: t.dropped, crcFlash: (() => { const o = 2 * 0xC000; return Array.from(t.flash.subarray(o, o + 46080)).length; })() }; });
   ok(fl.dropped, 'chunk loss was exercised (retransmission path)');
   ok(fl.cur === 3, 'slot 3 shown after upload');
   ok((fl.mask & 8) !== 0, 'slot 3 added to playlist mask');
-  const fcrc = await pg.evaluate(() => { const t = window.__tag, o = 3 * 65536, b = t.flash.subarray(o, o + 46080); return window.__gs.crc32(b); });
+  const fcrc = await pg.evaluate(() => { const t = window.__tag, o = 2 * 0xC000, b = t.flash.subarray(o, o + 46080); return window.__gs.crc32(b); });
   ok(fcrc === want, 'flash content equals frame sent');
   await pg.waitForTimeout(800);
 
@@ -223,12 +230,20 @@ const MOCK = `
   ok(slotTxt.includes('совпадает с запомненным'), 'slot 3 matches stored picture');
   ok(await pg.evaluate(() => window.__gs.LIB.mem.has(3)), 'library holds slot 3');
   await pg.screenshot({ path: path.join(OUT, 'shot_slots.png') });
+  ok(await pg.evaluate(() => document.querySelectorAll('#slotGrid .slot').length) === 10, 'ten slot cards');
+  ok(await pg.evaluate(() => document.getElementById('upSlot').options.length === 10 && document.getElementById('vSlot').options.length === 10), 'ten slots in the selectors');
 
   // --- settings
   await pg.click('[data-t=cfg]');
-  await pg.selectOption('#cInt', '5'); await pg.selectOption('#cMode', '1'); await pg.selectOption('#cTx', '-10'); await pg.fill('#cTemp', '24');
+  await pg.selectOption('#cInt', '5'); await pg.selectOption('#cMode', '1'); await pg.selectOption('#cTx', '-10'); await pg.fill('#cTemp', '24'); await pg.fill('#cClean', '7'); await pg.selectOption('#cCleanMode', '2');
+  await pg.waitForTimeout(300);
+  ok((await pg.textContent('#cBattInfo')).includes('2.92') && (await pg.inputValue('#cBattLow')) === '2.70' && (await pg.inputValue('#cBattCrit')) === '2.50', 'battery report shown: ' + await pg.textContent('#cBattInfo'));
+  await pg.check('#cDeep'); await pg.check('#cOd');
+  await pg.fill('#cBattLow', '2.8'); await pg.fill('#cBattCrit', '2.6');
   await pg.click('#bCfg'); await pg.waitForTimeout(600);
-  const cfg = await pg.evaluate(() => window.__tag.cfg);
+  ok((await pg.evaluate(() => window.__tag.batt)).join() === '80,60', 'battery thresholds reached the tag (14-byte message): ' + await pg.evaluate(() => window.__tag.batt));
+  const cfg = await pg.evaluate(() => window.__tag.cfg);  const cfgLen = await pg.evaluate(() => window.__tag.cfgLen);
+  ok(cfg.clean === 7 && cfg.cmode === 2 && cfgLen === 15 && cfg.flags === 3, 'full-redraw period, cleaning mode and the two mode flags reached the tag (15-byte message): ' + JSON.stringify(cfg));
   ok(cfg.iv === 5 && cfg.mode === 1 && cfg.tx === -10 && cfg.temp === 24 && cfg.en === 1 && (cfg.mask & 8), 'settings reached the tag: ' + JSON.stringify(cfg));
   await pg.screenshot({ path: path.join(OUT, 'shot_cfg.png') });
 
@@ -362,7 +377,7 @@ const MOCK = `
   await pg.click('#bCfgGet'); await pg.waitForTimeout(300);
   ok(await pg.evaluate(() => !document.getElementById('cNfc').disabled) && (await pg.textContent('#cNfcInfo')).includes('касаний с запуска метки: 3'), 'nfc tap: switch enabled, touch counter shown');
   await pg.check('#cNfc'); await pg.click('#bCfg'); await pg.waitForTimeout(400);
-  ok((await pg.evaluate(() => window.__tag.cfg.nfc)) === 1 && (await pg.evaluate(() => window.__tag.cfgLen)) === 9, 'nfc tap: 9th byte carries the switch');
+  ok((await pg.evaluate(() => window.__tag.cfg.nfc)) === 1 && (await pg.evaluate(() => window.__tag.cfgLen)) === 15, 'nfc tap: the 2.0 message (15 bytes) carries the switch, slot bits 8..10 and the full-redraw period');
   ok(await pg.isChecked('#cNfc'), 'nfc tap: switch stays on after readback');
   await pg.evaluate(() => { window.__tag.cfgOld = true; });
   await pg.click('#bCfgGet'); await pg.waitForTimeout(300);
@@ -399,6 +414,20 @@ const MOCK = `
   await pg.fill('#nfcUrl', 'ftp://x'); await pg.waitForTimeout(100);
   ok(await pg.evaluate(() => document.getElementById('bNfcWr').disabled) && (await pg.textContent('#nfcUrlInfo')).includes('http'), 'nfc write: bad scheme refused');
   await pg.fill('#nfcUrl', 'https://example.org/app/'); await pg.waitForTimeout(100);
+  // text and Wi-Fi records
+  await pg.selectOption('#nfcKind', 'text'); await pg.fill('#nfcUrl', 'Привет'); await pg.waitForTimeout(100);
+  const tx = await pg.evaluate(() => nfcBuildAny().ndef);
+  ok(tx.join() === [3, 19, 209, 1, 15, 84, 2, 114, 117, 208, 159, 209, 128, 208, 184, 208, 178, 208, 181, 209, 130, 254].join(), 'nfc write: Russian text record (UTF-8, lang ru): ' + tx.join(' '));
+  await pg.selectOption('#nfcKind', 'wifi'); await pg.fill('#nfcSsid', 'Home'); await pg.fill('#nfcPass', 'secret123'); await pg.waitForTimeout(100);
+  const wf = await pg.evaluate(() => nfcBuildAny().ndef);
+  const wfs = String.fromCharCode(...wf.slice(5, 28));
+  ok(wf[2] === 0xD2 && wf[3] === 23 && wfs === 'application/vnd.wfa.wsc' && wf[wf.length - 1] === 0xFE && wf.length === 81, 'nfc write: Wi-Fi record: ' + wf.length + ' bytes');
+  const ssidAt = wf.findIndex((v, i) => v === 0x10 && wf[i + 1] === 0x45), keyAt = wf.findIndex((v, i) => v === 0x10 && wf[i + 1] === 0x27);
+  ok(wf[1] === wf.length - 3 && wf[4] === 0 + wf[4] && wf[28 - 0] === 0x10 && wf[29] === 0x0E && String.fromCharCode(...wf.slice(ssidAt + 4, ssidAt + 8)) === 'Home' && String.fromCharCode(...wf.slice(keyAt + 4, keyAt + 13)) === 'secret123', 'nfc write: Wi-Fi credential has SSID and key (len byte ' + wf[1] + ')');
+  ok(await pg.evaluate(() => !document.getElementById('nfcWifiBox').hidden && document.getElementById('nfcUrlLbl').hidden), 'nfc write: Wi-Fi fields shown');
+  await pg.fill('#nfcPass', 'short'); await pg.waitForTimeout(100);
+  ok((await pg.textContent('#nfcUrlInfo')).includes('8'), 'nfc write: short Wi-Fi password refused');
+  await pg.selectOption('#nfcKind', 'url'); await pg.fill('#nfcUrl', 'https://example.org/app/'); await pg.waitForTimeout(100);
   ok((await pg.textContent('#nfcUrlInfo')).includes('в чип запишется 24 байт (2 блоков'), 'nfc write: size shown');
   await pg.fill('#nfcUrl', 'https://' + 'a'.repeat(120)); await pg.waitForTimeout(100);
   ok(await pg.evaluate(() => document.getElementById('bNfcWr').disabled) && (await pg.textContent('#nfcUrlInfo')).includes('слишком длинная'), 'nfc write: too long refused');
@@ -448,7 +477,7 @@ const MOCK = `
 
   // --- tools: flash sector select has 0..14
   const secs = await pg.evaluate(() => document.querySelector('#sec').options.length);
-  ok(secs === 15, 'flash test sectors 0..14');
+  ok(secs === 7, 'flash test sectors 0..6 (test area 0x78000)');
 
   // --- mobile layout smoke
   await pg.setViewportSize({ width: 390, height: 800 }); await pg.click('[data-t=edit]'); await pg.waitForTimeout(300);
@@ -456,6 +485,21 @@ const MOCK = `
   ok(sw <= 392, 'no horizontal scroll at 390px (' + sw + ')');
   await pg.screenshot({ path: path.join(OUT, 'shot_mobile.png') });
 
+
+  // --- i18n scan: leftover Cyrillic in the visible texts, attributes and the log (en mode)
+  if (process.env.SCAN) {
+    if (process.env.SCAN === 'switch') { await pg.click('#bLang'); await pg.waitForTimeout(500); }
+    const left = await pg.evaluate(() => {
+      const out = new Set(), re = /[А-Яа-яЁё]/;
+      const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      for (let n; (n = w.nextNode());) { if (n.parentElement.closest('script,style')) continue; if (re.test(n.nodeValue)) out.add('T: ' + n.nodeValue.trim().slice(0, 140)); }
+      document.querySelectorAll('*').forEach(e => { for (const a of ['title', 'placeholder', 'value']) { const v = e.getAttribute(a); if (v && re.test(v)) out.add('A(' + a + '): ' + v.slice(0, 140)); } });
+      document.querySelectorAll('option').forEach(o => { if (re.test(o.text)) out.add('O: ' + o.text); });
+      return [...out];
+    });
+    console.log('CYRILLIC LEFT: ' + left.length); left.forEach(x => console.log('   ' + x));
+    console.log('lang attr', await pg.evaluate(() => document.documentElement.lang), 'btn', await pg.textContent('#bLang'));
+  }
   ok(errs.length === 0, 'no console/page errors ' + JSON.stringify(errs));
   await br.close();
   console.log(fails.length ? 'FAILED: ' + fails.length : 'ALL OK');

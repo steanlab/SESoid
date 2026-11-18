@@ -6,6 +6,9 @@
 #include "ble_panel.h"
 #include "ble_sys.h"
 #include "ble_up.h"
+#include "ble_flash.h"
+#include "ble_acc.h"
+#include "ble_batt.h"
 #include "ble_ll.h"
 #include "ble_diag.h"
 #include "ble_hwtest.h"
@@ -14,8 +17,8 @@
 
 #define PACE_US 12000u            // minimum time between two notifications of a burst
 
-static bool want_status, want_cfg, want_slots_req;
-static uint8_t slots_left;        // next slot to send (1..7), 8 = nothing pending
+static bool want_status, want_cfg, want_slots_req, want_batt, want_dtemp;
+static uint8_t slots_left;        // next slot to send (1..10), 11 = nothing pending
 static uint8_t hw_left;           // next hw fragment (0..3), 4 = nothing pending
 static uint32_t last_tx_us;
 static uint32_t reboot_at_us;
@@ -35,18 +38,28 @@ static void wr32(uint8_t *p, uint32_t v) { p[0] = (uint8_t)v; p[1] = (uint8_t)(v
 
 void ctl_reset(void)
 {
-  want_status = want_cfg = want_slots_req = want_result = want_diag = false;
+  want_status = want_cfg = want_slots_req = want_batt = want_dtemp = want_result = want_diag = false;
   want_clock = want_pins = want_scan = want_nfc = false;
   nfc_left = 7; nfc_fd_left = nfc_bk_left = 0xFF; nfc_sent = true;
   nfc_reset();                                           // the NFC chip is switched off with the connection
   hwtest_reset();                                        // the pin monitor stops with the connection
-  slots_left = 8;
+  slots_left = FL_SLOTS + 1u;
   hw_left = 4;
 }
 
 static void queue_result(uint8_t op, uint8_t status)
 {
   res_op = op; res_status = status; want_result = true;
+}
+
+bool ctl_gate(const uint8_t *v, uint8_t len)
+{
+  if (len == 0) return false;
+  bool danger = v[0] == 0x36 || v[0] == 0x21 || v[0] == 0x22 ||
+                (v[0] == 0x3F && len >= 2 && (v[1] == 0x21 || v[1] == 0x22 || v[1] == 0x31 || v[1] == 0x05));
+  if (!danger || acc_danger_ok(slide_uptime_s())) return false;
+  queue_result(v[0], SLR_LOCKED);
+  return true;
 }
 
 bool ctl_write(const uint8_t *v, uint8_t len)
@@ -61,11 +74,15 @@ bool ctl_write(const uint8_t *v, uint8_t len)
     case 0x32: queue_result(0x32, len == 2 ? slide_show(v[1]) : SLR_BAD_SLOT); break;
     case 0x33: queue_result(0x33, slide_next()); break;
     case 0x34:
-      if (len == 8 || len == 9) {
-        slide_cfg_t c;
-        c.enabled = v[1]; c.mode = v[2]; c.interval_min = (uint16_t)(v[3] | (v[4] << 8)); c.mask = v[5];
+      if (len == 8 || len == 9 || len == 11 || len == 12 || len == 14 || len == 15) {
+        slide_cfg_t c = *slide_cfg();                                  // fields the message does not carry stay as they are
+        c.enabled = v[1]; c.mode = v[2]; c.interval_min = (uint16_t)(v[3] | (v[4] << 8)); c.mask = (uint16_t)((c.mask & 0xFF00u) | v[5]);
         c.temp_c = (int8_t)v[6]; c.tx_dbm = (int8_t)v[7];
-        c.nfc = len == 9 ? v[8] : slide_cfg()->nfc;                    // the NFC tap switch comes with fw 1.7 pages; older pages send 8 bytes
+        if (len >= 9) c.nfc = v[8];                                    // fw 1.7 pages send 9 bytes, older ones 8
+        if (len >= 11) { c.mask = (uint16_t)(v[5] | (v[9] << 8)); c.clean_n = v[10]; }
+        if (len >= 12) c.clean_mode = v[11];
+        if (len >= 15) c.flags = v[14];
+        if (len >= 14) { c.batt_low = v[12]; c.batt_crit = v[13]; }                // thresholds: 2000 + 10 * value mV                           // fw 2.0: what a cleaning does   // fw 2.0: slot bits 8..10 and the full-redraw period
         slide_set_cfg(&c);
       }
       want_cfg = true;
@@ -76,7 +93,7 @@ bool ctl_write(const uint8_t *v, uint8_t len)
       break;
     case 0x37: hw_left = 0; break;
     case 0x38:
-      queue_result(0x38, len == 2 ? (panel_busy() ? SLR_PANEL_BUSY : (!up_idle() ? SLR_FLASH_BUSY : (panel_show_fill(v[1]) ? SLR_OK : SLR_PANEL_BUSY))) : SLR_BAD_SLOT);
+      queue_result(0x38, len == 2 && v[1] >= 0x10 ? slide_clean((uint8_t)(v[1] - 0x10)) : len == 2 ? (panel_busy() ? SLR_PANEL_BUSY : (!up_idle() ? SLR_FLASH_BUSY : (panel_show_fill(v[1]) ? SLR_OK : SLR_PANEL_BUSY))) : SLR_BAD_SLOT);
       break;
     case 0x39:
       queue_result(0x39, panel_busy() ? SLR_PANEL_BUSY : (panel_show_splash() ? SLR_OK : SLR_PANEL_BUSY));
@@ -153,6 +170,15 @@ static void send_diag(void)
   r[16] = (uint8_t)d->id2; r[17] = (uint8_t)(d->id2 >> 8);
   r[18] = (uint8_t)d->id_slow; r[19] = (uint8_t)(d->id_slow >> 8);
   att_notify(r, 20);
+  want_dtemp = true;
+}
+
+// experimental panel temperature read: C1 tried raw(2)
+static void send_dtemp(void)
+{
+  const panel_diag_t *d = panel_diag();
+  uint8_t r[4] = { 0xC1, d->temp_tried, (uint8_t)d->temp_raw, (uint8_t)(d->temp_raw >> 8) };
+  att_notify(r, 4);
 }
 
 // clock test report (see ble_hwtest.h): B9 state flags sel ctune_xi ctune_xo fact_xi fact_xo lfxo_ms(2) cnt_lfxo(3) cnt_lfrco(3) cnt_ulfrco(3) captune
@@ -238,12 +264,26 @@ static void send_nfc_status(void)
 static void send_cfg(void)
 {
   const slide_cfg_t *c = slide_cfg();
-  uint8_t r[13];
+  uint8_t r[17];
   int16_t a = slide_tx_actual_ddbm();
   r[0] = 0xB4; r[1] = 1; r[2] = c->enabled; r[3] = c->mode; r[4] = (uint8_t)c->interval_min; r[5] = (uint8_t)(c->interval_min >> 8);
-  r[6] = c->mask; r[7] = (uint8_t)c->temp_c; r[8] = (uint8_t)c->tx_dbm; r[9] = (uint8_t)a; r[10] = (uint8_t)((uint16_t)a >> 8);
+  r[6] = (uint8_t)c->mask; r[7] = (uint8_t)c->temp_c; r[8] = (uint8_t)c->tx_dbm; r[9] = (uint8_t)a; r[10] = (uint8_t)((uint16_t)a >> 8);
   r[11] = c->nfc; r[12] = nfc_tap_count();
-  att_notify(r, 13);
+  r[13] = (uint8_t)(c->mask >> 8); r[14] = c->clean_n; r[15] = c->clean_mode; r[16] = c->flags;
+  att_notify(r, 17);
+}
+
+// battery report: 0xC0 level mv(2) low_thr crit_thr age_s(2)   level 0 ok, 1 low, 2 critical; mv 0 = not measured yet; thresholds 2000 + 10 * value mV
+static void send_batt(void)
+{
+  uint8_t r[8];
+  uint32_t age = batt_age_s(slide_uptime_s());
+  uint16_t mv = batt_mv();
+  r[0] = 0xC0; r[1] = batt_level(); r[2] = (uint8_t)mv; r[3] = (uint8_t)(mv >> 8);
+  r[4] = slide_cfg()->batt_low; r[5] = slide_cfg()->batt_crit;
+  if (age > 0xFFFFu) age = 0xFFFFu;
+  r[6] = (uint8_t)age; r[7] = (uint8_t)(age >> 8);
+  att_notify(r, 8);
 }
 
 static void send_slot(uint8_t s)
@@ -272,10 +312,11 @@ static void send_hw(uint8_t idx)
       att_notify(r, 16);
       break;
     case 1: {
-      sys_eui64(r + 2);
+      if (acc_danger_ok(slide_uptime_s())) sys_eui64(r + 2);       // the chip ID only within 60 s after a tap (zeros and the flag in byte 14 otherwise)
+      else r[14] = 1;
       uint32_t m = sys_mem_kb();
       r[10] = (uint8_t)m; r[11] = (uint8_t)(m >> 8); r[12] = (uint8_t)(m >> 16); r[13] = (uint8_t)(m >> 24);
-      att_notify(r, 14);
+      att_notify(r, 15);
       break;
     }
     case 2:
@@ -298,10 +339,14 @@ void ctl_poll(void)
 {
   uint32_t now = RAIL_GetTime();
   hwtest_poll();
-  nfc_tap_enable(slide_cfg()->nfc != 0);
+  nfc_tap_enable(true);                                                            // a tap opens the Bluetooth window (ble_acc.h), so the chip is always watched
   nfc_hold(hwtest_scan()->state == 1 || hwtest_pins()->mode != PM_MODE_OFF);       // the scanner and the pin monitor own those pins while they run
   nfc_poll();
-  if (nfc_tap_take()) { tap_pending = true; tap_t0 = now; tap_next_try = now; }
+  if (nfc_tap_take()) {
+    acc_open(slide_uptime_s(), ACC_TAP_S);
+    acc_danger_arm(slide_uptime_s());
+    if (slide_cfg()->nfc) { tap_pending = true; tap_t0 = now; tap_next_try = now; }          // with the NFC switch on a tap also shows the next slide
+  }
   if (tap_pending && (int32_t)(now - tap_next_try) >= 0) {                       // a tap shows the next slide; while the panel or the flash is busy it is tried again
     uint8_t r = slide_next();
     if (r == SLR_OK || r == SLR_BAD_SLOT || (uint32_t)(now - tap_t0) > 90000000u) tap_pending = false; else tap_next_try = now + 1000000u;
@@ -341,8 +386,10 @@ void ctl_poll(void)
   if (want_diag) { send_diag(); want_diag = false; last_tx_us = now; return; }
   if (want_result) { uint8_t r[3] = { 0xB3, res_op, res_status }; att_notify(r, 3); want_result = false; last_tx_us = now; return; }
   if (want_slots_req && !slide_scanning()) { want_slots_req = false; slots_left = 1; }
-  if (slots_left <= 7) { send_slot(slots_left++); last_tx_us = now; return; }
-  if (want_cfg) { send_cfg(); want_cfg = false; last_tx_us = now; return; }
+  if (slots_left <= FL_SLOTS) { send_slot(slots_left++); last_tx_us = now; return; }
+  if (want_cfg) { send_cfg(); want_cfg = false; want_batt = true; last_tx_us = now; return; }
+  if (want_batt) { send_batt(); want_batt = false; last_tx_us = now; return; }
+  if (want_dtemp) { send_dtemp(); want_dtemp = false; last_tx_us = now; return; }
   if (hw_left < 4) { send_hw(hw_left++); last_tx_us = now; return; }
   if (want_status) { send_status(); want_status = false; last_tx_us = now; return; }
 }

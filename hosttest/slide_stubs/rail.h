@@ -8,3 +8,4 @@ typedef int RAIL_Status_t;
 uint32_t RAIL_GetTime(void);
 RAIL_Status_t RAIL_SetTxPowerDbm(RAIL_Handle_t h, RAIL_TxPower_t p);
 RAIL_TxPower_t RAIL_GetTxPowerDbm(RAIL_Handle_t h);
+uint16_t RAIL_GetRadioEntropy(RAIL_Handle_t h, uint8_t *buf, uint16_t bytes);
