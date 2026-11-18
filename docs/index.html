@@ -73,7 +73,7 @@
 <header>
   <h1>Gecko Slide <small>Страница управления электронными метками SES Imagotag. Проверено на V300 5.9″ BWRY</small></h1>
   <span class="pill" id="connPill"><span class="dot"></span><span id="connTxt">не подключено</span></span>
-  <button id="bLang" title="Language / Язык">EN</button><button class="p" id="bConn">Подключиться</button><button id="bDisc" disabled>Отключиться</button><button id="bInstall" hidden title="Установить как приложение: откроется в своём окне и будет работать без интернета">Установить приложение</button><span class="pill" id="pwaPill" hidden title="Страница сохранена в браузере и откроется без интернета"><span class="dot"></span>работает офлайн</span>
+  <button id="bLang" title="Language / Язык">EN</button><button class="p" id="bConn">Подключиться</button><button id="bConnAll" title="Показать в окне выбора все Bluetooth-устройства без фильтра по имени: если метка видна только так, дело в имени в рекламе">Все устройства</button><button id="bDisc" disabled>Отключиться</button><button id="bInstall" hidden title="Установить как приложение: откроется в своём окне и будет работать без интернета">Установить приложение</button><span class="pill" id="pwaPill" hidden title="Страница сохранена в браузере и откроется без интернета"><span class="dot"></span>работает офлайн</span>
 </header>
 <div id="prog" aria-live="polite"><div id="pst"></div><div id="pbar"><i></i></div><div id="pdet"></div></div>
 <nav id="tabs">
@@ -919,6 +919,7 @@ const EN_HTML = new Map([
   ["Мощность Bluetooth","Bluetooth power"],
   ["NFC-касание","NFC tap"],
   ["касание телефоном листает слайд","a phone tap flips the slide"],
+  ["Все устройства","All devices"], ["Показать в окне выбора все Bluetooth-устройства без фильтра по имени: если метка видна только так, дело в имени в рекламе","Show every Bluetooth device in the picker, without the name filter: if the tag shows up only this way, the name in the advertisement is the problem"],
   ["Режимы","Modes"], ["глубокий сон EM2 (экономия батареи)","deep sleep EM2 (saves battery)"], ["совместимость с OpenDisplay","OpenDisplay compatibility"],
   ["Применить и сохранить в метке","Apply and save in the tag"],
   ["Прочитать из метки","Read from the tag"],
@@ -1658,10 +1659,10 @@ function handle(a) {
   }
 }
 
-async function connect() {
+async function connect(all) {
   if (!navigator.bluetooth) { toast(TT('Этот браузер не поддерживает Web Bluetooth: нужен Chrome (компьютер или Android) по https')); return; }
   try {
-    dev = await navigator.bluetooth.requestDevice({ filters: [{ namePrefix: 'V300' }], optionalServices: [SVC] });
+    dev = await navigator.bluetooth.requestDevice(all === true ? { acceptAllDevices: true, optionalServices: [SVC] } : { filters: [{ namePrefix: 'V300' }], optionalServices: [SVC] });
     dev.addEventListener('gattserverdisconnected', onDisc);
     log(TT('подключаюсь к ') + dev.name + ' ...');
     const srv = await dev.gatt.connect(), svc = await srv.getPrimaryService(SVC);
@@ -1675,13 +1676,14 @@ async function connect() {
 function onDisc() { log(TT('соединение закрыто')); setConn(false); if (tag.pm) { tag.pm.mode = 0; renderPins(null); } }
 function setConn(on) {
   $('connPill').classList.toggle('on', on); $('connTxt').textContent = on ? TT('подключено: ') + (dev ? dev.name : '') : TT('не подключено');
-  $('bConn').disabled = on; $('bDisc').disabled = !on;
+  $('bConn').disabled = $('bConnAll').disabled = on; $('bDisc').disabled = !on;
   for (const id of ['bSlots', 'bNext', 'bCfg', 'bCfgGet', 'bShowNext', 'bSplash', 'bReboot', 'bHw', 'bPing', 'bStat', 'bReset', 'bRam', 'bPdiag', 'bPdiagGet', 'bClk', 'bClkGet', 'bPm1', 'bPm2', 'bPm3', 'bPmStop', 'bPmClr', 'bScan', 'bScanPwr', 'bScanStop', 'bScanGet', 'bNfcSnap', 'bNfcLive', 'bNfcStop', 'bNfcGet', 'bNfcBk', 'bNfcWr', 'bNfcRestore', 'bNfcUnlock', 'bNfcFind', 'bNfcRescue', 'bFInfo', 'bFErase', 'bFProg', 'bFScan', 'bVer']) $(id).disabled = !on;
   nfcButtons();
   document.querySelectorAll('.fill').forEach(b => b.disabled = !on);
   updateUpButtons(); renderSlots();
 }
-$('bConn').onclick = connect;
+$('bConn').onclick = () => connect();
+$('bConnAll').onclick = () => connect(true);
 $('bDisc').onclick = () => { if (connected()) dev.gatt.disconnect(); };
 setInterval(() => { if (connected() && !busy && document.visibilityState === 'visible') cmd([0x30]); }, 5000);
 setInterval(() => { if (tag.st) { renderSlideInfo(); renderTagCountdown(); } }, 1000);
