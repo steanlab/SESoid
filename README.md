@@ -1,6 +1,6 @@
 # SESoid: standalone slideshow firmware for the SES-imagotag V300 tag
 
-Firmware and control page for the SES-imagotag V300, a 5.9" four-colour (black, white, yellow, red) e-paper shelf tag built around an EFR32FG22 (BG22 class). The tag keeps up to 10 pictures in its external flash, shows them as a slideshow and is controlled from a phone or PC over Bluetooth LE with a web page (Web Bluetooth). No bootloader, no cloud, no gateway.
+Firmware and control page for the SES-imagotag V300 5.9" BWRY GU510, a four-colour (black, white, yellow, red) e-paper shelf tag built around an EFR32FG22. The tag keeps up to 10 pictures in its external flash, shows them as a slideshow and is controlled from a phone or PC over Bluetooth LE with a web page (Web Bluetooth). No bootloader, no cloud, no gateway.
 
 Control page ("Gecko Slide"): https://steanlab.github.io/SESoid (source: `docs/index.html`).
 This repository is neither `badge154` nor `badge154-src`.
